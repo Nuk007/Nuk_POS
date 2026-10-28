@@ -1,0 +1,1279 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="claude:viewport-fit-sides" content="cover">
+  <title>Nuk_POS — Portal</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap">
+  <style>
+    /* ── TOKENS ── */
+    :root {
+      --bg:#0d1117; --bg2:#161b22; --bg3:#1c2230; --bgi:#21262d;
+      --border:#30363d; --border2:#3d4451;
+      --accent:#E8650A; --acc2:#d05808; --acc-s:rgba(232,101,10,.14);
+      --fg:#e6edf3; --muted:#8b949e; --label:#aab3be;
+      --ok:#3fb950; --ok-s:rgba(63,185,80,.12);
+      --info:#58a6ff; --info-s:rgba(88,166,255,.12);
+      --warn:#d29922; --warn-s:rgba(210,153,34,.12);
+      --danger:#f85149; --danger-s:rgba(248,81,73,.12);
+      --gold:#f59e0b; --gold-s:rgba(245,158,11,.13);
+      --coin:#a78bfa; --coin-s:rgba(167,139,250,.12);
+      --r:14px; --rs:9px;
+      color-scheme: dark;
+    }
+    *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
+    html { height:100%; }
+    body {
+      font-family:'Inter',system-ui,sans-serif;
+      background:var(--bg); color:var(--fg);
+      min-height:100dvh;
+      display:flex; align-items:center; justify-content:center;
+      padding:16px max(16px,env(safe-area-inset-right,0px)) 24px max(16px,env(safe-area-inset-left,0px));
+    }
+
+    /* ── SCREEN SYSTEM ── */
+    .wrap { width:100%; max-width:430px; }
+    .screen { display:none; animation:fadeUp .26s ease; }
+    .screen.active { display:block; }
+    @keyframes fadeUp {
+      from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)}
+    }
+
+    /* ── CARD ── */
+    .card {
+      background:var(--bg2); border:1px solid var(--border);
+      border-radius:var(--r); padding:28px 24px;
+    }
+    .card-sm { padding:20px 18px; }
+
+    /* ── LOGO ── */
+    .logo-area { text-align:center; margin-bottom:20px; }
+    .logo-mark {
+      display:inline-flex; align-items:center; justify-content:center;
+      width:56px; height:56px; background:var(--accent); border-radius:14px;
+      font-size:1.6rem; margin-bottom:8px;
+    }
+    .logo-name { font-size:1.2rem; font-weight:900; letter-spacing:-.03em; }
+    .logo-name span { color:var(--accent); }
+    .logo-sub { font-size:.72rem; color:var(--muted); margin-top:2px; }
+
+    /* ── HEADINGS ── */
+    h2 { font-size:1.25rem; font-weight:800; letter-spacing:-.02em; margin-bottom:4px; }
+    h3 { font-size:1rem; font-weight:700; margin-bottom:14px; }
+    .sub { font-size:.8rem; color:var(--muted); margin-bottom:20px; }
+
+    /* ── FORM ── */
+    .field { margin-bottom:14px; }
+    .field label { display:block; font-size:.75rem; font-weight:600; color:var(--label); margin-bottom:5px; text-transform:uppercase; letter-spacing:.04em; }
+    .field input, .field select {
+      width:100%; background:var(--bgi); border:1.5px solid var(--border);
+      color:var(--fg); border-radius:var(--rs); padding:11px 14px;
+      font-size:.9rem; font-family:inherit; transition:border-color .15s;
+      -webkit-appearance:none;
+    }
+    .field input:focus, .field select:focus { outline:none; border-color:var(--accent); }
+    .field select { cursor:pointer; }
+    .field input::placeholder { color:var(--muted); }
+
+    /* ── BUTTONS ── */
+    .btn {
+      display:block; width:100%; padding:13px 18px;
+      border-radius:var(--rs); border:none; cursor:pointer;
+      font-family:inherit; font-size:.9rem; font-weight:700;
+      transition:opacity .15s, transform .1s;
+    }
+    .btn:active { transform:scale(.97); }
+    .btn-primary { background:var(--accent); color:#fff; }
+    .btn-primary:hover { background:var(--acc2); }
+    .btn-ghost { background:transparent; color:var(--muted); border:1.5px solid var(--border); }
+    .btn-ghost:hover { border-color:var(--border2); color:var(--fg); }
+    .btn-info  { background:var(--info-s); color:var(--info); border:1.5px solid rgba(88,166,255,.3); }
+    .btn-ok    { background:var(--ok-s); color:var(--ok); border:1.5px solid rgba(63,185,80,.3); }
+    .btn-coin  { background:var(--coin-s); color:var(--coin); border:1.5px solid rgba(167,139,250,.3); }
+    .btn-warn  { background:var(--warn-s); color:var(--warn); border:1.5px solid rgba(210,153,34,.3); }
+    .btn-danger{ background:var(--danger-s); color:var(--danger); border:1.5px solid rgba(248,81,73,.3); }
+    .btn-gold  { background:var(--gold-s); color:var(--gold); border:1.5px solid rgba(245,158,11,.3); }
+    .btn + .btn { margin-top:8px; }
+    .btn-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .btn-grid .btn { margin-top:0; }
+    .btn-grid-3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; }
+    .btn-grid-3 .btn { margin-top:0; }
+
+    /* ── DIVIDER ── */
+    .divider { display:flex; align-items:center; gap:10px; margin:16px 0; }
+    .divider::before, .divider::after { content:''; flex:1; height:1px; background:var(--border); }
+    .divider span { font-size:.7rem; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.06em; }
+
+    /* ── BACK ROW ── */
+    .back-row { display:flex; align-items:center; gap:6px; margin-bottom:16px; }
+    .back-btn {
+      background:none; border:none; color:var(--muted); cursor:pointer;
+      font-size:.8rem; font-family:inherit; padding:4px 0;
+      display:flex; align-items:center; gap:5px;
+    }
+    .back-btn:hover { color:var(--fg); }
+
+    /* ── STARS ── */
+    .stars-bar {
+      display:flex; align-items:center; justify-content:space-between;
+      background:var(--gold-s); border:1px solid rgba(245,158,11,.2);
+      border-radius:var(--rs); padding:10px 14px; margin-bottom:16px;
+    }
+    .stars-label { font-size:.75rem; color:var(--gold); font-weight:700; }
+    .stars-icons { display:flex; gap:3px; }
+    .star { font-size:1.2rem; opacity:.25; transition:opacity .2s; }
+    .star.on { opacity:1; }
+    .stars-info { font-size:.65rem; color:var(--muted); text-align:right; }
+
+    /* ── WALLET ── */
+    .wallet-card {
+      background:linear-gradient(135deg,rgba(167,139,250,.18),rgba(167,139,250,.06));
+      border:1px solid rgba(167,139,250,.3); border-radius:var(--rs);
+      padding:14px 16px; margin-bottom:16px;
+    }
+    .wallet-label { font-size:.68rem; font-weight:700; color:var(--coin); text-transform:uppercase; letter-spacing:.08em; }
+    .wallet-val { font-size:1.6rem; font-weight:900; font-variant-numeric:tabular-nums; color:var(--fg); margin:2px 0; }
+    .wallet-val span { font-size:.9rem; font-weight:600; color:var(--coin); }
+    .wallet-sub { font-size:.7rem; color:var(--muted); }
+
+    /* ── PILL / BADGE ── */
+    .pill {
+      display:inline-flex; align-items:center; gap:5px;
+      padding:3px 10px; border-radius:20px;
+      font-size:.65rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
+    }
+    .pill-accent { background:var(--acc-s); color:var(--accent); }
+    .pill-coin   { background:var(--coin-s); color:var(--coin); }
+    .pill-ok     { background:var(--ok-s); color:var(--ok); }
+    .pill-warn   { background:var(--warn-s); color:var(--warn); }
+    .pill-gold   { background:var(--gold-s); color:var(--gold); }
+
+    /* ── CART ── */
+    .cart-header {
+      display:flex; align-items:center; justify-content:space-between;
+      margin-bottom:10px;
+    }
+    .cart-count {
+      background:var(--accent); color:#fff; border-radius:20px;
+      padding:2px 9px; font-size:.7rem; font-weight:800;
+    }
+    .cart-list { list-style:none; margin-bottom:12px; }
+    .cart-item {
+      display:flex; align-items:center; justify-content:space-between;
+      padding:8px 0; border-bottom:1px solid var(--border);
+      font-size:.82rem;
+    }
+    .cart-item:last-child { border-bottom:none; }
+    .cart-item-name { flex:1; }
+    .cart-item-qty {
+      display:flex; align-items:center; gap:6px;
+      margin:0 10px;
+    }
+    .qty-btn {
+      width:22px; height:22px; border-radius:50%;
+      border:1.5px solid var(--border2);
+      background:var(--bgi); color:var(--fg);
+      cursor:pointer; font-size:.8rem;
+      display:flex; align-items:center; justify-content:center;
+    }
+    .cart-item-price { font-weight:700; color:var(--accent); min-width:70px; text-align:right; }
+    .cart-total {
+      background:var(--bg3); border-radius:var(--rs);
+      padding:10px 14px; display:flex; justify-content:space-between;
+      font-weight:800; font-size:.95rem; margin-bottom:14px;
+    }
+    .cart-total-kz { color:var(--accent); }
+
+    /* ── MENU GRID ── */
+    .menu-section { margin-bottom:18px; }
+    .menu-section-title {
+      font-size:.68rem; font-weight:800; text-transform:uppercase;
+      letter-spacing:.1em; color:var(--muted); margin-bottom:8px;
+      display:flex; align-items:center; gap:8px;
+    }
+    .menu-section-title::after { content:''; flex:1; height:1px; background:var(--border); }
+    .menu-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
+    .menu-item {
+      background:var(--bg3); border:1.5px solid var(--border);
+      border-radius:var(--rs); padding:12px 10px;
+      cursor:pointer; transition:border-color .15s, background .15s;
+      text-align:center;
+    }
+    .menu-item:hover { border-color:var(--accent); background:var(--acc-s); }
+    .menu-item.in-cart { border-color:var(--ok); background:var(--ok-s); }
+    .menu-item-emoji { font-size:1.4rem; display:block; margin-bottom:4px; }
+    .menu-item-name { font-size:.75rem; font-weight:700; line-height:1.2; }
+    .menu-item-price { font-size:.68rem; color:var(--accent); margin-top:3px; }
+
+    /* ── CREDIT GRID ── */
+    .credit-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; margin-bottom:16px; }
+    .credit-opt {
+      background:var(--bgi); border:1.5px solid var(--border);
+      border-radius:var(--rs); padding:14px 10px;
+      cursor:pointer; text-align:center; transition:border-color .15s;
+    }
+    .credit-opt:hover { border-color:var(--coin); }
+    .credit-opt.selected { border-color:var(--coin); background:var(--coin-s); }
+    .credit-val { font-size:1rem; font-weight:900; color:var(--fg); }
+    .credit-val span { font-size:.7rem; color:var(--coin); }
+
+    /* ── TOAST ── */
+    #toast {
+      position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(20px);
+      background:#1e2a3a; border:1px solid var(--border2); border-radius:var(--rs);
+      padding:10px 18px; font-size:.82rem; font-weight:600;
+      opacity:0; transition:opacity .3s, transform .3s;
+      pointer-events:none; white-space:nowrap; z-index:1000;
+      max-width:calc(100vw - 32px);
+    }
+    #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+    #toast.ok   { border-color:rgba(63,185,80,.4); color:var(--ok); }
+    #toast.err  { border-color:rgba(248,81,73,.4); color:var(--danger); }
+    #toast.info { border-color:rgba(88,166,255,.4); color:var(--info); }
+
+    /* ── INFO BOX ── */
+    .info-box {
+      border-radius:var(--rs); padding:10px 14px;
+      font-size:.78rem; line-height:1.5; margin-bottom:14px;
+    }
+    .info-box.info  { background:var(--info-s); border:1px solid rgba(88,166,255,.25); color:var(--info); }
+    .info-box.ok    { background:var(--ok-s);   border:1px solid rgba(63,185,80,.25);  color:var(--ok); }
+    .info-box.warn  { background:var(--warn-s); border:1px solid rgba(210,153,34,.25); color:var(--warn); }
+    .info-box.gold  { background:var(--gold-s); border:1px solid rgba(245,158,11,.25); color:var(--gold); }
+    .info-box.coin  { background:var(--coin-s); border:1px solid rgba(167,139,250,.25);color:var(--coin); }
+
+    /* ── PROFILE TILE ── */
+    .profile-tile {
+      display:flex; align-items:center; gap:12px;
+      background:var(--bg3); border-radius:var(--rs);
+      padding:12px 14px; margin-bottom:14px;
+    }
+    .avatar {
+      width:44px; height:44px; border-radius:50%;
+      background:var(--accent); display:flex; align-items:center; justify-content:center;
+      font-size:1.1rem; font-weight:800; flex-shrink:0;
+    }
+    .profile-name { font-size:.92rem; font-weight:700; }
+    .profile-phone { font-size:.75rem; color:var(--muted); }
+    .profile-badges { display:flex; gap:5px; margin-top:4px; flex-wrap:wrap; }
+
+    /* ── HISTORY ── */
+    .hist-item {
+      display:flex; align-items:center; justify-content:space-between;
+      padding:10px 0; border-bottom:1px solid var(--border);
+      font-size:.82rem;
+    }
+    .hist-item:last-child { border-bottom:none; }
+    .hist-date { color:var(--muted); font-size:.7rem; }
+    .hist-val { font-weight:700; color:var(--accent); }
+
+    /* ── PAYMENT OPTIONS ── */
+    .pay-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:16px; }
+    .pay-opt {
+      background:var(--bgi); border:1.5px solid var(--border);
+      border-radius:var(--rs); padding:12px 10px;
+      cursor:pointer; text-align:center; transition:border-color .15s;
+    }
+    .pay-opt:hover { border-color:var(--accent); }
+    .pay-opt.selected { border-color:var(--accent); background:var(--acc-s); }
+    .pay-opt .pay-icon { font-size:1.3rem; display:block; margin-bottom:4px; }
+    .pay-opt .pay-name { font-size:.75rem; font-weight:700; }
+    .pay-opt .pay-sub  { font-size:.62rem; color:var(--muted); margin-top:2px; }
+
+    /* Responsive tweaks */
+    @media(max-width:380px) {
+      .card { padding:20px 16px; }
+      .btn-grid-3 { grid-template-columns:1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ═══════════════════════════════════════════════
+     ECRÃ 0 — FORMULÁRIO DE ACESSO (link/QR)
+════════════════════════════════════════════════ -->
+<div class="screen active" id="s-acesso">
+  <div class="card">
+    <div class="logo-area">
+      <div class="logo-mark">🏨</div>
+      <div class="logo-name">Nuk<span>_POS</span></div>
+      <div class="logo-sub">Sistema Integrado de Gestão</div>
+    </div>
+    <h2>Bem-vindo!</h2>
+    <p class="sub">Identifique-se para continuar</p>
+    <div class="field">
+      <label>Nome completo</label>
+      <input type="text" id="acc-nome" placeholder="O seu nome" autocomplete="name">
+    </div>
+    <div class="field">
+      <label>Telefone (+244)</label>
+      <input type="tel" id="acc-tel" placeholder="9XXXXXXXX" maxlength="9" inputmode="numeric">
+    </div>
+    <div class="field">
+      <label>Província</label>
+      <select id="acc-prov">
+        <option value="">Seleccione…</option>
+        <option>Luanda</option><option>Benguela</option><option>Huambo</option>
+        <option>Huíla</option><option>Cabinda</option><option>Kwanza Norte</option>
+        <option>Kwanza Sul</option><option>Malanje</option><option>Lunda Norte</option>
+        <option>Lunda Sul</option><option>Moxico</option><option>Bié</option>
+        <option>Kuando Kubango</option><option>Cuando Cubango</option><option>Namibe</option>
+        <option>Cunene</option><option>Zaire</option><option>Uíge</option>
+        <option>Bengo</option>
+      </select>
+    </div>
+    <button class="btn btn-primary" onclick="submitAcesso()">Entrar →</button>
+    <p style="font-size:.68rem;color:var(--muted);text-align:center;margin-top:12px">
+      Ao continuar, aceita os nossos Termos de Utilização
+    </p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     ECRÃ 1 — AUTENTICAÇÃO: Seja bem-vindo
+════════════════════════════════════════════════ -->
+<div class="screen" id="s-auth">
+  <div class="card">
+    <div class="logo-area">
+      <div class="logo-mark">🏨</div>
+      <div class="logo-name">Nuk<span>_POS</span></div>
+    </div>
+    <h2 id="auth-greeting">Seja bem-vindo!</h2>
+    <p class="sub" id="auth-name-sub">Como pretende prosseguir?</p>
+
+    <!-- Stars bar — aparece para clientes registados -->
+    <div class="stars-bar" id="stars-bar" style="display:none">
+      <div>
+        <div class="stars-label">⭐ As suas estrelas</div>
+        <div class="stars-info" id="stars-desc">0 / 5 para 20% desconto</div>
+      </div>
+      <div class="stars-icons" id="stars-icons">
+        <span class="star">⭐</span><span class="star">⭐</span>
+        <span class="star">⭐</span><span class="star">⭐</span><span class="star">⭐</span>
+      </div>
+    </div>
+
+    <div class="btn-grid">
+      <button class="btn btn-info" onclick="go('s-convidado')">👤 Convidado</button>
+      <button class="btn btn-ok"   onclick="go('s-cliente-menu')">🎯 Cliente</button>
+    </div>
+    <button class="btn btn-primary" style="margin-top:8px" onclick="go('s-cadastrar')">📋 Cadastrar</button>
+    <button class="btn btn-ghost"   style="margin-top:8px" onclick="sair()">✕ Sair</button>
+
+    <div class="divider"><span>Programa de Fidelização</span></div>
+    <div class="info-box gold" style="font-size:.72rem">
+      ⭐ Ganha uma estrela por cada consumo ≥ 25.000 Kz ou por registar um amigo<br>
+      🎁 Com 5 estrelas: <strong>20% de desconto</strong> em compras até 25.000 Kz
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     ECRÃ 2 — CONVIDADO: acesso ao menu
+════════════════════════════════════════════════ -->
+<div class="screen" id="s-convidado">
+  <div class="card">
+    <div class="back-row">
+      <button class="back-btn" onclick="go('s-auth')">← Voltar</button>
+      <span class="pill pill-accent">Convidado</span>
+    </div>
+    <h3>O que deseja?</h3>
+    <button class="btn btn-primary"   onclick="go('s-restaurante')">🍽️ Restaurante</button>
+    <button class="btn btn-info"      onclick="go('s-servicos')">🛎️ Serviços</button>
+    <button class="btn btn-warn"      onclick="go('s-eventos')">🎉 Eventos</button>
+    <button class="btn btn-ghost"     onclick="go('s-auth')">← Voltar</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     ECRÃ 3 — MENU CLIENTE
+════════════════════════════════════════════════ -->
+<div class="screen" id="s-cliente-menu">
+  <div class="card">
+    <div class="back-row">
+      <button class="back-btn" onclick="go('s-auth')">← Voltar</button>
+      <span class="pill pill-ok">Cliente</span>
+    </div>
+    <!-- Perfil do cliente -->
+    <div class="profile-tile" id="cli-profile">
+      <div class="avatar" id="cli-avatar">?</div>
+      <div>
+        <div class="profile-name" id="cli-nome-tile">—</div>
+        <div class="profile-phone" id="cli-tel-tile">—</div>
+        <div class="profile-badges">
+          <span class="pill pill-coin" id="cli-wallet-pill">💜 0 Kz</span>
+          <span class="pill pill-gold" id="cli-stars-pill">⭐ 0</span>
+        </div>
+      </div>
+    </div>
+    <h3>Escolha uma opção</h3>
+    <button class="btn btn-coin"   onclick="go('s-nukcoin')">💜 Nuk-Coin</button>
+    <button class="btn btn-primary" onclick="go('s-restaurante')">🍽️ Restaurante</button>
+    <button class="btn btn-info"   onclick="go('s-servicos')">🛎️ Serviços</button>
+    <button class="btn btn-warn"   onclick="go('s-eventos')">🎉 Eventos</button>
+    <button class="btn btn-ghost"  onclick="go('s-auth')">← Voltar</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     ECRÃ 4 — NUK-COIN: carteira virtual
+════════════════════════════════════════════════ -->
+<div class="screen" id="s-nukcoin">
+  <div class="card">
+    <div class="back-row">
+      <button class="back-btn" onclick="go('s-cliente-menu')">← Voltar</button>
+      <span class="pill pill-coin">Nuk-Coin</span>
+    </div>
+    <h3>Carteira Nuk-Coin</h3>
+    <div class="wallet-card">
+      <div class="wallet-label">💜 Saldo disponível</div>
+      <div class="wallet-val" id="wlt-saldo">0 <span>Kz</span></div>
+      <div class="wallet-sub">Válido em todos os consumos no estabelecimento</div>
+    </div>
+    <div class="info-box coin">
+      🎁 Pague com Nuk-Coin e beneficie do <strong>desconto do dia</strong> definido pelo gestor. O saldo não usado fica guardado para a próxima visita.
+    </div>
+    <div class="divider"><span>Carregar crédito</span></div>
+    <p style="font-size:.78rem;color:var(--muted);margin-bottom:12px">Escolha o valor a carregar:</p>
+    <div class="credit-grid" id="credit-grid">
+      <div class="credit-opt" onclick="selectCredit(this,5000)"><div class="credit-val">5.000 <span>Kz</span></div></div>
+      <div class="credit-opt" onclick="selectCredit(this,10000)"><div class="credit-val">10.000 <span>Kz</span></div></div>
+      <div class="credit-opt" onclick="selectCredit(this,15000)"><div class="credit-val">15.000 <span>Kz</span></div></div>
+      <div class="credit-opt" onclick="selectCredit(this,20000)"><div class="credit-val">20.000 <span>Kz</span></div></div>
+      <div class="credit-opt" onclick="selectCredit(this,25000)"><div class="credit-val">25.000 <span>Kz</span></div></div>
+      <div class="credit-opt" onclick="selectCredit(this,50000)"><div class="credit-val">50.000 <span>Kz</span></div></div>
+    </div>
+    <div id="credit-confirm" style="display:none">
+      <div class="info-box ok" id="credit-chosen">—</div>
+      <button class="btn btn-primary" onclick="confirmarCredito()">✓ Confirmar pagamento</button>
+    </div>
+    <button class="btn btn-ghost" onclick="go('s-cliente-menu')" style="margin-top:8px">← Voltar</button>
+
+    <!-- Histórico de movimentos -->
+    <div class="divider" style="margin-top:16px"><span>Movimentos</span></div>
+    <div id="wlt-hist">
+      <div class="hist-item"><div><div style="font-weight:600">Crédito inicial</div><div class="hist-date">Hoje</div></div><div class="hist-val">+0 Kz</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     ECRÃ 5 — RESTAURANTE
+════════════════════════════════════════════════ -->
+<div class="screen" id="s-restaurante">
+  <div class="card">
+    <div class="back-row">
+      <button class="back-btn" id="rest-back-btn" onclick="voltarDeRestaurante()">← Voltar</button>
+      <span class="pill pill-accent">Restaurante</span>
+      <button onclick="go('s-carrinho')" style="background:none;border:none;cursor:pointer;color:var(--fg);font-size:.8rem;font-weight:700;display:flex;align-items:center;gap:5px">
+        🛒 <span class="cart-count" id="cart-badge">0</span>
+      </button>
+    </div>
+    <h3>Menu</h3>
+
+    <!-- COMIDAS -->
+    <div class="menu-section">
+      <div class="menu-section-title">🍽️ Comidas</div>
+      <div class="menu-grid" id="grid-comidas"></div>
+    </div>
+    <!-- BEBIDAS -->
+    <div class="menu-section">
+      <div class="menu-section-title">🍺 Bebidas</div>
+      <div class="menu-grid" id="grid-bebidas"></div>
+    </div>
+    <!-- CIGARROS -->
+    <div class="menu-section">
+      <div class="menu-section-title">🚬 Cigarros</div>
+      <div class="menu-grid" id="grid-cigarros"></div>
+    </div>
+    <!-- OUTROS -->
+    <div class="menu-section">
+      <div class="menu-section-title">✨ Outros</div>
+      <div class="menu-grid" id="grid-outros"></div>
+    </div>
+
+    <button class="btn btn-primary" onclick="go('s-carrinho')" style="margin-top:4px">
+      🛒 Ver carrinho (<span id="cart-badge-btn">0</span> itens)
+    </button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     ECRÃ 6 — CARRINHO
+════════════════════════════════════════════════ -->
+<div class="screen" id="s-carrinho">
+  <div class="card">
+    <div class="back-row">
+      <button class="back-btn" onclick="go('s-restaurante')">← Menu</button>
+      <span class="pill pill-accent">Carrinho</span>
+    </div>
+    <div class="cart-header">
+      <h3 style="margin:0">O seu pedido</h3>
+      <span class="cart-count" id="cart-count">0</span>
+    </div>
+    <ul class="cart-list" id="cart-list">
+      <li style="color:var(--muted);font-size:.82rem;padding:12px 0;text-align:center">Carrinho vazio</li>
+    </ul>
+    <div class="cart-total">
+      <span>Total</span>
+      <span class="cart-total-kz" id="cart-total">0 Kz</span>
+    </div>
+    <!-- Desconto de estrelas -->
+    <div class="info-box gold" id="disc-info" style="display:none">
+      🎁 Tem 5 estrelas! <strong>20% de desconto</strong> aplicado neste consumo.
+    </div>
+    <!-- Forma de pagamento -->
+    <p style="font-size:.78rem;font-weight:700;margin-bottom:8px">Como vai pagar?</p>
+    <div class="pay-grid">
+      <div class="pay-opt" onclick="selectPay(this,'coin')">
+        <span class="pay-icon">💜</span><div class="pay-name">Nuk-Coin</div>
+        <div class="pay-sub" id="pay-coin-sub">Saldo: 0 Kz</div>
+      </div>
+      <div class="pay-opt" onclick="selectPay(this,'cash')">
+        <span class="pay-icon">💵</span><div class="pay-name">CASH</div>
+        <div class="pay-sub">Dinheiro</div>
+      </div>
+      <div class="pay-opt" onclick="selectPay(this,'tpa')">
+        <span class="pay-icon">💳</span><div class="pay-name">TPA</div>
+        <div class="pay-sub">Terminal</div>
+      </div>
+      <div class="pay-opt" onclick="selectPay(this,'express')">
+        <span class="pay-icon">⚡</span><div class="pay-name">Express</div>
+        <div class="pay-sub">Pagamento rápido</div>
+      </div>
+    </div>
+    <div class="pay-opt" style="margin-bottom:14px" onclick="selectPay(this,'transfer')">
+      <span class="pay-icon">🏦</span><div class="pay-name">Transferência Bancária</div>
+    </div>
+    <div class="info-box coin" id="coin-pay-info" style="display:none">
+      💜 O desconto Nuk-Coin do dia será aplicado automaticamente ao confirmar.
+    </div>
+    <button class="btn btn-primary" onclick="confirmarPedido()">✓ Confirmar pedido</button>
+    <button class="btn btn-ghost"   onclick="go('s-restaurante')" style="margin-top:8px">← Continuar a comprar</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     ECRÃ 7 — PEDIDO CONFIRMADO
+════════════════════════════════════════════════ -->
+<div class="screen" id="s-pedido-ok">
+  <div class="card" style="text-align:center">
+    <div style="font-size:3rem;margin-bottom:12px">✅</div>
+    <h2>Pedido enviado!</h2>
+    <p class="sub" id="pedido-ok-msg">O seu pedido está a ser preparado.</p>
+    <div class="info-box ok" id="star-earned" style="display:none">
+      ⭐ Parabéns! Ganhou uma estrela por este consumo!
+    </div>
+    <div class="info-box gold" id="disc-earned" style="display:none">
+      🎁 Desconto de 20% aplicado! Continue a acumular estrelas.
+    </div>
+    <button class="btn btn-primary" style="margin-top:16px" onclick="voltarInicio()">← Início</button>
+    <button class="btn btn-info"    onclick="go('s-restaurante')" style="margin-top:8px">+ Novo pedido</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     ECRÃ 8 — SERVIÇOS
+════════════════════════════════════════════════ -->
+<div class="screen" id="s-servicos">
+  <div class="card">
+    <div class="back-row">
+      <button class="back-btn" id="serv-back-btn" onclick="voltarDeServicos()">← Voltar</button>
+      <span class="pill pill-info">Serviços</span>
+    </div>
+    <h3>Serviços disponíveis</h3>
+    <div class="menu-section">
+      <div class="menu-section-title">🛏️ Hospedagem</div>
+      <div class="menu-grid">
+        <div class="menu-item" onclick="solicitarServico('2 Horas','8.000 Kz')">
+          <span class="menu-item-emoji">⏱️</span>
+          <div class="menu-item-name">2 Horas</div>
+          <div class="menu-item-price">8.000 Kz</div>
+        </div>
+        <div class="menu-item" onclick="solicitarServico('Pernoite','15.000 Kz')">
+          <span class="menu-item-emoji">🌙</span>
+          <div class="menu-item-name">Pernoite</div>
+          <div class="menu-item-price">15.000 Kz</div>
+        </div>
+        <div class="menu-item" onclick="solicitarServico('Diária Completa','25.000 Kz')">
+          <span class="menu-item-emoji">📅</span>
+          <div class="menu-item-name">Diária</div>
+          <div class="menu-item-price">25.000 Kz</div>
+        </div>
+        <div class="menu-item" onclick="solicitarServico('Semana (7 dias)','120.000 Kz')">
+          <span class="menu-item-emoji">🗓️</span>
+          <div class="menu-item-name">Semana</div>
+          <div class="menu-item-price">120.000 Kz</div>
+        </div>
+      </div>
+    </div>
+    <div class="menu-section">
+      <div class="menu-section-title">🏊 Lazer & Extras</div>
+      <div class="menu-grid">
+        <div class="menu-item" onclick="solicitarServico('Piscina','5.000 Kz')">
+          <span class="menu-item-emoji">🏊</span>
+          <div class="menu-item-name">Piscina</div>
+          <div class="menu-item-price">5.000 Kz</div>
+        </div>
+        <div class="menu-item" onclick="solicitarServico('Sauna','8.000 Kz')">
+          <span class="menu-item-emoji">🧖</span>
+          <div class="menu-item-name">Sauna</div>
+          <div class="menu-item-price">8.000 Kz</div>
+        </div>
+        <div class="menu-item" onclick="solicitarServico('Estacionamento VIP','3.000 Kz')">
+          <span class="menu-item-emoji">🅿️</span>
+          <div class="menu-item-name">Estac. VIP</div>
+          <div class="menu-item-price">3.000 Kz</div>
+        </div>
+        <div class="menu-item" onclick="solicitarServico('Lavandaria','4.500 Kz')">
+          <span class="menu-item-emoji">👕</span>
+          <div class="menu-item-name">Lavandaria</div>
+          <div class="menu-item-price">4.500 Kz</div>
+        </div>
+        <div class="menu-item" onclick="solicitarServico('Transfer Aeroporto','12.000 Kz')">
+          <span class="menu-item-emoji">✈️</span>
+          <div class="menu-item-name">Transfer</div>
+          <div class="menu-item-price">12.000 Kz</div>
+        </div>
+        <div class="menu-item" onclick="solicitarServico('Room Service','Sob pedido')">
+          <span class="menu-item-emoji">🍽️</span>
+          <div class="menu-item-name">Room Service</div>
+          <div class="menu-item-price">Sob pedido</div>
+        </div>
+      </div>
+    </div>
+    <button class="btn btn-ghost" onclick="voltarDeServicos()">← Voltar</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     ECRÃ 9 — EVENTOS
+════════════════════════════════════════════════ -->
+<div class="screen" id="s-eventos">
+  <div class="card">
+    <div class="back-row">
+      <button class="back-btn" id="ev-back-btn" onclick="voltarDeEventos()">← Voltar</button>
+      <span class="pill pill-warn">Eventos</span>
+    </div>
+    <h3>Eventos & Reservas</h3>
+    <div class="menu-section">
+      <div class="menu-section-title">🎉 Eventos sociais</div>
+      <div class="menu-grid">
+        <div class="menu-item" onclick="solicitarEvento('Casamento')">
+          <span class="menu-item-emoji">💍</span>
+          <div class="menu-item-name">Casamento</div>
+          <div class="menu-item-price">Orçamento</div>
+        </div>
+        <div class="menu-item" onclick="solicitarEvento('Aniversário')">
+          <span class="menu-item-emoji">🎂</span>
+          <div class="menu-item-name">Aniversário</div>
+          <div class="menu-item-price">Orçamento</div>
+        </div>
+        <div class="menu-item" onclick="solicitarEvento('Baptizado')">
+          <span class="menu-item-emoji">👶</span>
+          <div class="menu-item-name">Baptizado</div>
+          <div class="menu-item-price">Orçamento</div>
+        </div>
+        <div class="menu-item" onclick="solicitarEvento('Formatura')">
+          <span class="menu-item-emoji">🎓</span>
+          <div class="menu-item-name">Formatura</div>
+          <div class="menu-item-price">Orçamento</div>
+        </div>
+      </div>
+    </div>
+    <div class="menu-section">
+      <div class="menu-section-title">💼 Eventos corporativos</div>
+      <div class="menu-grid">
+        <div class="menu-item" onclick="solicitarEvento('Conferência')">
+          <span class="menu-item-emoji">🎤</span>
+          <div class="menu-item-name">Conferência</div>
+          <div class="menu-item-price">Orçamento</div>
+        </div>
+        <div class="menu-item" onclick="solicitarEvento('Reunião Executiva')">
+          <span class="menu-item-emoji">🤝</span>
+          <div class="menu-item-name">Reunião</div>
+          <div class="menu-item-price">Orçamento</div>
+        </div>
+        <div class="menu-item" onclick="solicitarEvento('Gala / Jantar')">
+          <span class="menu-item-emoji">🥂</span>
+          <div class="menu-item-name">Gala / Jantar</div>
+          <div class="menu-item-price">Orçamento</div>
+        </div>
+        <div class="menu-item" onclick="solicitarEvento('Workshop')">
+          <span class="menu-item-emoji">📝</span>
+          <div class="menu-item-name">Workshop</div>
+          <div class="menu-item-price">Orçamento</div>
+        </div>
+      </div>
+    </div>
+    <div class="menu-section">
+      <div class="menu-section-title">🎵 Entretenimento</div>
+      <div class="menu-grid">
+        <div class="menu-item" onclick="solicitarEvento('Noite de Música ao Vivo')">
+          <span class="menu-item-emoji">🎵</span>
+          <div class="menu-item-name">Música ao Vivo</div>
+          <div class="menu-item-price">Programação</div>
+        </div>
+        <div class="menu-item" onclick="solicitarEvento('DJ / Festa')">
+          <span class="menu-item-emoji">🎧</span>
+          <div class="menu-item-name">DJ / Festa</div>
+          <div class="menu-item-price">Orçamento</div>
+        </div>
+        <div class="menu-item" onclick="solicitarEvento('Stand-up Comedy')">
+          <span class="menu-item-emoji">🎭</span>
+          <div class="menu-item-name">Stand-up</div>
+          <div class="menu-item-price">Programação</div>
+        </div>
+        <div class="menu-item" onclick="solicitarEvento('Happy Hour')">
+          <span class="menu-item-emoji">🍹</span>
+          <div class="menu-item-name">Happy Hour</div>
+          <div class="menu-item-price">Todos os dias</div>
+        </div>
+      </div>
+    </div>
+    <button class="btn btn-ghost" onclick="voltarDeEventos()">← Voltar</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     ECRÃ 10 — CADASTRAR
+════════════════════════════════════════════════ -->
+<div class="screen" id="s-cadastrar">
+  <div class="card">
+    <div class="back-row">
+      <button class="back-btn" onclick="go('s-auth')">← Voltar</button>
+      <span class="pill pill-ok">Cadastrar</span>
+    </div>
+    <h3>Criar conta</h3>
+    <div class="info-box gold" style="margin-bottom:14px">
+      ⭐ Ganhe <strong>1 estrela</strong> ao registar um amigo!<br>
+      🎁 Novo cliente começa com <strong>50 pontos</strong> de boas-vindas.
+    </div>
+    <div class="field">
+      <label>Nome completo</label>
+      <input type="text" id="cad-nome" placeholder="Nome do cliente" autocomplete="name">
+    </div>
+    <div class="field">
+      <label>Telemóvel (+244)</label>
+      <input type="tel" id="cad-tel" placeholder="9XXXXXXXX" maxlength="9" inputmode="numeric">
+    </div>
+    <div class="field">
+      <label>Província</label>
+      <select id="cad-prov">
+        <option value="">Seleccione…</option>
+        <option>Luanda</option><option>Benguela</option><option>Huambo</option>
+        <option>Huíla</option><option>Cabinda</option><option>Kwanza Norte</option>
+        <option>Kwanza Sul</option><option>Malanje</option><option>Lunda Norte</option>
+        <option>Lunda Sul</option><option>Moxico</option><option>Bié</option>
+        <option>Kuando Kubango</option><option>Namibe</option><option>Cunene</option>
+        <option>Zaire</option><option>Uíge</option><option>Bengo</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Telemóvel de quem indicou (opcional)</label>
+      <input type="tel" id="cad-ref" placeholder="9XXXXXXXX — amigo que o referenciou" maxlength="9" inputmode="numeric">
+    </div>
+    <button class="btn btn-primary" onclick="cadastrar()">✓ Criar conta</button>
+    <button class="btn btn-ghost" onclick="go('s-auth')" style="margin-top:8px">← Voltar</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     ECRÃ 11 — SOLICITAÇÃO ENVIADA (genérico)
+════════════════════════════════════════════════ -->
+<div class="screen" id="s-solicitacao-ok">
+  <div class="card" style="text-align:center">
+    <div style="font-size:3rem;margin-bottom:12px" id="sol-emoji">✅</div>
+    <h2 id="sol-titulo">Solicitação enviada!</h2>
+    <p class="sub" id="sol-msg">A nossa equipa entrará em contacto brevemente.</p>
+    <button class="btn btn-primary" style="margin-top:16px" onclick="voltarInicio()">← Início</button>
+    <button class="btn btn-ghost" onclick="go('s-cliente-menu')" style="margin-top:8px" id="sol-btn-menu">Mais opções</button>
+  </div>
+</div>
+
+</div><!-- /wrap -->
+
+<div id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════
+//  DADOS
+// ═══════════════════════════════════════════════
+const MENU = {
+  comidas:[
+    {n:'Frango Grelhado',e:'🍗',p:3500},
+    {n:'Funge c/ Muamba',e:'🍲',p:4000},
+    {n:'Bife de Vitela',e:'🥩',p:5500},
+    {n:'Peixe Frito',e:'🐟',p:4500},
+    {n:'Churrasco Misto',e:'🍖',p:7000},
+    {n:'Salada Mista',e:'🥗',p:2000},
+    {n:'Camarão Grelhado',e:'🦐',p:8000},
+    {n:'Sopa do Dia',e:'🍜',p:1500},
+  ],
+  bebidas:[
+    {n:'Cuca (lata)',e:'🍺',p:500},
+    {n:'Cuca (600ml)',e:'🍺',p:700},
+    {n:'Água (500ml)',e:'💧',p:300},
+    {n:'Refrigerante',e:'🥤',p:500},
+    {n:'Sumo Natural',e:'🍊',p:1200},
+    {n:'Whisky',e:'🥃',p:3000},
+    {n:'Vinho (taça)',e:'🍷',p:2500},
+    {n:'Café',e:'☕',p:400},
+  ],
+  cigarros:[
+    {n:'Marlboro',e:'🚬',p:1200},
+    {n:'LM',e:'🚬',p:1000},
+    {n:'SG',e:'🚬',p:800},
+    {n:'Peter Stuyvesant',e:'🚬',p:1100},
+  ],
+  outros:[
+    {n:'Sobremesa do Dia',e:'🍮',p:1500},
+    {n:'Fruta da Época',e:'🍍',p:1200},
+    {n:'Água Tónica',e:'🫧',p:600},
+    {n:'Gelado',e:'🍦',p:1000},
+  ]
+};
+
+// ═══════════════════════════════════════════════
+//  CONFIGURAÇÃO API
+// ═══════════════════════════════════════════════
+const API_BASE = window.location.origin;
+
+// ═══════════════════════════════════════════════
+//  ESTADO DA SESSÃO
+// ═══════════════════════════════════════════════
+let session = {
+  nome:'', tel:'', prov:'',
+  isCliente:false, clienteId:null, stars:0, wallet:0, pontos:50,
+  cart:{}, payMethod:null, creditSel:0,
+  // cardápio real carregado da API
+  menuLoaded:false, menuData:{}
+};
+
+// ═══════════════════════════════════════════════
+//  UTILIDADES
+// ═══════════════════════════════════════════════
+function go(id){ document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active')); document.getElementById(id).classList.add('active'); window.scrollTo(0,0); }
+function fmt(n){ return n.toLocaleString('pt-PT')+' Kz'; }
+function toast(msg,type='info'){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.className='show '+(type||'');
+  clearTimeout(t._t); t._t=setTimeout(()=>t.className='',2800);
+}
+
+// ═══════════════════════════════════════════════
+//  ECRÃ 0 — ACESSO
+// ═══════════════════════════════════════════════
+async function submitAcesso(){
+  const nome=document.getElementById('acc-nome').value.trim();
+  const tel=document.getElementById('acc-tel').value.trim();
+  const prov=document.getElementById('acc-prov').value;
+  if(!nome){ toast('Insira o seu nome.','err'); return; }
+  if(!/^9[0-9]{8}$/.test(tel)){ toast('Telemóvel inválido (9XXXXXXXX).','err'); return; }
+  if(!prov){ toast('Seleccione a sua província.','err'); return; }
+  session.nome=nome; session.tel=tel; session.prov=prov;
+
+  // Tentar identificar cliente registado via API
+  try {
+    const r = await fetch(`${API_BASE}/api/cliente/login`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ telefone: tel })
+    });
+    if(r.ok){
+      const data = await r.json();
+      const c = data.cliente;
+      session.isCliente = true;
+      session.clienteId = c.id;
+      session.stars = c.estrelas || 0;
+      session.wallet = parseFloat(c.nukcoin_saldo) || 0;
+      session.pontos = c.pontos || 50;
+      session.nome = c.nome; // usa nome do BD
+    }
+    // 404 = visitante, tudo bem
+  } catch(e) {
+    // API indisponível — modo offline (demo)
+    console.warn('API indisponível, modo demo');
+  }
+
+  // Actualizar ecrã auth
+  document.getElementById('auth-greeting').textContent='Seja bem-vindo'+(session.isCliente?', '+session.nome.split(' ')[0]+'!':'!');
+  document.getElementById('auth-name-sub').textContent=session.isCliente?'Como pretende prosseguir?':'Seleccione uma opção abaixo.';
+  if(session.isCliente){ renderStars(session.stars); document.getElementById('stars-bar').style.display='flex'; }
+  else { document.getElementById('stars-bar').style.display='none'; }
+  go('s-auth');
+}
+
+function renderStars(n){
+  const bar=document.getElementById('stars-bar');
+  bar.style.display='flex';
+  const stars=bar.querySelectorAll('.star');
+  stars.forEach((s,i)=>s.classList.toggle('on',i<n));
+  document.getElementById('stars-desc').textContent=n>=5?'🎁 Tem 20% de desconto disponível!':n+' / 5 para 20% desconto';
+}
+
+// ═══════════════════════════════════════════════
+//  ECRÃ 1 — AUTH / SAIR
+// ═══════════════════════════════════════════════
+function sair(){
+  // Se veio do formulário de acesso, volta; caso contrário recomeça
+  go('s-acesso');
+  session={nome:'',tel:'',prov:'',isCliente:false,stars:0,wallet:0,pontos:50,cart:{},payMethod:null,creditSel:0};
+}
+
+// ═══════════════════════════════════════════════
+//  ECRÃ 3 — PERFIL TILE
+// ═══════════════════════════════════════════════
+function loadClienteMenu(){
+  document.getElementById('cli-nome-tile').textContent=session.nome||'—';
+  document.getElementById('cli-tel-tile').textContent='+244 '+session.tel;
+  document.getElementById('cli-avatar').textContent=(session.nome||'?')[0].toUpperCase();
+  document.getElementById('cli-wallet-pill').textContent='💜 '+fmt(session.wallet);
+  document.getElementById('cli-stars-pill').textContent='⭐ '+session.stars+'/5';
+  go('s-cliente-menu');
+}
+
+// ═══════════════════════════════════════════════
+//  ECRÃ 4 — NUK-COIN
+// ═══════════════════════════════════════════════
+function loadNukCoin(){
+  document.getElementById('wlt-saldo').innerHTML=fmt(session.wallet).replace(' Kz','')+'<span> Kz</span>';
+  session.creditSel=0;
+  document.querySelectorAll('.credit-opt').forEach(o=>o.classList.remove('selected'));
+  document.getElementById('credit-confirm').style.display='none';
+  go('s-nukcoin');
+}
+function selectCredit(el,val){
+  session.creditSel=val;
+  document.querySelectorAll('.credit-opt').forEach(o=>o.classList.remove('selected'));
+  el.classList.add('selected');
+  document.getElementById('credit-confirm').style.display='block';
+  document.getElementById('credit-chosen').textContent='Carregar '+fmt(val)+' na carteira Nuk-Coin.';
+}
+async function confirmarCredito(){
+  if(!session.creditSel) return;
+  if(!session.clienteId){ toast('Necessário ser cliente registado.','err'); return; }
+  try {
+    const r = await fetch(`${API_BASE}/api/cliente/nukcoin/carregar`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ cliente_id: session.clienteId, valor: session.creditSel })
+    });
+    const data = await r.json();
+    if(!r.ok){ toast(data.erro||'Erro ao carregar.','err'); return; }
+    session.wallet = parseFloat(data.saldo_atual);
+    document.getElementById('wlt-saldo').innerHTML=fmt(session.wallet).replace(' Kz','')+'<span> Kz</span>';
+    const hist=document.getElementById('wlt-hist');
+    const li=document.createElement('div'); li.className='hist-item';
+    li.innerHTML='<div><div style="font-weight:600">Carregamento</div><div class="hist-date">Agora</div></div><div class="hist-val">+'+fmt(session.creditSel)+'</div>';
+    hist.prepend(li);
+    document.getElementById('cli-wallet-pill').textContent='💜 '+fmt(session.wallet);
+    document.getElementById('credit-confirm').style.display='none';
+    document.querySelectorAll('.credit-opt').forEach(o=>o.classList.remove('selected'));
+    toast('✓ Carteira carregada com '+fmt(session.creditSel),'ok');
+    session.creditSel=0;
+  } catch(e) {
+    // Fallback offline
+    session.wallet+=session.creditSel;
+    document.getElementById('wlt-saldo').innerHTML=fmt(session.wallet).replace(' Kz','')+'<span> Kz</span>';
+    document.getElementById('cli-wallet-pill').textContent='💜 '+fmt(session.wallet);
+    document.getElementById('credit-confirm').style.display='none';
+    document.querySelectorAll('.credit-opt').forEach(o=>o.classList.remove('selected'));
+    toast('✓ Carteira carregada (demo)','ok');
+    session.creditSel=0;
+  }
+}
+
+// ═══════════════════════════════════════════════
+//  ECRÃ 5 — RESTAURANTE
+// ═══════════════════════════════════════════════
+// Mapeamento categoria → emoji e grid
+const CAT_MAP={
+  'Comidas':{e:'🍽️',grid:'grid-comidas'},
+  'Bebidas':{e:'🥤',grid:'grid-bebidas'},
+  'Cigarros':{e:'🚬',grid:'grid-cigarros'},
+  'Outros':{e:'📦',grid:'grid-outros'},
+};
+function emojiForCat(cat){
+  const k=Object.keys(CAT_MAP).find(k=>cat&&cat.toLowerCase().includes(k.toLowerCase()));
+  return k?CAT_MAP[k].e:'📦';
+}
+function gridForCat(cat){
+  const k=Object.keys(CAT_MAP).find(k=>cat&&cat.toLowerCase().includes(k.toLowerCase()));
+  return k?CAT_MAP[k].grid:'grid-outros';
+}
+
+function buildMenu(){
+  // Limpar todos os grids
+  ['grid-comidas','grid-bebidas','grid-cigarros','grid-outros'].forEach(id=>{
+    document.getElementById(id).innerHTML='';
+  });
+  // Usar menuData (API) ou MENU (fallback)
+  let produtos=[];
+  if(session.menuLoaded && session.menuData.produtos && session.menuData.produtos.length>0){
+    produtos=session.menuData.produtos;
+  } else {
+    // Converter MENU estático para formato API
+    ['comidas','bebidas','cigarros','outros'].forEach(cat=>{
+      (MENU[cat]||[]).forEach(item=>produtos.push({id:null,nome:item.n,preco:item.p,categoria:cat.charAt(0).toUpperCase()+cat.slice(1),_emoji:item.e}));
+    });
+  }
+  produtos.forEach(item=>{
+    const gid=gridForCat(item.categoria);
+    const g=document.getElementById(gid); if(!g) return;
+    const d=document.createElement('div'); d.className='menu-item';
+    const qty=session.cart[item.nome]||0; if(qty>0) d.classList.add('in-cart');
+    const em=item._emoji||emojiForCat(item.categoria);
+    d.innerHTML='<span class="menu-item-emoji">'+em+'</span><div class="menu-item-name">'+item.nome+'</div><div class="menu-item-price">'+fmt(parseFloat(item.preco))+'</div>';
+    if(qty>0) d.innerHTML+='<div style="font-size:.65rem;color:var(--ok);margin-top:3px">No carrinho: '+qty+'</div>';
+    d.onclick=()=>{ addToCart({n:item.nome,p:parseFloat(item.preco),e:em,id:item.id}); };
+    g.appendChild(d);
+  });
+}
+function addToCart(item){
+  session.cart[item.n]=(session.cart[item.n]||0)+1;
+  session.cart[item.n+'_price']=item.p;
+  if(item.id) session.cart[item.n+'_id']=item.id;
+  updateCartBadge(); buildMenu();
+  toast(item.e+' '+item.n+' adicionado','info');
+}
+
+async function loadRestaurante(){
+  // Carregar cardápio da API se ainda não carregado
+  if(!session.menuLoaded){
+    try {
+      const r=await fetch(`${API_BASE}/api/cliente/cardapio`);
+      if(r.ok){
+        session.menuData=await r.json();
+        session.menuLoaded=true;
+      }
+    } catch(e){ console.warn('Cardápio offline, usando demo'); }
+  }
+  buildMenu(); updateCartBadge();
+}
+function updateCartBadge(){
+  const total=Object.entries(session.cart).filter(([k])=>!k.endsWith('_price')).reduce((s,[,v])=>s+v,0);
+  document.getElementById('cart-badge').textContent=total;
+  document.getElementById('cart-badge-btn').textContent=total;
+  document.getElementById('cart-count').textContent=total;
+}
+function voltarDeRestaurante(){ session.isCliente?go('s-cliente-menu'):go('s-convidado'); }
+
+// ═══════════════════════════════════════════════
+//  ECRÃ 6 — CARRINHO
+// ═══════════════════════════════════════════════
+function loadCarrinho(){
+  const items=Object.entries(session.cart).filter(([k])=>!k.endsWith('_price'));
+  const ul=document.getElementById('cart-list');
+  ul.innerHTML='';
+  let total=0;
+  if(items.length===0){
+    ul.innerHTML='<li style="color:var(--muted);font-size:.82rem;padding:12px 0;text-align:center">Carrinho vazio</li>';
+  } else {
+    items.forEach(([name,qty])=>{
+      const price=session.cart[name+'_price']||0;
+      total+=price*qty;
+      const li=document.createElement('li'); li.className='cart-item';
+      li.innerHTML='<span class="cart-item-name">'+name+'</span><span class="cart-item-qty"><button class="qty-btn" onclick="changeQty(\''+name+'\',-1)">−</button><span>'+qty+'</span><button class="qty-btn" onclick="changeQty(\''+name+'\',1)">+</button></span><span class="cart-item-price">'+fmt(price*qty)+'</span>';
+      ul.appendChild(li);
+    });
+  }
+  // Desconto estrelas
+  let desc=false;
+  if(session.stars>=5 && total<=25000){ desc=true; total=Math.round(total*0.8); }
+  document.getElementById('disc-info').style.display=desc?'block':'none';
+  document.getElementById('cart-total').textContent=fmt(total);
+  document.getElementById('pay-coin-sub').textContent='Saldo: '+fmt(session.wallet);
+  document.getElementById('coin-pay-info').style.display='none';
+  session.cartTotal=total;
+  go('s-carrinho');
+}
+function changeQty(name,delta){
+  session.cart[name]=Math.max(0,(session.cart[name]||0)+delta);
+  if(session.cart[name]===0){ delete session.cart[name]; delete session.cart[name+'_price']; }
+  updateCartBadge(); loadCarrinho();
+}
+function selectPay(el,method){
+  session.payMethod=method;
+  document.querySelectorAll('.pay-opt').forEach(o=>o.classList.remove('selected'));
+  el.classList.add('selected');
+  document.getElementById('coin-pay-info').style.display=method==='coin'?'block':'none';
+}
+async function confirmarPedido(){
+  const items=Object.entries(session.cart).filter(([k])=>!k.endsWith('_price') && !k.endsWith('_id'));
+  if(items.length===0){ toast('Adicione produtos ao carrinho.','err'); return; }
+  if(!session.payMethod){ toast('Seleccione a forma de pagamento.','err'); return; }
+  if(session.payMethod==='coin' && session.wallet<session.cartTotal){ toast('Saldo insuficiente. Carregue a carteira.','err'); return; }
+
+  // Mapear método para o formato da API
+  const metodosMap={coin:'NUKCOIN',cash:'CASH',tpa:'TPA',express:'EXPRESS',transfer:'TRANSFERENCIA'};
+  const metodoApi=metodosMap[session.payMethod]||'CASH';
+
+  // Montar itens para API
+  const itensApi=items.map(([nome,qty])=>{
+    const pid=session.cart[nome+'_id'];
+    return pid?{produto_id:pid,quantidade:qty}:null;
+  }).filter(Boolean);
+
+  let earnStar=false, totalFinal=session.cartTotal, novoSaldo=session.wallet;
+
+  if(itensApi.length>0 && session.clienteId){
+    // Enviar pedido real à API
+    try {
+      const r=await fetch(`${API_BASE}/api/cliente/pedido-restaurante`,{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          itens:itensApi,
+          cliente_id:session.clienteId,
+          metodo_pagamento:metodoApi,
+          observacoes:null
+        })
+      });
+      const data=await r.json();
+      if(!r.ok){ toast(data.erro||'Erro ao enviar pedido.','err'); return; }
+      earnStar=data.estrela_ganha||false;
+      totalFinal=parseFloat(data.total_final)||session.cartTotal;
+      if(data.nukcoin_saldo_novo!=null) novoSaldo=parseFloat(data.nukcoin_saldo_novo);
+    } catch(e){
+      console.warn('API indisponível — modo demo');
+      // Continuar offline: calcular localmente
+      if(session.payMethod==='coin') novoSaldo=session.wallet-session.cartTotal;
+      earnStar=session.cartTotal>=25000;
+    }
+  } else {
+    // Convidado ou produtos sem ID — modo demo
+    if(session.payMethod==='coin') novoSaldo=session.wallet-session.cartTotal;
+    earnStar=session.cartTotal>=25000;
+  }
+
+  // Actualizar estado local
+  if(session.payMethod==='coin') session.wallet=novoSaldo;
+  if(earnStar){ session.stars=Math.min(5,session.stars+1); renderStars(session.stars); }
+  session.cart={}; session.payMethod=null; updateCartBadge(); buildMenu();
+
+  // Actualizar pilulas no menu cliente
+  if(session.isCliente){
+    document.getElementById('cli-wallet-pill').textContent='💜 '+fmt(session.wallet);
+    document.getElementById('cli-stars-pill').textContent='⭐ '+session.stars+'/5';
+  }
+
+  // Ecrã confirmação
+  const nomeMetodo={coin:'Nuk-Coin',cash:'Dinheiro',tpa:'TPA',express:'Express',transfer:'Transferência'}[session.payMethod||'cash'];
+  document.getElementById('pedido-ok-msg').textContent='Pedido confirmado. Pagamento: '+(nomeMetodo||metodoApi)+' — '+fmt(totalFinal);
+  document.getElementById('star-earned').style.display=earnStar?'block':'none';
+  document.getElementById('disc-earned').style.display=(session.stars>=5)?'block':'none';
+  go('s-pedido-ok');
+}
+
+// ═══════════════════════════════════════════════
+//  ECRÃ 8 — SERVIÇOS
+// ═══════════════════════════════════════════════
+function voltarDeServicos(){ session.isCliente?go('s-cliente-menu'):go('s-convidado'); }
+// Mapeamento serviço → fracao API
+const FRACAO_MAP={'2 Horas':'DUAS_HORAS','Pernoite':'PERNOITE','Diária':'DIARIA','Semana':'DIARIA'};
+async function solicitarServico(tipo,preco){
+  const fracao=FRACAO_MAP[tipo]||'DIARIA';
+  try {
+    await fetch(`${API_BASE}/api/cliente/pedido-hospedagem`,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        fracao, quantidade:1,
+        nome_hospede:session.nome||null,
+        telefone:session.tel||null,
+        cliente_id:session.clienteId||null,
+        observacoes:tipo
+      })
+    });
+  } catch(e){ /* continuar offline */ }
+  document.getElementById('sol-emoji').textContent='🛎️';
+  document.getElementById('sol-titulo').textContent='Solicitação enviada!';
+  document.getElementById('sol-msg').textContent=tipo+' ('+preco+') — a nossa equipa entrará em contacto para confirmar.';
+  document.getElementById('sol-btn-menu').style.display=session.isCliente?'block':'none';
+  document.getElementById('sol-btn-menu').onclick=()=>session.isCliente?loadClienteMenu():go('s-convidado');
+  go('s-solicitacao-ok');
+}
+
+// ═══════════════════════════════════════════════
+//  ECRÃ 9 — EVENTOS
+// ═══════════════════════════════════════════════
+function voltarDeEventos(){ session.isCliente?go('s-cliente-menu'):go('s-convidado'); }
+function solicitarEvento(tipo){
+  document.getElementById('sol-emoji').textContent='🎉';
+  document.getElementById('sol-titulo').textContent='Evento solicitado!';
+  document.getElementById('sol-msg').textContent=tipo+' — receberá um orçamento personalizado em breve. Obrigado!';
+  document.getElementById('sol-btn-menu').style.display=session.isCliente?'block':'none';
+  go('s-solicitacao-ok');
+}
+
+// ═══════════════════════════════════════════════
+//  ECRÃ 10 — CADASTRAR
+// ═══════════════════════════════════════════════
+async function cadastrar(){
+  const nome=document.getElementById('cad-nome').value.trim();
+  const tel=document.getElementById('cad-tel').value.trim();
+  const prov=document.getElementById('cad-prov').value;
+  const ref=document.getElementById('cad-ref').value.trim();
+  if(!nome){ toast('Insira o nome.','err'); return; }
+  if(!/^9[0-9]{8}$/.test(tel)){ toast('Telemóvel inválido (9XXXXXXXX).','err'); return; }
+  if(!prov){ toast('Seleccione a província.','err'); return; }
+
+  try {
+    const r=await fetch(`${API_BASE}/api/cliente/cadastrar`,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({nome,telefone:tel,provincia:prov,referido_por_tel:ref||null})
+    });
+    const data=await r.json();
+    if(!r.ok){ toast(data.erro||'Erro no cadastro.','err'); return; }
+    const c=data.cliente;
+    session.nome=c.nome; session.tel=c.telefone; session.prov=c.provincia||prov;
+    session.isCliente=true; session.clienteId=c.id;
+    session.stars=c.estrelas||0; session.wallet=parseFloat(c.nukcoin_saldo)||0;
+    session.pontos=c.pontos||50;
+    if(ref && /^9[0-9]{8}$/.test(ref)){
+      toast('⭐ O seu amigo (+244 '+ref+') ganhou uma estrela!','info');
+    }
+  } catch(e){
+    // Fallback offline
+    session.nome=nome; session.tel=tel; session.prov=prov;
+    session.isCliente=true; session.stars=0; session.wallet=0; session.pontos=50;
+    if(ref && /^9[0-9]{8}$/.test(ref)){
+      toast('⭐ O seu amigo (+244 '+ref+') ganhou uma estrela! (demo)','info');
+    }
+  }
+
+  document.getElementById('sol-emoji').textContent='🎉';
+  document.getElementById('sol-titulo').textContent='Cadastro concluído!';
+  document.getElementById('sol-msg').textContent='Bem-vindo, '+session.nome.split(' ')[0]+'! Recebeu 50 pontos de boas-vindas. Pode agora aceder a todos os serviços.';
+  document.getElementById('sol-btn-menu').style.display='block';
+  document.getElementById('sol-btn-menu').onclick=()=>loadClienteMenu();
+  go('s-solicitacao-ok');
+}
+
+// ═══════════════════════════════════════════════
+//  NAVEGAÇÃO CLIENTE (botão Cliente no auth)
+// ═══════════════════════════════════════════════
+document.querySelector('#s-auth .btn-ok').onclick=function(){
+  if(!session.nome){ toast('Identifique-se primeiro no formulário.','err'); go('s-acesso'); return; }
+  if(!session.isCliente){ go('s-cadastrar'); return; }
+  loadClienteMenu();
+};
+
+// Botão Nuk-Coin no menu cliente
+document.querySelector('#s-cliente-menu .btn-coin').onclick=loadNukCoin;
+
+// Botão Restaurante nos dois menus
+document.querySelectorAll('#s-convidado .btn-primary, #s-cliente-menu .btn-primary').forEach(b=>{
+  b.onclick=()=>{ loadRestaurante(); go('s-restaurante'); };
+});
+
+// Ver carrinho
+document.querySelector('#s-restaurante button[onclick="go(\'s-carrinho\')"]').onclick=loadCarrinho;
+document.querySelector('#s-restaurante .btn-primary[onclick]').onclick=loadCarrinho;
+
+// ═══════════════════════════════════════════════
+//  HELPERS
+// ═══════════════════════════════════════════════
+function voltarInicio(){ session.isCliente?loadClienteMenu():go('s-auth'); }
+</script>
+</body>
+</html>

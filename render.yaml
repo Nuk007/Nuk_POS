@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: nukpos
+    env: node
+    buildCommand: npm install
+    startCommand: node server/app.js
+    healthCheckPath: /api/health
+    disk:
+      name: nukpos-data
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: PORT
+        value: 10000
+      - key: DATABASE_URL
+        fromDatabase:
+          name: nukpos-db
+          property: connectionString
+      - key: ALLOWED_ORIGINS
+        value: https://nukpos.onrender.com
+      - key: BASE_URL
+        value: https://nukpos.onrender.com
+
+databases:
+  - name: nukpos-db
+    databaseName: nukpos
+    user: nukpos_user
+    plan: free

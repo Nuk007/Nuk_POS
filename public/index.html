@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nuk_POS</title>
+<link rel="stylesheet" href="/css/nukpos.css">
+</head>
+<body>
+
+<!-- ── LOGIN ─────────────────────────────────────────── -->
+<div id="tela-login" class="tela-login">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="logo-icon">🍖</div>
+      <h1>Nuk_POS</h1>
+      <p>Sistema de Gestão Integrado</p>
+    </div>
+    <form id="form-login">
+      <div class="campo">
+        <label>Email</label>
+        <input type="email" id="login-email" placeholder="email@nukpos.ao" autocomplete="username" required>
+      </div>
+      <div class="campo">
+        <label>Senha</label>
+        <input type="password" id="login-senha" placeholder="••••••••" autocomplete="current-password" required>
+      </div>
+      <button type="submit" class="btn-primario btn-bloco" id="btn-entrar">Entrar</button>
+      <div id="login-erro" class="erro-msg" style="display:none"></div>
+    </form>
+  </div>
+</div>
+
+<!-- ── APP PRINCIPAL ──────────────────────────────────── -->
+<div id="app" style="display:none">
+
+  <!-- Sidebar -->
+  <aside id="sidebar" class="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-logo">🍖 <span>Nuk_POS</span></div>
+      <button class="btn-fechar-sidebar" onclick="toggleSidebar()">✕</button>
+    </div>
+    <nav class="sidebar-nav">
+      <button class="nav-item active" data-modulo="dashboard" onclick="carregarModulo('dashboard')">
+        <span class="nav-icon">📊</span><span>Dashboard</span>
+      </button>
+      <button class="nav-item" data-modulo="pedidos" onclick="carregarModulo('pedidos')">
+        <span class="nav-icon">🍽️</span><span>Pedidos</span>
+        <span id="badge-pedidos" class="badge" style="display:none">0</span>
+      </button>
+      <button class="nav-item" data-modulo="mesas" onclick="carregarModulo('mesas')">
+        <span class="nav-icon">🪑</span><span>Mesas</span>
+      </button>
+      <button class="nav-item" data-modulo="quartos" onclick="carregarModulo('quartos')">
+        <span class="nav-icon">🛏️</span><span>Quartos</span>
+      </button>
+      <button class="nav-item" data-modulo="produtos" onclick="carregarModulo('produtos')">
+        <span class="nav-icon">📋</span><span>Menu / Produtos</span>
+      </button>
+      <button class="nav-item" data-modulo="stock" onclick="carregarModulo('stock')">
+        <span class="nav-icon">📦</span><span>Stock</span>
+        <span id="badge-stock" class="badge badge-aviso" style="display:none">!</span>
+      </button>
+      <button class="nav-item" data-modulo="financeiro" onclick="carregarModulo('financeiro')">
+        <span class="nav-icon">💰</span><span>Financeiro</span>
+      </button>
+      <button class="nav-item" data-modulo="clientes" onclick="carregarModulo('clientes')">
+        <span class="nav-icon">👥</span><span>Clientes</span>
+      </button>
+      <button class="nav-item admin-only" data-modulo="funcionarios" onclick="carregarModulo('funcionarios')">
+        <span class="nav-icon">👨‍💼</span><span>Funcionários</span>
+      </button>
+      <button class="nav-item admin-only" data-modulo="configuracoes" onclick="carregarModulo('configuracoes')">
+        <span class="nav-icon">⚙️</span><span>Configurações</span>
+      </button>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="utilizador-info">
+        <div class="utilizador-avatar" id="sidebar-avatar">A</div>
+        <div>
+          <div id="sidebar-nome">---</div>
+          <div id="sidebar-cargo" class="texto-pequeno muted">---</div>
+        </div>
+      </div>
+      <button class="btn-logout" onclick="logout()" title="Sair">⏻</button>
+    </div>
+  </aside>
+
+  <!-- Overlay mobile -->
+  <div id="sidebar-overlay" class="sidebar-overlay" onclick="toggleSidebar()"></div>
+
+  <!-- Conteúdo principal -->
+  <main class="main-content">
+    <header class="topbar">
+      <button class="btn-menu" onclick="toggleSidebar()">☰</button>
+      <h2 id="topbar-titulo">Dashboard</h2>
+      <div class="topbar-direita">
+        <span id="ws-status" class="ws-badge ws-desconectado" title="WebSocket">●</span>
+        <span id="hora-atual" class="hora-atual"></span>
+      </div>
+    </header>
+    <div id="main-content" class="content-area">
+      <div class="loading-spinner">A carregar...</div>
+    </div>
+  </main>
+</div>
+
+<!-- ── MODAIS GLOBAIS ──────────────────────────────────── -->
+<div id="modal-overlay" class="modal-overlay" style="display:none" onclick="fecharModal()">
+  <div id="modal-box" class="modal-box" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3 id="modal-titulo">Título</h3>
+      <button onclick="fecharModal()" class="btn-fechar-modal">✕</button>
+    </div>
+    <div id="modal-corpo"></div>
+  </div>
+</div>
+
+<div id="toast-container" class="toast-container"></div>
+
+<script src="https://cdn.socket.io/4.6.2/socket.io.min.js"></script>
+<script src="/js/nukpos.js"></script>
+<script src="/js/modulos.js"></script>
+</body>
+</html>
