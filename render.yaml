@@ -24,6 +24,16 @@ services:
         value: https://nukpos.onrender.com
       - key: BASE_URL
         value: https://nukpos.onrender.com
+      # ── SaaS / Multi-tenant ───────────────────────────────────
+      - key: SUPERADMIN_KEY
+        generateValue: true          # Render gera automaticamente; guarda o valor nos Settings
+      # ── Twilio WhatsApp API ───────────────────────────────────
+      - key: TWILIO_ACCOUNT_SID
+        sync: false                  # Definir manualmente em Render > Environment
+      - key: TWILIO_AUTH_TOKEN
+        sync: false                  # Definir manualmente em Render > Environment
+      - key: TWILIO_WHATSAPP_FROM
+        value: whatsapp:+14155238886 # Número sandbox por defeito; substituir pelo número aprovado
 
 databases:
   - name: nukpos-db

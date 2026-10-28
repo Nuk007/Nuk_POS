@@ -1,6 +1,6 @@
 // Nuk_POS — Servidor Principal
 // Stack: Node.js + Express + PostgreSQL + Socket.io
-// Arquitectura igual ao ATC46/AviationMoney
+// SaaS multi-tenant: cada empresa tem tenant_id em todas as operações
 
 require('dotenv').config();
 const express = require('express');
@@ -15,6 +15,7 @@ const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 
 const { pool, initDB } = require('./db');
+const { router: saasRouter, verificarLicencaTenant, resolverTenant, resolverTenantPublico } = require('./saas');
 
 const app = express();
 const server = http.createServer(app);
@@ -103,6 +104,8 @@ function authMiddleware(req, res, next) {
   if (!auth || !auth.startsWith('Bearer ')) return res.status(401).json({ erro: 'Não autenticado' });
   try {
     req.user = jwt.verify(auth.split(' ')[1], JWT_SECRET_EFFECTIVE);
+    // Injectar tenantId no request para isolamento multi-tenant
+    req.tenantId = req.user.tenantId || null;
     next();
   } catch {
     res.status(401).json({ erro: 'Token inválido ou expirado' });
@@ -127,11 +130,22 @@ function broadcast(evento, dados) {
 // ROTAS API
 // ════════════════════════════════════════════════════════════
 
+// ── SaaS: Superadmin + Activação ─────────────────────────────
+// /api/superadmin/* — gestão de tenants e licenças (chave SUPERADMIN_KEY)
+// /api/activate/:key — página de activação (público)
+app.use('/api/superadmin', saasRouter);
+app.use('/api/activate',   saasRouter);
+
+// ── Rota de activação HTML (redireciona para página) ─────────
+app.get('/activate/:key', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'activate.html'));
+});
+
 // ── Health ───────────────────────────────────────────────────
 app.get('/api/health', async (req, res) => {
   try {
     await pool.query('SELECT 1');
-    res.json({ status: 'ok', timestamp: new Date().toISOString(), versao: '1.0.0' });
+    res.json({ status: 'ok', timestamp: new Date().toISOString(), versao: '2.0.0', saas: true });
   } catch {
     res.status(503).json({ status: 'erro', db: 'indisponível' });
   }
@@ -139,23 +153,76 @@ app.get('/api/health', async (req, res) => {
 
 // ── Auth ─────────────────────────────────────────────────────
 app.post('/api/auth/login', loginLimiter, async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, tenant_slug } = req.body;
   if (!email || !password) return res.status(400).json({ erro: 'Email e senha são obrigatórios' });
 
-  const r = await pool.query(
-    `SELECT id, nome, email, password_hash, nivel_acesso, cargo, ativo FROM funcionarios WHERE email = $1 LIMIT 1`,
-    [email.toLowerCase()]
-  );
+  // Multi-tenant: procurar funcionário no tenant correcto
+  // Se tenant_slug for fornecido, filtrar por tenant; caso contrário aceita qualquer (modo demo/dev)
+  let query, params;
+  if (tenant_slug) {
+    query = `
+      SELECT f.id, f.nome, f.email, f.password_hash, f.nivel_acesso, f.cargo, f.ativo,
+             f.tenant_id, t.slug AS tenant_slug, t.nome AS tenant_nome, t.estado AS tenant_estado
+      FROM funcionarios f
+      JOIN tenants t ON t.id = f.tenant_id
+      WHERE f.email = $1 AND t.slug = $2
+      LIMIT 1
+    `;
+    params = [email.toLowerCase(), tenant_slug];
+  } else {
+    query = `
+      SELECT f.id, f.nome, f.email, f.password_hash, f.nivel_acesso, f.cargo, f.ativo,
+             f.tenant_id, t.slug AS tenant_slug, t.nome AS tenant_nome, t.estado AS tenant_estado
+      FROM funcionarios f
+      LEFT JOIN tenants t ON t.id = f.tenant_id
+      WHERE f.email = $1
+      LIMIT 1
+    `;
+    params = [email.toLowerCase()];
+  }
+
+  const r = await pool.query(query, params);
   const func = r.rows[0];
   if (!func || !func.ativo) return res.status(401).json({ erro: 'Credenciais inválidas' });
+
+  // Verificar estado do tenant
+  if (func.tenant_estado && !['ACTIVA'].includes(func.tenant_estado)) {
+    return res.status(403).json({
+      erro: `Conta da empresa ${func.tenant_estado === 'SUSPENSA' ? 'suspensa' : 'inactiva'}. Contacte o suporte.`,
+      codigo: `TENANT_${func.tenant_estado}`,
+    });
+  }
 
   const ok = await bcrypt.compare(password, func.password_hash);
   if (!ok) return res.status(401).json({ erro: 'Credenciais inválidas' });
 
   await pool.query(`UPDATE funcionarios SET ultimo_acesso = NOW() WHERE id = $1`, [func.id]);
 
-  const token = gerarToken({ id: func.id, nome: func.nome, email: func.email, nivel_acesso: func.nivel_acesso, cargo: func.cargo });
-  res.json({ token, utilizador: { id: func.id, nome: func.nome, email: func.email, nivel_acesso: func.nivel_acesso, cargo: func.cargo } });
+  const payload = {
+    id: func.id,
+    nome: func.nome,
+    email: func.email,
+    nivel_acesso: func.nivel_acesso,
+    cargo: func.cargo,
+    tenantId: func.tenant_id,       // ← injectado no token para multi-tenant
+    tenantSlug: func.tenant_slug,
+    tenantNome: func.tenant_nome,
+  };
+
+  const token = gerarToken(payload);
+  res.json({
+    token,
+    utilizador: {
+      id: func.id,
+      nome: func.nome,
+      email: func.email,
+      nivel_acesso: func.nivel_acesso,
+      cargo: func.cargo,
+      tenant_id: func.tenant_id,
+      tenant_slug: func.tenant_slug,
+      tenant_nome: func.tenant_nome,
+    },
+  });
 });
 
 app.get('/api/auth/me', authMiddleware, async (req, res) => {
@@ -169,9 +236,13 @@ app.get('/api/auth/me', authMiddleware, async (req, res) => {
 
 // ── Funcionários ─────────────────────────────────────────────
 app.get('/api/funcionarios', authMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
   const r = await pool.query(
     `SELECT id, nome, email, cargo, nivel_acesso, salario, media_avaliacao, total_avaliacoes, ativo, ultimo_acesso
-     FROM funcionarios ORDER BY nome`
+     FROM funcionarios
+     WHERE ($1::uuid IS NULL OR tenant_id = $1)
+     ORDER BY nome`,
+    [tenantId || null]
   );
   res.json(r.rows);
 });
@@ -180,11 +251,12 @@ app.post('/api/funcionarios', authMiddleware, requerNivel(['ADMIN', 'GERENTE']),
   const { nome, email, password, cargo, nivel_acesso, salario } = req.body;
   if (!nome || !email || !password) return res.status(400).json({ erro: 'Nome, email e senha são obrigatórios' });
   const hash = await bcrypt.hash(password, 12);
+  const tenantId = req.tenantId;
   try {
     const r = await pool.query(
-      `INSERT INTO funcionarios (nome, email, password_hash, cargo, nivel_acesso, salario)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, nome, email, cargo, nivel_acesso`,
-      [nome, email.toLowerCase(), hash, cargo || null, nivel_acesso || 'OPERADOR', salario || 0]
+      `INSERT INTO funcionarios (tenant_id, nome, email, password_hash, cargo, nivel_acesso, salario)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, nome, email, cargo, nivel_acesso`,
+      [tenantId, nome, email.toLowerCase(), hash, cargo || null, nivel_acesso || 'OPERADOR', salario || 0]
     );
     res.status(201).json(r.rows[0]);
   } catch (e) {
@@ -224,10 +296,14 @@ app.put('/api/funcionarios/:id', authMiddleware, validarUUID('id'), requerNivel(
 
 // ── Mesas ────────────────────────────────────────────────────
 app.get('/api/mesas', authMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
   const r = await pool.query(
     `SELECT m.*,
       (SELECT COUNT(*) FROM pedidos p WHERE p.mesa_id = m.id AND p.status NOT IN ('FECHADO','CANCELADO')) as pedidos_activos
-     FROM mesas m ORDER BY m.zona, m.numero`
+     FROM mesas m
+     WHERE ($1::uuid IS NULL OR m.tenant_id = $1)
+     ORDER BY m.zona, m.numero`,
+    [tenantId || null]
   );
   res.json(r.rows);
 });
@@ -236,9 +312,11 @@ app.patch('/api/mesas/:id/status', authMiddleware, validarUUID('id'), async (req
   const STATUSES_VALIDOS = ['LIVRE','OCUPADA','RESERVADA','LIMPEZA','MANUTENCAO'];
   const { status } = req.body;
   if (!STATUSES_VALIDOS.includes(status)) return res.status(400).json({ erro: 'Status inválido' });
+  const tenantId = req.tenantId;
   const r = await pool.query(
-    `UPDATE mesas SET status=$1, ultima_atividade=NOW() WHERE id=$2 RETURNING *`,
-    [status, req.params.id]
+    `UPDATE mesas SET status=$1, ultima_atividade=NOW()
+     WHERE id=$2 AND ($3::uuid IS NULL OR tenant_id = $3) RETURNING *`,
+    [status, req.params.id, tenantId || null]
   );
   if (!r.rows[0]) return res.status(404).json({ erro: 'Mesa não encontrada' });
   broadcast('mesa_atualizada', r.rows[0]);
@@ -248,8 +326,9 @@ app.patch('/api/mesas/:id/status', authMiddleware, validarUUID('id'), async (req
 // ── Produtos ─────────────────────────────────────────────────
 app.get('/api/produtos', authMiddleware, async (req, res) => {
   const { categoria, disponivel } = req.query;
-  let q = `SELECT * FROM produtos WHERE ativo = true`;
-  const vals = [];
+  const tenantId = req.tenantId;
+  let q = `SELECT * FROM produtos WHERE ativo = true AND ($1::uuid IS NULL OR tenant_id = $1)`;
+  const vals = [tenantId || null];
   if (categoria) { q += ` AND categoria = $${vals.length + 1}`; vals.push(categoria); }
   if (disponivel !== undefined) { q += ` AND disponivel = $${vals.length + 1}`; vals.push(disponivel === 'true'); }
   q += ` ORDER BY categoria, nome`;
@@ -260,20 +339,22 @@ app.get('/api/produtos', authMiddleware, async (req, res) => {
 app.post('/api/produtos', authMiddleware, requerNivel(['ADMIN', 'GERENTE']), async (req, res) => {
   const { nome, descricao, categoria, preco, disponivel } = req.body;
   if (!nome || !categoria || !preco) return res.status(400).json({ erro: 'Nome, categoria e preço são obrigatórios' });
+  const tenantId = req.tenantId;
   const r = await pool.query(
-    `INSERT INTO produtos (nome, descricao, categoria, preco, disponivel) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-    [nome, descricao || null, categoria, preco, disponivel !== false]
+    `INSERT INTO produtos (tenant_id, nome, descricao, categoria, preco, disponivel) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+    [tenantId, nome, descricao || null, categoria, preco, disponivel !== false]
   );
   res.status(201).json(r.rows[0]);
 });
 
 app.put('/api/produtos/:id', authMiddleware, validarUUID('id'), requerNivel(['ADMIN', 'GERENTE']), async (req, res) => {
   const { nome, descricao, categoria, preco, disponivel, ativo } = req.body;
+  const tenantId = req.tenantId;
   const r = await pool.query(
     `UPDATE produtos SET nome=COALESCE($1,nome), descricao=COALESCE($2,descricao), categoria=COALESCE($3,categoria),
      preco=COALESCE($4,preco), disponivel=COALESCE($5,disponivel), ativo=COALESCE($6,ativo), atualizado_em=NOW()
-     WHERE id=$7 RETURNING *`,
-    [nome, descricao, categoria, preco, disponivel, ativo, req.params.id]
+     WHERE id=$7 AND ($8::uuid IS NULL OR tenant_id = $8) RETURNING *`,
+    [nome, descricao, categoria, preco, disponivel, ativo, req.params.id, tenantId || null]
   );
   if (!r.rows[0]) return res.status(404).json({ erro: 'Produto não encontrado' });
   res.json(r.rows[0]);
@@ -282,6 +363,7 @@ app.put('/api/produtos/:id', authMiddleware, validarUUID('id'), requerNivel(['AD
 // ── Pedidos ──────────────────────────────────────────────────
 app.get('/api/pedidos', authMiddleware, async (req, res) => {
   const { status, mesa_id, data_inicio, data_fim } = req.query;
+  const tenantId = req.tenantId;
   let q = `
     SELECT p.*, m.numero as mesa_numero, m.zona as mesa_zona,
            f.nome as funcionario_nome,
@@ -295,9 +377,9 @@ app.get('/api/pedidos', authMiddleware, async (req, res) => {
     LEFT JOIN funcionarios f ON p.funcionario_id = f.id
     LEFT JOIN itens_pedido ip ON p.id = ip.pedido_id
     LEFT JOIN produtos pr ON ip.produto_id = pr.id
-    WHERE 1=1
+    WHERE ($1::uuid IS NULL OR p.tenant_id = $1)
   `;
-  const vals = [];
+  const vals = [tenantId || null];
   if (status) { q += ` AND p.status = $${vals.length + 1}`; vals.push(status); }
   if (mesa_id) { q += ` AND p.mesa_id = $${vals.length + 1}`; vals.push(mesa_id); }
   if (data_inicio) { q += ` AND p.criado_em >= $${vals.length + 1}`; vals.push(data_inicio); }
@@ -308,6 +390,7 @@ app.get('/api/pedidos', authMiddleware, async (req, res) => {
 });
 
 app.get('/api/pedidos/hoje', authMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
   const r = await pool.query(`
     SELECT p.*, m.numero as mesa_numero,
            json_agg(json_build_object(
@@ -319,15 +402,17 @@ app.get('/api/pedidos/hoje', authMiddleware, async (req, res) => {
     LEFT JOIN itens_pedido ip ON p.id = ip.pedido_id
     LEFT JOIN produtos pr ON ip.produto_id = pr.id
     WHERE p.criado_em >= CURRENT_DATE AT TIME ZONE 'Africa/Luanda'
+      AND ($1::uuid IS NULL OR p.tenant_id = $1)
     GROUP BY p.id, m.numero
     ORDER BY p.criado_em DESC
-  `);
+  `, [tenantId || null]);
   res.json(r.rows);
 });
 
 app.post('/api/pedidos', authMiddleware, async (req, res) => {
   const { mesa_id, cliente_id, itens, observacoes } = req.body;
   if (!itens || !itens.length) return res.status(400).json({ erro: 'Pedido sem itens' });
+  const tenantId = req.tenantId;
 
   const client = await pool.connect();
   try {
@@ -337,7 +422,11 @@ app.post('/api/pedidos', authMiddleware, async (req, res) => {
     let total = 0;
     const itensDetalhes = [];
     for (const item of itens) {
-      const pr = await client.query(`SELECT preco FROM produtos WHERE id=$1 AND disponivel=true AND ativo=true`, [item.produto_id]);
+      const pr = await client.query(
+        `SELECT preco FROM produtos WHERE id=$1 AND disponivel=true AND ativo=true
+         AND ($2::uuid IS NULL OR tenant_id = $2)`,
+        [item.produto_id, tenantId || null]
+      );
       if (!pr.rows[0]) throw new Error(`Produto ${item.produto_id} não disponível`);
       const subtotal = pr.rows[0].preco * item.quantidade;
       total += subtotal;
@@ -346,9 +435,9 @@ app.post('/api/pedidos', authMiddleware, async (req, res) => {
 
     // Criar pedido
     const pedidoR = await client.query(
-      `INSERT INTO pedidos (mesa_id, cliente_id, funcionario_id, total, observacoes)
-       VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-      [mesa_id || null, cliente_id || null, req.user.id, total, observacoes || null]
+      `INSERT INTO pedidos (tenant_id, mesa_id, cliente_id, funcionario_id, total, observacoes)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+      [tenantId || null, mesa_id || null, cliente_id || null, req.user.id, total, observacoes || null]
     );
     const pedido = pedidoR.rows[0];
 
@@ -397,9 +486,11 @@ app.patch('/api/pedidos/:id/status', authMiddleware, validarUUID('id'), async (r
   const STATUSES_VALIDOS = ['ABERTO','EM_PREPARO','PRONTO','FECHADO','CANCELADO'];
   const { status } = req.body;
   if (!STATUSES_VALIDOS.includes(status)) return res.status(400).json({ erro: 'Status inválido' });
+  const tenantId = req.tenantId;
   const r = await pool.query(
-    `UPDATE pedidos SET status=$1, atualizado_em=NOW() WHERE id=$2 RETURNING *`,
-    [status, req.params.id]
+    `UPDATE pedidos SET status=$1, atualizado_em=NOW()
+     WHERE id=$2 AND ($3::uuid IS NULL OR tenant_id = $3) RETURNING *`,
+    [status, req.params.id, tenantId || null]
   );
   if (!r.rows[0]) return res.status(404).json({ erro: 'Pedido não encontrado' });
 
@@ -431,13 +522,16 @@ app.patch('/api/pedidos/:pedidoId/itens/:itemId/status', authMiddleware, validar
 
 // ── Quartos ──────────────────────────────────────────────────
 app.get('/api/quartos', authMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
   const r = await pool.query(`
     SELECT q.*,
       (SELECT json_agg(json_build_object('id',r.id,'checkin',r.checkin,'checkout',r.checkout,'status',r.status,'nome_hospede',r.nome_hospede,'fracao',r.fracao))
        FROM reservas r WHERE r.quarto_id = q.id AND r.status IN ('CONFIRMADA','CHECKIN')
        AND r.checkout > NOW()) as reservas_activas
-    FROM quartos q ORDER BY q.tipo, q.numero
-  `);
+    FROM quartos q
+    WHERE ($1::uuid IS NULL OR q.tenant_id = $1)
+    ORDER BY q.tipo, q.numero
+  `, [tenantId || null]);
   res.json(r.rows);
 });
 
@@ -446,6 +540,7 @@ app.post('/api/quartos/reserva', authMiddleware, async (req, res) => {
   if (!quarto_id || !fracao || !checkin || !checkout) {
     return res.status(400).json({ erro: 'Quarto, fracção, check-in e check-out são obrigatórios' });
   }
+  const tenantId = req.tenantId;
 
   const client = await pool.connect();
   try {
@@ -453,8 +548,9 @@ app.post('/api/quartos/reserva', authMiddleware, async (req, res) => {
 
     // Verificar disponibilidade (SELECT FOR UPDATE evita dupla reserva)
     const q = await client.query(
-      `SELECT id, status, preco_2h, preco_pernoite, preco_diaria FROM quartos WHERE id=$1 FOR UPDATE NOWAIT`,
-      [quarto_id]
+      `SELECT id, status, preco_2h, preco_pernoite, preco_diaria FROM quartos
+       WHERE id=$1 AND ($2::uuid IS NULL OR tenant_id = $2) FOR UPDATE NOWAIT`,
+      [quarto_id, tenantId || null]
     );
     if (!q.rows[0]) throw new Error('Quarto não encontrado');
 
@@ -472,9 +568,9 @@ app.post('/api/quartos/reserva', authMiddleware, async (req, res) => {
 
     // Criar reserva
     const r = await client.query(`
-      INSERT INTO reservas (quarto_id, cliente_id, nome_hospede, fracao, checkin, checkout, valor_total, observacoes)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *
-    `, [quarto_id, cliente_id || null, nome_hospede || null, fracao, checkin, checkout, valor_total, observacoes || null]);
+      INSERT INTO reservas (tenant_id, quarto_id, cliente_id, nome_hospede, fracao, checkin, checkout, valor_total, observacoes)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *
+    `, [tenantId || null, quarto_id, cliente_id || null, nome_hospede || null, fracao, checkin, checkout, valor_total, observacoes || null]);
 
     // Actualizar status do quarto
     await client.query(`UPDATE quartos SET status='OCUPADO', atualizado_em=NOW() WHERE id=$1`, [quarto_id]);
@@ -686,9 +782,11 @@ app.post('/api/financeiro/faturas', authMiddleware, async (req, res) => {
 // ── Clientes ──────────────────────────────────────────────────
 app.get('/api/clientes', authMiddleware, async (req, res) => {
   const { q } = req.query;
-  let query = `SELECT id, nome, telefone, email, nivel_fidelizacao, saldo_carteira, criado_em FROM clientes WHERE ativo=true`;
-  const vals = [];
-  if (q) { query += ` AND (nome ILIKE $1 OR telefone ILIKE $1 OR email ILIKE $1)`; vals.push(`%${q}%`); }
+  const tenantId = req.tenantId;
+  let query = `SELECT id, nome, telefone, email, nivel_fidelizacao, saldo_carteira, criado_em
+               FROM clientes WHERE ativo=true AND ($1::uuid IS NULL OR tenant_id = $1)`;
+  const vals = [tenantId || null];
+  if (q) { query += ` AND (nome ILIKE $2 OR telefone ILIKE $2 OR email ILIKE $2)`; vals.push(`%${q}%`); }
   query += ` ORDER BY nome`;
   const r = await pool.query(query, vals);
   res.json(r.rows);
@@ -697,10 +795,11 @@ app.get('/api/clientes', authMiddleware, async (req, res) => {
 app.post('/api/clientes', authMiddleware, async (req, res) => {
   const { nome, telefone, email, nif } = req.body;
   if (!nome) return res.status(400).json({ erro: 'Nome é obrigatório' });
+  const tenantId = req.tenantId;
   try {
     const r = await pool.query(
-      `INSERT INTO clientes (nome, telefone, email, nif) VALUES ($1,$2,$3,$4) RETURNING id, nome, telefone, email`,
-      [nome, telefone || null, email || null, nif || null]
+      `INSERT INTO clientes (tenant_id, nome, telefone, email, nif) VALUES ($1,$2,$3,$4,$5) RETURNING id, nome, telefone, email`,
+      [tenantId || null, nome, telefone || null, email || null, nif || null]
     );
     res.status(201).json(r.rows[0]);
   } catch (e) {
@@ -777,7 +876,12 @@ app.patch('/api/chamadas/:id/atender', authMiddleware, async (req, res) => {
 
 // ── Configurações ─────────────────────────────────────────────
 app.get('/api/configuracoes', authMiddleware, async (req, res) => {
-  const r = await pool.query(`SELECT chave, valor, descricao FROM configuracoes ORDER BY chave`);
+  const tenantId = req.tenantId;
+  const r = await pool.query(
+    `SELECT chave, valor, descricao FROM configuracoes
+     WHERE ($1::uuid IS NULL OR tenant_id = $1) ORDER BY chave`,
+    [tenantId || null]
+  );
   const cfg = {};
   r.rows.forEach(row => { cfg[row.chave] = row.valor; });
   res.json(cfg);
@@ -794,15 +898,16 @@ app.put('/api/configuracoes', authMiddleware, requerNivel(['ADMIN']), async (req
   if (chavesDesconhecidas.length > 0) {
     return res.status(400).json({ erro: `Chaves não permitidas: ${chavesDesconhecidas.join(', ')}` });
   }
+  const tenantId = req.tenantId;
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     for (const [chave, valor] of Object.entries(req.body)) {
       await client.query(
-        `INSERT INTO configuracoes (chave, valor) VALUES ($1,$2)
-         ON CONFLICT (chave) DO UPDATE SET valor=$2, atualizado_em=NOW()`,
-        [chave, String(valor)]
+        `INSERT INTO configuracoes (tenant_id, chave, valor) VALUES ($1,$2,$3)
+         ON CONFLICT (tenant_id, chave) DO UPDATE SET valor=$3, atualizado_em=NOW()`,
+        [tenantId || null, chave, String(valor)]
       );
     }
     await client.query('COMMIT');
@@ -867,13 +972,15 @@ const clienteLimiter = rateLimit({
 });
 
 // ── GET /api/cliente/cardapio — lista produtos disponíveis ──
-app.get('/api/cliente/cardapio', clienteLimiter, async (req, res) => {
+app.get('/api/cliente/cardapio', clienteLimiter, resolverTenantPublico, async (req, res) => {
   try {
     const r = await pool.query(
       `SELECT id, nome, descricao, preco, categoria, disponivel
        FROM produtos
        WHERE disponivel = true AND ativo = true
-       ORDER BY categoria, nome`
+         AND ($1::uuid IS NULL OR tenant_id = $1)
+       ORDER BY categoria, nome`,
+      [req.tenantId || null]
     );
     res.json({ produtos: r.rows });
   } catch (e) {
@@ -883,11 +990,13 @@ app.get('/api/cliente/cardapio', clienteLimiter, async (req, res) => {
 });
 
 // ── GET /api/cliente/eventos — informações de eventos ──
-app.get('/api/cliente/eventos', clienteLimiter, async (req, res) => {
+app.get('/api/cliente/eventos', clienteLimiter, resolverTenantPublico, async (req, res) => {
   try {
     const r = await pool.query(
       `SELECT chave, valor FROM configuracoes
-       WHERE chave LIKE 'evento_%'`
+       WHERE chave LIKE 'evento_%'
+         AND ($1::uuid IS NULL OR tenant_id = $1)`,
+      [req.tenantId || null]
     );
     const cfg = {};
     r.rows.forEach(row => { cfg[row.chave.replace('evento_', '')] = row.valor; });
@@ -898,7 +1007,7 @@ app.get('/api/cliente/eventos', clienteLimiter, async (req, res) => {
 });
 
 // ── POST /api/cliente/login — identificação por telefone ──
-app.post('/api/cliente/login', clienteLimiter, async (req, res) => {
+app.post('/api/cliente/login', clienteLimiter, resolverTenantPublico, async (req, res) => {
   const { telefone } = req.body;
   if (!telefone || !/^9[0-9]{8}$/.test(telefone.replace(/\s/g, ''))) {
     return res.status(400).json({ erro: 'Número de telefone inválido' });
@@ -910,8 +1019,9 @@ app.post('/api/cliente/login', clienteLimiter, async (req, res) => {
               pontos_fidelizacao AS pontos, nivel_fidelizacao,
               nukcoin_saldo, estrelas, criado_em
        FROM clientes
-       WHERE telefone = $1 AND ativo = true`,
-      [tel]
+       WHERE telefone = $1 AND ativo = true
+         AND ($2::uuid IS NULL OR tenant_id = $2)`,
+      [tel, req.tenantId || null]
     );
     if (!r.rows[0]) {
       return res.status(404).json({ erro: 'Cliente não encontrado', nao_encontrado: true });
@@ -923,7 +1033,7 @@ app.post('/api/cliente/login', clienteLimiter, async (req, res) => {
 });
 
 // ── POST /api/cliente/cadastrar — registo de novo cliente ──
-app.post('/api/cliente/cadastrar', clienteLimiter, async (req, res) => {
+app.post('/api/cliente/cadastrar', clienteLimiter, resolverTenantPublico, async (req, res) => {
   const { nome, telefone, provincia, referido_por_tel } = req.body;
   if (!nome || nome.trim().length < 2) {
     return res.status(400).json({ erro: 'Nome obrigatório (mínimo 2 caracteres)' });
@@ -932,20 +1042,26 @@ app.post('/api/cliente/cadastrar', clienteLimiter, async (req, res) => {
   if (!/^9[0-9]{8}$/.test(tel)) {
     return res.status(400).json({ erro: 'Número de telefone inválido (formato 9XXXXXXXX)' });
   }
+  const tenantId = req.tenantId;
   try {
-    // Verificar se já existe
-    const ex = await pool.query(`SELECT id FROM clientes WHERE telefone = $1`, [tel]);
+    // Verificar se já existe neste tenant
+    const ex = await pool.query(
+      `SELECT id FROM clientes WHERE telefone = $1 AND ($2::uuid IS NULL OR tenant_id = $2)`,
+      [tel, tenantId || null]
+    );
     if (ex.rows[0]) {
       return res.status(409).json({ erro: 'Número de telefone já cadastrado' });
     }
 
-    // Resolver referral: encontrar UUID do cliente referenciador
+    // Resolver referral: encontrar UUID do cliente referenciador (mesmo tenant)
     let referidoPorId = null;
     if (referido_por_tel) {
       const telRef = referido_por_tel.replace(/\s/g, '');
       if (/^9[0-9]{8}$/.test(telRef)) {
         const ref = await pool.query(
-          `SELECT id FROM clientes WHERE telefone = $1 AND ativo = true`, [telRef]
+          `SELECT id FROM clientes WHERE telefone = $1 AND ativo = true
+           AND ($2::uuid IS NULL OR tenant_id = $2)`,
+          [telRef, tenantId || null]
         );
         if (ref.rows[0]) referidoPorId = ref.rows[0].id;
       }
@@ -953,12 +1069,12 @@ app.post('/api/cliente/cadastrar', clienteLimiter, async (req, res) => {
 
     const novoId = uuidv4();
     const r = await pool.query(
-      `INSERT INTO clientes (id, nome, telefone, provincia, pontos_fidelizacao, nivel_fidelizacao,
-                             nukcoin_saldo, estrelas, referido_por, ativo, criado_em)
-       VALUES ($1, $2, $3, $4, 50, 'BRONZE', 0, 0, $5, true, NOW())
+      `INSERT INTO clientes (id, tenant_id, nome, telefone, provincia, pontos_fidelizacao,
+                             nivel_fidelizacao, nukcoin_saldo, estrelas, referido_por, ativo, criado_em)
+       VALUES ($1, $2, $3, $4, $5, 50, 'BRONZE', 0, 0, $6, true, NOW())
        RETURNING id, nome, telefone, provincia, pontos_fidelizacao AS pontos,
                  nivel_fidelizacao, nukcoin_saldo, estrelas`,
-      [novoId, nome.trim(), tel, provincia || null, referidoPorId]
+      [novoId, tenantId || null, nome.trim(), tel, provincia || null, referidoPorId]
     );
 
     // Atribuir 1 estrela ao cliente que fez a referência
@@ -982,7 +1098,7 @@ app.post('/api/cliente/cadastrar', clienteLimiter, async (req, res) => {
 });
 
 // ── POST /api/cliente/pedido-restaurante — pedido de mesa ──
-app.post('/api/cliente/pedido-restaurante', clienteLimiter, async (req, res) => {
+app.post('/api/cliente/pedido-restaurante', clienteLimiter, resolverTenantPublico, async (req, res) => {
   const { itens, mesa_ref, observacoes, cliente_id, metodo_pagamento } = req.body;
   if (!itens || !Array.isArray(itens) || itens.length === 0) {
     return res.status(400).json({ erro: 'Itens do pedido são obrigatórios' });
@@ -998,22 +1114,26 @@ app.post('/api/cliente/pedido-restaurante', clienteLimiter, async (req, res) => 
       return res.status(400).json({ erro: 'Cada item deve ter produto_id e quantidade válidos' });
     }
   }
+  const tenantId = req.tenantId;
   try {
-    // Buscar configurações de desconto
+    // Buscar configurações de desconto (do tenant)
     const cfgR = await pool.query(
       `SELECT chave, valor FROM configuracoes
-       WHERE chave IN ('nukcoin_desconto_pct','estrelas_minimo_consumo','estrelas_para_desconto','desconto_estrelas_pct','desconto_estrelas_limite')`
+       WHERE chave IN ('nukcoin_desconto_pct','estrelas_minimo_consumo','estrelas_para_desconto','desconto_estrelas_pct','desconto_estrelas_limite')
+         AND ($1::uuid IS NULL OR tenant_id = $1)`,
+      [tenantId || null]
     );
     const cfg = {};
     cfgR.rows.forEach(r => { cfg[r.chave] = parseFloat(r.valor); });
 
-    // Calcular total buscando preços reais do BD
+    // Calcular total buscando preços reais do BD (do tenant)
     let total = 0;
     const itensFull = [];
     for (const item of itens) {
       const p = await pool.query(
-        `SELECT id, nome, preco FROM produtos WHERE id = $1 AND disponivel = true`,
-        [item.produto_id]
+        `SELECT id, nome, preco FROM produtos WHERE id = $1 AND disponivel = true
+         AND ($2::uuid IS NULL OR tenant_id = $2)`,
+        [item.produto_id, tenantId || null]
       );
       if (!p.rows[0]) continue;
       const subtotal = parseFloat(p.rows[0].preco) * item.quantidade;
@@ -1032,7 +1152,9 @@ app.post('/api/cliente/pedido-restaurante', clienteLimiter, async (req, res) => 
     // Processar Nuk-Coin
     if (metodo === 'NUKCOIN' && cliente_id) {
       const clienteR = await pool.query(
-        `SELECT nukcoin_saldo, estrelas FROM clientes WHERE id = $1 AND ativo = true`, [cliente_id]
+        `SELECT nukcoin_saldo, estrelas FROM clientes WHERE id = $1 AND ativo = true
+         AND ($2::uuid IS NULL OR tenant_id = $2)`,
+        [cliente_id, tenantId || null]
       );
       if (!clienteR.rows[0]) {
         return res.status(400).json({ erro: 'Cliente não encontrado para pagamento Nuk-Coin' });
@@ -1076,10 +1198,14 @@ app.post('/api/cliente/pedido-restaurante', clienteLimiter, async (req, res) => 
       );
     }
 
-    // Determinar mesa_id
+    // Determinar mesa_id (do tenant)
     let mesa_id = null;
     if (mesa_ref) {
-      const m = await pool.query(`SELECT id FROM mesas WHERE numero = $1 OR nome ILIKE $1`, [mesa_ref]);
+      const m = await pool.query(
+        `SELECT id FROM mesas WHERE (numero = $1 OR nome ILIKE $1)
+         AND ($2::uuid IS NULL OR tenant_id = $2)`,
+        [mesa_ref, tenantId || null]
+      );
       if (m.rows[0]) mesa_id = m.rows[0].id;
     }
 
@@ -1087,9 +1213,9 @@ app.post('/api/cliente/pedido-restaurante', clienteLimiter, async (req, res) => 
     const pedidoId = uuidv4();
     const codigo = 'P' + Date.now().toString().slice(-4);
     await pool.query(
-      `INSERT INTO pedidos (id, mesa_id, cliente_id, status, total, observacoes, criado_em, atualizado_em)
-       VALUES ($1, $2, $3, 'ABERTO', $4, $5, NOW(), NOW())`,
-      [pedidoId, mesa_id, cliente_id || null, totalFinal, observacoes || null]
+      `INSERT INTO pedidos (id, tenant_id, mesa_id, cliente_id, status, total, observacoes, criado_em, atualizado_em)
+       VALUES ($1, $2, $3, $4, 'ABERTO', $5, $6, NOW(), NOW())`,
+      [pedidoId, tenantId || null, mesa_id, cliente_id || null, totalFinal, observacoes || null]
     );
 
     // Inserir itens
@@ -1138,7 +1264,7 @@ app.post('/api/cliente/pedido-restaurante', clienteLimiter, async (req, res) => 
 });
 
 // ── POST /api/cliente/pedido-hospedagem — solicitação de quarto ──
-app.post('/api/cliente/pedido-hospedagem', clienteLimiter, async (req, res) => {
+app.post('/api/cliente/pedido-hospedagem', clienteLimiter, resolverTenantPublico, async (req, res) => {
   const FRACOES_VALIDAS = ['DUAS_HORAS', 'PERNOITE', 'DIARIA'];
   const { fracao, quantidade, nome_hospede, telefone, observacoes, cliente_id } = req.body;
   if (!FRACOES_VALIDAS.includes(fracao)) {
@@ -1154,10 +1280,10 @@ app.post('/api/cliente/pedido-hospedagem', clienteLimiter, async (req, res) => {
 
     // Registar como solicitação pendente de confirmação
     await pool.query(
-      `INSERT INTO solicitacoes_hospedagem (id, cliente_id, tipo_fracao, quantidade_quartos, status,
+      `INSERT INTO solicitacoes_hospedagem (id, tenant_id, cliente_id, tipo_fracao, quantidade_quartos, status,
                             nome_responsavel, telefone_contacto, observacoes, criado_em, atualizado_em)
-       VALUES ($1, $2, $3, $4, 'PENDENTE', $5, $6, $7, NOW(), NOW())`,
-      [solicitacaoId, cliente_id || null, fracao, qty,
+       VALUES ($1, $2, $3, $4, $5, 'PENDENTE', $6, $7, $8, NOW(), NOW())`,
+      [solicitacaoId, req.tenantId || null, cliente_id || null, fracao, qty,
        nome_hospede || null, telefone || null, observacoes || null]
     );
 
@@ -1180,25 +1306,29 @@ app.post('/api/cliente/pedido-hospedagem', clienteLimiter, async (req, res) => {
 });
 
 // ── GET /api/cliente/perfil — perfil completo por telefone ──
-app.get('/api/cliente/perfil', clienteLimiter, async (req, res) => {
+app.get('/api/cliente/perfil', clienteLimiter, resolverTenantPublico, async (req, res) => {
   const tel = (req.query.tel || '').replace(/\s/g, '');
   if (!/^9[0-9]{8}$/.test(tel)) {
     return res.status(400).json({ erro: 'Telefone inválido' });
   }
+  const tenantId = req.tenantId;
   try {
     const r = await pool.query(
       `SELECT id, nome, telefone, provincia,
               pontos_fidelizacao AS pontos, nivel_fidelizacao,
               nukcoin_saldo, estrelas, criado_em
-       FROM clientes WHERE telefone = $1 AND ativo = true`,
-      [tel]
+       FROM clientes WHERE telefone = $1 AND ativo = true
+         AND ($2::uuid IS NULL OR tenant_id = $2)`,
+      [tel, tenantId || null]
     );
     if (!r.rows[0]) return res.status(404).json({ erro: 'Cliente não encontrado' });
 
-    // Buscar configurações relevantes
+    // Buscar configurações relevantes (do tenant)
     const cfgR = await pool.query(
       `SELECT chave, valor FROM configuracoes
-       WHERE chave IN ('estrelas_para_desconto','desconto_estrelas_pct','desconto_estrelas_limite','nukcoin_desconto_pct')`
+       WHERE chave IN ('estrelas_para_desconto','desconto_estrelas_pct','desconto_estrelas_limite','nukcoin_desconto_pct')
+         AND ($1::uuid IS NULL OR tenant_id = $1)`,
+      [tenantId || null]
     );
     const cfg = {};
     cfgR.rows.forEach(row => { cfg[row.chave] = parseFloat(row.valor); });
@@ -1217,7 +1347,7 @@ app.get('/api/cliente/perfil', clienteLimiter, async (req, res) => {
 });
 
 // ── POST /api/cliente/nukcoin/carregar — carregar crédito Nuk-Coin ──
-app.post('/api/cliente/nukcoin/carregar', clienteLimiter, async (req, res) => {
+app.post('/api/cliente/nukcoin/carregar', clienteLimiter, resolverTenantPublico, async (req, res) => {
   const VALORES_VALIDOS = [5000, 10000, 15000, 20000, 25000, 50000];
   const { cliente_id, valor } = req.body;
   if (!cliente_id) return res.status(400).json({ erro: 'cliente_id obrigatório' });
@@ -1225,9 +1355,12 @@ app.post('/api/cliente/nukcoin/carregar', clienteLimiter, async (req, res) => {
   if (!VALORES_VALIDOS.includes(valorNum)) {
     return res.status(400).json({ erro: `Valor inválido. Opções: ${VALORES_VALIDOS.join(', ')} Kz` });
   }
+  const tenantId = req.tenantId;
   try {
     const clienteR = await pool.query(
-      `SELECT id, nome, nukcoin_saldo FROM clientes WHERE id = $1 AND ativo = true`, [cliente_id]
+      `SELECT id, nome, nukcoin_saldo FROM clientes
+       WHERE id = $1 AND ativo = true AND ($2::uuid IS NULL OR tenant_id = $2)`,
+      [cliente_id, tenantId || null]
     );
     if (!clienteR.rows[0]) return res.status(404).json({ erro: 'Cliente não encontrado' });
 
@@ -1256,10 +1389,18 @@ app.post('/api/cliente/nukcoin/carregar', clienteLimiter, async (req, res) => {
 });
 
 // ── GET /api/cliente/nukcoin/historico — histórico de movimentos ──
-app.get('/api/cliente/nukcoin/historico', clienteLimiter, async (req, res) => {
+app.get('/api/cliente/nukcoin/historico', clienteLimiter, resolverTenantPublico, async (req, res) => {
   const { cliente_id } = req.query;
   if (!cliente_id) return res.status(400).json({ erro: 'cliente_id obrigatório' });
+  const tenantId = req.tenantId;
   try {
+    // Verificar que o cliente pertence a este tenant
+    const clienteCheck = await pool.query(
+      `SELECT id FROM clientes WHERE id = $1 AND ($2::uuid IS NULL OR tenant_id = $2)`,
+      [cliente_id, tenantId || null]
+    );
+    if (!clienteCheck.rows[0]) return res.status(404).json({ erro: 'Cliente não encontrado' });
+
     const r = await pool.query(
       `SELECT tipo, valor, saldo_antes, saldo_depois, descricao, criado_em
        FROM movimentos_nukcoin

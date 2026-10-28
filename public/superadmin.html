@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nuk POS — Superadmin</title>
+  <style>
+    :root {
+      --bg: #0a0b10; --sidebar: #111318; --card: #16181f;
+      --fg: #e8eaf0; --muted: #8892a4; --border: #232636;
+      --accent: #6c47ff; --accent2: #8b5cf6;
+      --success: #10b981; --error: #ef4444; --warning: #f59e0b;
+      --radius: 10px;
+      color-scheme: dark;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+           background: var(--bg); color: var(--fg); min-height: 100vh; }
+
+    /* ── Auth overlay ── */
+    #auth-overlay {
+      position: fixed; inset: 0; background: var(--bg);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 100; padding: 16px;
+    }
+    .auth-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 14px; padding: 40px 36px; width: 100%; max-width: 400px;
+      text-align: center;
+    }
+    .auth-card .logo { font-size: 32px; margin-bottom: 8px; }
+    .auth-card h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+    .auth-card p { font-size: 13px; color: var(--muted); margin-bottom: 28px; }
+    .auth-card input {
+      width: 100%; padding: 12px 14px; border: 1.5px solid var(--border);
+      border-radius: 8px; background: var(--bg); color: var(--fg);
+      font-size: 15px; margin-bottom: 12px;
+    }
+    .auth-card input:focus { outline: none; border-color: var(--accent); }
+    #auth-error { font-size: 13px; color: var(--error); margin-bottom: 10px; min-height: 18px; }
+
+    /* ── Layout ── */
+    #app { display: none; height: 100vh; flex-direction: row; }
+    #app.visible { display: flex; }
+
+    .sidebar {
+      width: 220px; min-width: 220px; background: var(--sidebar);
+      border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; padding: 20px 0;
+    }
+    .sidebar-logo {
+      display: flex; align-items: center; gap: 10px;
+      padding: 0 18px 20px; border-bottom: 1px solid var(--border);
+    }
+    .sidebar-logo .icon {
+      width: 32px; height: 32px; border-radius: 7px; background: var(--accent);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 800; color: #fff;
+    }
+    .sidebar-logo span { font-size: 14px; font-weight: 700; }
+    .sidebar-logo small { display: block; font-size: 10px; color: var(--muted); }
+
+    nav { flex: 1; padding: 12px 0; }
+    .nav-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 18px; font-size: 13.5px; cursor: pointer;
+      border-radius: 0; transition: background .15s; color: var(--muted);
+      border: none; background: none; width: 100%; text-align: left;
+    }
+    .nav-item:hover { background: rgba(108,71,255,.1); color: var(--fg); }
+    .nav-item.active { background: rgba(108,71,255,.18); color: var(--accent2); font-weight: 600; }
+    .nav-icon { font-size: 16px; width: 20px; text-align: center; }
+
+    .main { flex: 1; overflow-y: auto; padding: 28px 32px; }
+
+    /* ── Top bar ── */
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 28px;
+    }
+    .topbar h2 { font-size: 20px; font-weight: 700; }
+    .topbar .actions { display: flex; gap: 10px; }
+
+    /* ── Cards de métricas ── */
+    .metrics-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 16px; margin-bottom: 28px;
+    }
+    .metric-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 18px;
+    }
+    .metric-card .label { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+    .metric-card .value { font-size: 28px; font-weight: 700; line-height: 1; }
+    .metric-card .sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    .metric-card.accent .value { color: var(--accent2); }
+    .metric-card.success .value { color: var(--success); }
+    .metric-card.warning .value { color: var(--warning); }
+
+    /* ── Tabela ── */
+    .table-wrap { background: var(--card); border: 1px solid var(--border);
+                  border-radius: var(--radius); overflow: hidden; }
+    table { width: 100%; border-collapse: collapse; }
+    thead th {
+      padding: 12px 16px; font-size: 12px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: .5px; color: var(--muted);
+      background: rgba(255,255,255,.02); text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    tbody tr:hover { background: rgba(255,255,255,.02); }
+    tbody td { padding: 13px 16px; font-size: 13.5px; border-bottom: 1px solid var(--border); }
+    tbody tr:last-child td { border-bottom: none; }
+
+    /* ── Badges ── */
+    .badge {
+      display: inline-block; padding: 2px 10px; border-radius: 999px;
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+    }
+    .badge-green { background: rgba(16,185,129,.15); color: #6ee7b7; }
+    .badge-yellow { background: rgba(245,158,11,.15); color: #fcd34d; }
+    .badge-red { background: rgba(239,68,68,.15); color: #fca5a5; }
+    .badge-gray { background: rgba(148,163,184,.12); color: #94a3b8; }
+    .badge-blue { background: rgba(108,71,255,.15); color: #a78bfa; }
+
+    /* ── Botões ── */
+    .btn {
+      padding: 8px 16px; border: none; border-radius: 7px;
+      font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity .15s;
+    }
+    .btn:hover { opacity: .85; }
+    .btn-accent { background: var(--accent); color: #fff; }
+    .btn-ghost { background: rgba(255,255,255,.05); color: var(--fg); border: 1px solid var(--border); }
+    .btn-sm { padding: 5px 10px; font-size: 12px; }
+    .btn-danger { background: rgba(239,68,68,.15); color: #fca5a5; }
+
+    /* ── Modal ── */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.6); backdrop-filter: blur(4px);
+      display: none; align-items: center; justify-content: center; z-index: 50; padding: 16px;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 14px; padding: 28px; width: 100%; max-width: 500px;
+    }
+    .modal h3 { font-size: 17px; font-weight: 700; margin-bottom: 20px; }
+    .form-row { margin-bottom: 16px; }
+    .form-row label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; color: var(--muted); }
+    .form-row input, .form-row select, .form-row textarea {
+      width: 100%; padding: 10px 12px; border: 1.5px solid var(--border);
+      border-radius: 8px; background: var(--bg); color: var(--fg); font-size: 14px;
+    }
+    .form-row input:focus, .form-row select:focus { outline: none; border-color: var(--accent); }
+    .modal-footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; }
+
+    /* ── Search bar ── */
+    .search-bar {
+      display: flex; gap: 10px; margin-bottom: 16px; align-items: center;
+    }
+    .search-bar input {
+      flex: 1; padding: 9px 12px; border: 1.5px solid var(--border);
+      border-radius: 8px; background: var(--bg); color: var(--fg); font-size: 14px;
+    }
+    .search-bar input:focus { outline: none; border-color: var(--accent); }
+
+    /* ── Alert ── */
+    .alert {
+      padding: 12px 16px; border-radius: 8px; font-size: 13px; margin-bottom: 16px;
+      border: 1px solid;
+    }
+    .alert-success { background: rgba(16,185,129,.1); border-color: rgba(16,185,129,.3); color: #6ee7b7; }
+    .alert-error { background: rgba(239,68,68,.1); border-color: rgba(239,68,68,.3); color: #fca5a5; }
+
+    /* Tabs */
+    .tabs { display: flex; gap: 2px; margin-bottom: 20px; background: var(--card);
+            border: 1px solid var(--border); border-radius: 9px; padding: 4px; width: fit-content; }
+    .tab { padding: 7px 16px; border-radius: 6px; font-size: 13px; font-weight: 500;
+           cursor: pointer; border: none; background: none; color: var(--muted); transition: all .15s; }
+    .tab.active { background: var(--accent); color: #fff; }
+
+    /* Pages */
+    .page { display: none; }
+    .page.active { display: block; }
+
+    /* Loader */
+    .loader { text-align: center; padding: 40px; color: var(--muted); font-size: 14px; }
+    .spinner-sm {
+      display: inline-block; width: 14px; height: 14px;
+      border: 2px solid rgba(255,255,255,.3); border-top-color: #fff;
+      border-radius: 50%; animation: spin .6s linear infinite; vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @media (max-width: 640px) {
+      .sidebar { display: none; }
+      .main { padding: 16px; }
+      .metrics-grid { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Auth ──────────────────────────────── -->
+<div id="auth-overlay">
+  <div class="auth-card">
+    <div class="logo">🔐</div>
+    <h1>Superadmin</h1>
+    <p>Acesso restrito ao administrador do sistema</p>
+    <input type="password" id="auth-key" placeholder="Chave de acesso" autocomplete="current-password">
+    <div id="auth-error"></div>
+    <button class="btn btn-accent" style="width:100%;padding:12px;" onclick="doAuth()">Entrar</button>
+  </div>
+</div>
+
+<!-- ── App ──────────────────────────────── -->
+<div id="app">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="icon">N</div>
+      <div>
+        <span>NukPOS</span>
+        <small>Superadmin</small>
+      </div>
+    </div>
+    <nav>
+      <button class="nav-item active" onclick="navTo('dashboard')">
+        <span class="nav-icon">📊</span> Dashboard
+      </button>
+      <button class="nav-item" onclick="navTo('tenants')">
+        <span class="nav-icon">🏢</span> Empresas
+      </button>
+      <button class="nav-item" onclick="navTo('planos')">
+        <span class="nav-icon">💎</span> Planos
+      </button>
+    </nav>
+  </aside>
+
+  <main class="main">
+
+    <!-- ── Dashboard ── -->
+    <div id="page-dashboard" class="page active">
+      <div class="topbar">
+        <h2>📊 Dashboard</h2>
+        <div class="actions">
+          <button class="btn btn-ghost btn-sm" onclick="loadDashboard()">↻ Actualizar</button>
+        </div>
+      </div>
+      <div id="metrics-grid" class="metrics-grid">
+        <div class="loader">A carregar…</div>
+      </div>
+      <h3 style="margin-bottom:16px;font-size:15px;">Tenants Recentes</h3>
+      <div id="recent-tenants-table" class="table-wrap"><div class="loader">A carregar…</div></div>
+    </div>
+
+    <!-- ── Tenants ── -->
+    <div id="page-tenants" class="page">
+      <div class="topbar">
+        <h2>🏢 Empresas</h2>
+        <div class="actions">
+          <button class="btn btn-accent" onclick="openModal('modal-novo-tenant')">+ Nova Empresa</button>
+        </div>
+      </div>
+      <div id="tenants-alert"></div>
+      <div class="search-bar">
+        <input type="text" id="tenants-search" placeholder="Pesquisar por nome…" oninput="debounceSearch()">
+        <select id="tenants-filter" onchange="loadTenants()" style="padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--bg);color:var(--fg);font-size:14px;">
+          <option value="">Todos os estados</option>
+          <option value="ACTIVA">Activa</option>
+          <option value="PENDENTE">Pendente</option>
+          <option value="SUSPENSA">Suspensa</option>
+          <option value="EXPIRADA">Expirada</option>
+          <option value="CANCELADA">Cancelada</option>
+        </select>
+      </div>
+      <div id="tenants-table" class="table-wrap"><div class="loader">A carregar…</div></div>
+      <div id="tenants-pagination" style="margin-top:12px;display:flex;gap:8px;align-items:center;font-size:13px;color:var(--muted);"></div>
+    </div>
+
+    <!-- ── Planos ── -->
+    <div id="page-planos" class="page">
+      <div class="topbar">
+        <h2>💎 Planos</h2>
+      </div>
+      <div id="planos-alert"></div>
+      <div id="planos-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;">
+        <div class="loader">A carregar…</div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- ── Modal: Novo Tenant ── -->
+<div class="modal-overlay" id="modal-novo-tenant">
+  <div class="modal">
+    <h3>🏢 Nova Empresa</h3>
+    <div id="modal-tenant-alert"></div>
+    <div class="form-row">
+      <label>Nome da Empresa *</label>
+      <input type="text" id="t-nome" placeholder="Ex: Hotel Palmeiras Lda">
+    </div>
+    <div class="form-row">
+      <label>WhatsApp (receberá o link de activação) *</label>
+      <input type="text" id="t-whatsapp" placeholder="+244 9XX XXX XXX">
+    </div>
+    <div class="form-row">
+      <label>Plano *</label>
+      <select id="t-plano"></select>
+    </div>
+    <div class="form-row">
+      <label>Duração da Licença (dias)</label>
+      <input type="number" id="t-duracao" value="30" min="1" max="3650">
+    </div>
+    <div class="form-row">
+      <label>NIF (opcional)</label>
+      <input type="text" id="t-nif" placeholder="Ex: 5000000000">
+    </div>
+    <div class="form-row">
+      <label>E-mail (opcional)</label>
+      <input type="email" id="t-email" placeholder="geral@empresa.co.ao">
+    </div>
+    <div class="form-row">
+      <label>País</label>
+      <input type="text" id="t-pais" value="Angola">
+    </div>
+    <div class="form-row">
+      <label>Notas internas</label>
+      <textarea id="t-notas" rows="2" style="resize:vertical;"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-novo-tenant')">Cancelar</button>
+      <button class="btn btn-accent" id="btn-criar-tenant" onclick="criarTenant()">
+        🚀 Criar &amp; Enviar Link
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Modal: Detalhe Tenant ── -->
+<div class="modal-overlay" id="modal-tenant-detalhe">
+  <div class="modal" style="max-width:600px;">
+    <h3 id="dt-nome">Detalhe da Empresa</h3>
+    <div id="dt-content"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-tenant-detalhe')">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Modal: Editar Plano ── -->
+<div class="modal-overlay" id="modal-editar-plano">
+  <div class="modal">
+    <h3 id="ep-titulo">Editar Plano</h3>
+    <div class="form-row">
+      <label>Preço Mensal (Kz)</label>
+      <input type="number" id="ep-mensal" min="0">
+    </div>
+    <div class="form-row">
+      <label>Preço Anual (Kz)</label>
+      <input type="number" id="ep-anual" min="0">
+    </div>
+    <div class="form-row">
+      <label>Máx. Funcionários (-1 = ilimitado)</label>
+      <input type="number" id="ep-func" min="-1">
+    </div>
+    <div class="form-row">
+      <label>Máx. Produtos (-1 = ilimitado)</label>
+      <input type="number" id="ep-prod" min="-1">
+    </div>
+    <div id="modal-plano-alert"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-editar-plano')">Cancelar</button>
+      <button class="btn btn-accent" id="btn-salvar-plano" onclick="salvarPlano()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const BASE = '';
+let SUPERKEY = '';
+let currentPage = 1;
+let searchTimer = null;
+let editingPlanoId = null;
+
+// ────────────────────────── AUTH ──────────────────────────────
+document.getElementById('auth-key').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doAuth();
+});
+
+function doAuth() {
+  const key = document.getElementById('auth-key').value.trim();
+  if (!key) return;
+  SUPERKEY = key;
+  apiFetch('/api/superadmin/dashboard', 'GET')
+    .then(() => {
+      document.getElementById('auth-overlay').style.display = 'none';
+      document.getElementById('app').classList.add('visible');
+      loadDashboard();
+      loadTenants();
+      loadPlanos();
+    })
+    .catch(() => {
+      document.getElementById('auth-error').textContent = 'Chave inválida. Tente novamente.';
+      SUPERKEY = '';
+    });
+}
+
+// ────────────────────────── API ───────────────────────────────
+async function apiFetch(url, method = 'GET', body = null) {
+  const opts = {
+    method,
+    headers: { 'Content-Type': 'application/json', 'x-superadmin-key': SUPERKEY },
+  };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(BASE + url, opts);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.erro || 'Erro na API');
+  return data;
+}
+
+// ────────────────────────── NAV ───────────────────────────────
+function navTo(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  document.querySelector(`[onclick="navTo('${page}')"]`).classList.add('active');
+}
+
+// ────────────────────────── DASHBOARD ────────────────────────
+async function loadDashboard() {
+  try {
+    const d = await apiFetch('/api/superadmin/dashboard');
+    const g = document.getElementById('metrics-grid');
+    g.innerHTML = `
+      <div class="metric-card accent">
+        <div class="label">Total Empresas</div>
+        <div class="value">${d.tenants.total}</div>
+        <div class="sub">${d.tenants.activos} activas</div>
+      </div>
+      <div class="metric-card success">
+        <div class="label">Activas</div>
+        <div class="value">${d.tenants.activos}</div>
+      </div>
+      <div class="metric-card warning">
+        <div class="label">Pendentes</div>
+        <div class="value">${d.tenants.pendentes}</div>
+      </div>
+      <div class="metric-card">
+        <div class="label">Licenças Activas</div>
+        <div class="value">${d.licencas.activas}</div>
+        <div class="sub">${d.licencas.expiradas} expiradas</div>
+      </div>
+      <div class="metric-card">
+        <div class="label">Suspensas</div>
+        <div class="value">${d.tenants.suspensas || 0}</div>
+      </div>
+      <div class="metric-card">
+        <div class="label">Novas (30d)</div>
+        <div class="value">${d.tenants.novas_30d || 0}</div>
+      </div>
+    `;
+
+    if (d.recent_tenants && d.recent_tenants.length) {
+      const t = document.getElementById('recent-tenants-table');
+      t.innerHTML = `<table>
+        <thead><tr><th>Empresa</th><th>Plano</th><th>Estado</th><th>Criado</th></tr></thead>
+        <tbody>${d.recent_tenants.map(r => `
+          <tr>
+            <td><strong>${esc(r.nome)}</strong><br><small style="color:var(--muted)">${esc(r.slug||'')}</small></td>
+            <td>${esc(r.plano_nome||'—')}</td>
+            <td>${badgeEstado(r.estado)}</td>
+            <td style="color:var(--muted);font-size:12px;">${formatDate(r.criado_em)}</td>
+          </tr>`).join('')}
+        </tbody></table>`;
+    }
+  } catch (e) {
+    document.getElementById('metrics-grid').innerHTML = `<div class="loader" style="color:var(--error)">${e.message}</div>`;
+  }
+}
+
+// ────────────────────────── TENANTS ──────────────────────────
+async function loadTenants() {
+  const q = document.getElementById('tenants-search')?.value || '';
+  const estado = document.getElementById('tenants-filter')?.value || '';
+  const url = `/api/superadmin/tenants?page=${currentPage}&limit=20${q ? '&q=' + encodeURIComponent(q) : ''}${estado ? '&estado=' + estado : ''}`;
+  document.getElementById('tenants-table').innerHTML = '<div class="loader">A carregar…</div>';
+  try {
+    const d = await apiFetch(url);
+    renderTenantsTable(d.tenants);
+    renderPagination(d.total, d.pagina, d.por_pagina);
+  } catch (e) {
+    document.getElementById('tenants-table').innerHTML = `<div class="loader" style="color:var(--error)">${e.message}</div>`;
+  }
+}
+
+function renderTenantsTable(tenants) {
+  if (!tenants.length) {
+    document.getElementById('tenants-table').innerHTML = '<div class="loader">Sem resultados.</div>';
+    return;
+  }
+  document.getElementById('tenants-table').innerHTML = `<table>
+    <thead><tr>
+      <th>Empresa</th><th>WhatsApp</th><th>Plano</th>
+      <th>Licença</th><th>Estado</th><th>Acções</th>
+    </tr></thead>
+    <tbody>${tenants.map(t => `
+      <tr>
+        <td>
+          <strong>${esc(t.nome)}</strong>
+          <br><small style="color:var(--muted)">${esc(t.slug||'')}</small>
+        </td>
+        <td style="font-size:13px;">${esc(t.telefone_whatsapp)}</td>
+        <td><span class="badge badge-blue">${esc(t.plano_nome||'—')}</span></td>
+        <td style="font-size:12px;">${licencaInfo(t)}</td>
+        <td>${badgeEstado(t.estado)}</td>
+        <td>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button class="btn btn-ghost btn-sm" onclick="verTenant('${t.id}')">Ver</button>
+            ${t.estado === 'ACTIVA'
+              ? `<button class="btn btn-sm" style="background:rgba(245,158,11,.15);color:#fcd34d;" onclick="mudarEstado('${t.id}','SUSPENSA')">Suspender</button>`
+              : t.estado === 'SUSPENSA'
+              ? `<button class="btn btn-sm" style="background:rgba(16,185,129,.15);color:#6ee7b7;" onclick="mudarEstado('${t.id}','ACTIVA')">Reactivar</button>`
+              : ''}
+            <button class="btn btn-ghost btn-sm" onclick="reenviarLink('${t.id}')">📱</button>
+          </div>
+        </td>
+      </tr>`).join('')}
+    </tbody></table>`;
+}
+
+function renderPagination(total, pagina, porPagina) {
+  const totalPages = Math.ceil(total / porPagina);
+  const p = document.getElementById('tenants-pagination');
+  p.innerHTML = `
+    <span>${total} empresa${total !== 1 ? 's' : ''}</span>
+    <button class="btn btn-ghost btn-sm" ${pagina <= 1 ? 'disabled' : ''} onclick="changePage(${pagina - 1})">‹</button>
+    <span>Pág. ${pagina} / ${totalPages || 1}</span>
+    <button class="btn btn-ghost btn-sm" ${pagina >= totalPages ? 'disabled' : ''} onclick="changePage(${pagina + 1})">›</button>
+  `;
+}
+
+function changePage(p) { currentPage = p; loadTenants(); }
+
+function debounceSearch() {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => { currentPage = 1; loadTenants(); }, 350);
+}
+
+async function verTenant(id) {
+  try {
+    const d = await apiFetch(`/api/superadmin/tenants/${id}`);
+    const t = d.tenant;
+    document.getElementById('dt-nome').textContent = t.nome;
+    document.getElementById('dt-content').innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+        <div><div style="font-size:11px;color:var(--muted)">SLUG</div><div style="font-size:14px;">${esc(t.slug||'—')}</div></div>
+        <div><div style="font-size:11px;color:var(--muted)">ESTADO</div><div>${badgeEstado(t.estado)}</div></div>
+        <div><div style="font-size:11px;color:var(--muted)">WHATSAPP</div><div style="font-size:14px;">${esc(t.telefone_whatsapp)}</div></div>
+        <div><div style="font-size:11px;color:var(--muted)">PLANO</div><div style="font-size:14px;">${esc(t.plano_nome||'—')}</div></div>
+        <div><div style="font-size:11px;color:var(--muted)">NIF</div><div style="font-size:14px;">${esc(t.nif||'—')}</div></div>
+        <div><div style="font-size:11px;color:var(--muted)">EMAIL</div><div style="font-size:14px;">${esc(t.email||'—')}</div></div>
+      </div>
+      ${d.licencas && d.licencas.length ? `
+        <h4 style="font-size:13px;color:var(--muted);margin-bottom:8px;">LICENÇAS</h4>
+        <table style="width:100%;font-size:12px;">
+          <thead><tr><th style="text-align:left;padding:4px 8px;">Chave</th><th>Estado</th><th>Validade</th></tr></thead>
+          <tbody>${d.licencas.map(l => `
+            <tr>
+              <td style="padding:4px 8px;font-family:monospace;">${esc(l.license_key)}</td>
+              <td style="padding:4px 8px;">${badgeEstado(l.estado)}</td>
+              <td style="padding:4px 8px;">${l.fim ? formatDate(l.fim) : '—'}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>` : ''}
+      ${d.stats ? `
+        <h4 style="font-size:13px;color:var(--muted);margin-top:12px;margin-bottom:8px;">ESTATÍSTICAS (30 dias)</h4>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+          <div style="background:var(--bg);border-radius:8px;padding:10px;text-align:center;">
+            <div style="font-size:20px;font-weight:700;">${d.stats.pedidos||0}</div>
+            <div style="font-size:11px;color:var(--muted);">Pedidos</div>
+          </div>
+          <div style="background:var(--bg);border-radius:8px;padding:10px;text-align:center;">
+            <div style="font-size:20px;font-weight:700;">${d.stats.clientes||0}</div>
+            <div style="font-size:11px;color:var(--muted);">Clientes</div>
+          </div>
+          <div style="background:var(--bg);border-radius:8px;padding:10px;text-align:center;">
+            <div style="font-size:20px;font-weight:700;">${d.stats.funcionarios||0}</div>
+            <div style="font-size:11px;color:var(--muted);">Funcionários</div>
+          </div>
+        </div>` : ''}
+      <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap;">
+        ${t.estado === 'ACTIVA'
+          ? `<button class="btn btn-sm" style="background:rgba(245,158,11,.15);color:#fcd34d;" onclick="mudarEstado('${t.id}','SUSPENSA');closeModal('modal-tenant-detalhe')">Suspender</button>`
+          : t.estado === 'SUSPENSA'
+          ? `<button class="btn btn-sm" style="background:rgba(16,185,129,.15);color:#6ee7b7;" onclick="mudarEstado('${t.id}','ACTIVA');closeModal('modal-tenant-detalhe')">Reactivar</button>`
+          : ''}
+        <button class="btn btn-ghost btn-sm" onclick="reenviarLinkById('${t.id}')">📱 Reenviar Link WhatsApp</button>
+      </div>
+    `;
+    openModal('modal-tenant-detalhe');
+  } catch (e) {
+    alert('Erro: ' + e.message);
+  }
+}
+
+async function mudarEstado(id, novoEstado) {
+  if (!confirm(`Alterar estado para "${novoEstado}"?`)) return;
+  try {
+    await apiFetch(`/api/superadmin/tenants/${id}/estado`, 'PATCH', { estado: novoEstado });
+    showAlert('tenants-alert', `Estado actualizado para ${novoEstado}`, 'success');
+    loadTenants();
+  } catch (e) {
+    showAlert('tenants-alert', e.message, 'error');
+  }
+}
+
+async function reenviarLink(tenantId) {
+  // Busca a licença pendente do tenant e reenviar
+  try {
+    const d = await apiFetch(`/api/superadmin/tenants/${tenantId}`);
+    const licPendente = (d.licencas || []).find(l => l.estado === 'PENDENTE');
+    if (!licPendente) { alert('Sem licença pendente para este tenant.'); return; }
+    await apiFetch(`/api/superadmin/licencas/${licPendente.license_key}/reenviar`, 'POST');
+    showAlert('tenants-alert', 'Link reenviado via WhatsApp!', 'success');
+  } catch (e) {
+    showAlert('tenants-alert', e.message, 'error');
+  }
+}
+
+async function reenviarLinkById(tenantId) {
+  await reenviarLink(tenantId);
+  closeModal('modal-tenant-detalhe');
+}
+
+// ────────────────────────── CRIAR TENANT ─────────────────────
+async function criarTenant() {
+  const nome = document.getElementById('t-nome').value.trim();
+  const whatsapp = document.getElementById('t-whatsapp').value.trim();
+  const plano_id = document.getElementById('t-plano').value;
+  const duracao = parseInt(document.getElementById('t-duracao').value) || 30;
+  const nif = document.getElementById('t-nif').value.trim();
+  const email = document.getElementById('t-email').value.trim();
+  const pais = document.getElementById('t-pais').value.trim();
+  const notas = document.getElementById('t-notas').value.trim();
+
+  if (!nome || !whatsapp || !plano_id) {
+    showAlert('modal-tenant-alert', 'Nome, WhatsApp e Plano são obrigatórios', 'error');
+    return;
+  }
+
+  const btn = document.getElementById('btn-criar-tenant');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-sm"></span> A criar…';
+
+  try {
+    await apiFetch('/api/superadmin/tenants', 'POST', {
+      nome, telefone_whatsapp: whatsapp, plano_id, duracao_dias: duracao,
+      nif: nif || undefined, email: email || undefined,
+      pais: pais || 'Angola', notas: notas || undefined,
+    });
+    closeModal('modal-novo-tenant');
+    showAlert('tenants-alert', `Empresa criada! Link de activação enviado para ${whatsapp} via WhatsApp.`, 'success');
+    loadTenants(); loadDashboard();
+    // Limpar formulário
+    ['t-nome','t-whatsapp','t-nif','t-email','t-notas'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('t-duracao').value = 30;
+  } catch (e) {
+    showAlert('modal-tenant-alert', e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '🚀 Criar & Enviar Link';
+  }
+}
+
+// ────────────────────────── PLANOS ───────────────────────────
+async function loadPlanos() {
+  try {
+    const d = await apiFetch('/api/superadmin/planos');
+    // Preencher select do modal
+    const sel = document.getElementById('t-plano');
+    sel.innerHTML = d.planos.map(p => `<option value="${p.id}">${p.nome}</option>`).join('');
+
+    const grid = document.getElementById('planos-grid');
+    grid.innerHTML = d.planos.map(p => `
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:22px;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">
+          <div>
+            <div style="font-size:18px;font-weight:700;">${esc(p.nome)}</div>
+            <div style="font-size:12px;color:var(--muted);">${esc(p.descricao||'')}</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="editarPlano(${JSON.stringify(p).replace(/"/g,'&quot;')})">✏️</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px;margin-bottom:14px;">
+          <div><span style="color:var(--muted)">Funcionários:</span> ${p.max_funcionarios === -1 ? '∞' : p.max_funcionarios}</div>
+          <div><span style="color:var(--muted)">Produtos:</span> ${p.max_produtos === -1 ? '∞' : p.max_produtos}</div>
+          <div><span style="color:var(--muted)">Mesas:</span> ${p.max_mesas === -1 ? '∞' : p.max_mesas}</div>
+        </div>
+        <div style="display:flex;gap:10px;">
+          <div style="flex:1;background:var(--bg);border-radius:7px;padding:10px;text-align:center;">
+            <div style="font-size:14px;font-weight:700;">${formatKz(p.preco_mensal)}</div>
+            <div style="font-size:11px;color:var(--muted);">/ mês</div>
+          </div>
+          <div style="flex:1;background:var(--bg);border-radius:7px;padding:10px;text-align:center;">
+            <div style="font-size:14px;font-weight:700;">${formatKz(p.preco_anual)}</div>
+            <div style="font-size:11px;color:var(--muted);">/ ano</div>
+          </div>
+        </div>
+      </div>`).join('');
+  } catch (e) {
+    document.getElementById('planos-grid').innerHTML = `<div class="loader" style="color:var(--error)">${e.message}</div>`;
+  }
+}
+
+function editarPlano(p) {
+  editingPlanoId = p.id;
+  document.getElementById('ep-titulo').textContent = `Editar Plano: ${p.nome}`;
+  document.getElementById('ep-mensal').value = p.preco_mensal;
+  document.getElementById('ep-anual').value = p.preco_anual;
+  document.getElementById('ep-func').value = p.max_funcionarios;
+  document.getElementById('ep-prod').value = p.max_produtos;
+  openModal('modal-editar-plano');
+}
+
+async function salvarPlano() {
+  if (!editingPlanoId) return;
+  const btn = document.getElementById('btn-salvar-plano');
+  btn.disabled = true;
+  try {
+    await apiFetch(`/api/superadmin/planos/${editingPlanoId}`, 'PUT', {
+      preco_mensal: parseFloat(document.getElementById('ep-mensal').value),
+      preco_anual: parseFloat(document.getElementById('ep-anual').value),
+      max_funcionarios: parseInt(document.getElementById('ep-func').value),
+      max_produtos: parseInt(document.getElementById('ep-prod').value),
+    });
+    closeModal('modal-editar-plano');
+    showAlert('planos-alert', 'Plano actualizado com sucesso!', 'success');
+    loadPlanos();
+  } catch (e) {
+    showAlert('modal-plano-alert', e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ────────────────────────── UTILS ────────────────────────────
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+  // Limpar alertas dentro do modal
+  const a = document.querySelector(`#${id} [id$="-alert"]`);
+  if (a) a.innerHTML = '';
+}
+
+function showAlert(containerId, msg, type = 'success') {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  el.innerHTML = `<div class="alert alert-${type === 'success' ? 'success' : 'error'}">${esc(msg)}</div>`;
+  setTimeout(() => { el.innerHTML = ''; }, 5000);
+}
+
+function badgeEstado(estado) {
+  const map = {
+    ACTIVA: 'badge-green', PENDENTE: 'badge-yellow',
+    SUSPENSA: 'badge-yellow', EXPIRADA: 'badge-red',
+    CANCELADA: 'badge-gray', REVOGADA: 'badge-red',
+  };
+  return `<span class="badge ${map[estado] || 'badge-gray'}">${estado || '—'}</span>`;
+}
+
+function licencaInfo(t) {
+  if (!t.licenca_estado) return '<span style="color:var(--muted)">Sem licença</span>';
+  const cor = t.licenca_estado === 'ACTIVA' ? 'var(--success)' : t.licenca_estado === 'PENDENTE' ? 'var(--warning)' : 'var(--error)';
+  return `<span style="color:${cor}">${t.licenca_estado}</span>${t.licenca_fim ? `<br>${formatDate(t.licenca_fim)}` : ''}`;
+}
+
+function formatDate(d) {
+  if (!d) return '—';
+  return new Date(d).toLocaleDateString('pt-AO', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+function formatKz(v) {
+  if (!v && v !== 0) return '—';
+  return parseFloat(v).toLocaleString('pt-AO') + ' Kz';
+}
+
+function esc(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Fechar modais ao clicar fora
+document.querySelectorAll('.modal-overlay').forEach(o => {
+  o.addEventListener('click', e => { if (e.target === o) o.classList.remove('open'); });
+});
+</script>
+</body>
+</html>

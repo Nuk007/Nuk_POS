@@ -1,5 +1,6 @@
 // Nuk_POS — Base de dados PostgreSQL
 // Arquitectura: igual ao ATC46/AviationMoney (Node + Express + pg)
+// SaaS multi-tenant: cada empresa (tenant) tem tenant_id em todas as tabelas operacionais
 
 const { Pool } = require('pg');
 
@@ -20,12 +21,98 @@ async function initDB() {
   try {
     await client.query('BEGIN');
 
+    // =========================================================
+    // SAAS MULTI-TENANT — tabelas de infra-estrutura do produto
+    // =========================================================
+
+    // Planos de assinatura
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS planos_assinatura (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        nome VARCHAR(50) UNIQUE NOT NULL,
+        descricao TEXT,
+        max_funcionarios INTEGER DEFAULT 3,
+        max_produtos INTEGER DEFAULT 50,
+        max_mesas INTEGER DEFAULT 20,
+        preco_mensal NUMERIC(12,2) DEFAULT 0,
+        preco_anual NUMERIC(12,2) DEFAULT 0,
+        ativo BOOLEAN DEFAULT true,
+        criado_em TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
+    // Tenants (empresas clientes do SaaS)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS tenants (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        nome VARCHAR(200) NOT NULL,
+        nif VARCHAR(30),
+        telefone_whatsapp VARCHAR(30) NOT NULL,
+        email VARCHAR(200),
+        pais VARCHAR(60) DEFAULT 'Angola',
+        moeda VARCHAR(10) DEFAULT 'Kz',
+        timezone VARCHAR(60) DEFAULT 'Africa/Luanda',
+        plano_id UUID REFERENCES planos_assinatura(id),
+        estado VARCHAR(20) DEFAULT 'PENDENTE'
+          CHECK (estado IN ('PENDENTE','ACTIVA','SUSPENSA','EXPIRADA','CANCELADA')),
+        slug VARCHAR(60) UNIQUE,
+        logo_url TEXT,
+        criado_em TIMESTAMPTZ DEFAULT NOW(),
+        atualizado_em TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_tenants_estado ON tenants(estado)`);
+
+    // Licenças de activação
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS licencas (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        license_key VARCHAR(40) UNIQUE NOT NULL,
+        plano_id UUID REFERENCES planos_assinatura(id),
+        duracao_dias INTEGER NOT NULL DEFAULT 30,
+        inicio TIMESTAMPTZ,
+        fim TIMESTAMPTZ,
+        estado VARCHAR(20) DEFAULT 'PENDENTE'
+          CHECK (estado IN ('PENDENTE','ACTIVA','EXPIRADA','REVOGADA')),
+        whatsapp_enviado_em TIMESTAMPTZ,
+        activado_em TIMESTAMPTZ,
+        activado_por_ip VARCHAR(50),
+        gerado_por VARCHAR(200) DEFAULT 'superadmin',
+        notas TEXT,
+        criado_em TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_licencas_key ON licencas(license_key)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_licencas_tenant ON licencas(tenant_id)`);
+
+    // Admin do tenant (conta principal de cada empresa)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS tenant_admins (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        nome VARCHAR(200) NOT NULL,
+        email VARCHAR(200),
+        telefone VARCHAR(30),
+        password_hash VARCHAR(255),
+        estado VARCHAR(20) DEFAULT 'PENDENTE' CHECK (estado IN ('PENDENTE','ACTIVO','BLOQUEADO')),
+        ultimo_acesso TIMESTAMPTZ,
+        criado_em TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_tenant_admins_tenant ON tenant_admins(tenant_id)`);
+
+    // =========================================================
+    // FIM SAAS — tabelas operacionais abaixo têm tenant_id
+    // =========================================================
+
     // Funcionários (staff do sistema)
     await client.query(`
       CREATE TABLE IF NOT EXISTS funcionarios (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
         nome VARCHAR(200) NOT NULL,
-        email VARCHAR(200) UNIQUE NOT NULL,
+        email VARCHAR(200) NOT NULL,
         password_hash VARCHAR(255) NOT NULL,
         cargo VARCHAR(100),
         nivel_acesso VARCHAR(20) DEFAULT 'OPERADOR' CHECK (nivel_acesso IN ('ADMIN','GERENTE','OPERADOR')),
@@ -36,17 +123,20 @@ async function initDB() {
         dois_fatores BOOLEAN DEFAULT false,
         ultimo_acesso TIMESTAMPTZ,
         criado_em TIMESTAMPTZ DEFAULT NOW(),
-        atualizado_em TIMESTAMPTZ DEFAULT NOW()
+        atualizado_em TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(tenant_id, email)
       )
     `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_func_tenant ON funcionarios(tenant_id)`);
 
     // Clientes
     await client.query(`
       CREATE TABLE IF NOT EXISTS clientes (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
         nome VARCHAR(200) NOT NULL,
-        telefone VARCHAR(20) UNIQUE,
-        email VARCHAR(200) UNIQUE,
+        telefone VARCHAR(20),
+        email VARCHAR(200),
         provincia VARCHAR(100),
         nif VARCHAR(20),
         password_hash VARCHAR(255),
@@ -57,10 +147,14 @@ async function initDB() {
         pontos INTEGER DEFAULT 50,
         referido_por UUID REFERENCES clientes(id),
         ativo BOOLEAN DEFAULT true,
-        criado_em TIMESTAMPTZ DEFAULT NOW()
+        criado_em TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(tenant_id, telefone)
       )
     `);
-    // Adicionar colunas a clientes existentes (migração segura)
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_clientes_tenant ON clientes(tenant_id)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_clientes_tel ON clientes(telefone)`);
+    // Migrações seguras para colunas adicionadas em versões anteriores
+    await client.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE`);
     await client.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS provincia VARCHAR(100)`);
     await client.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS nukcoin_saldo NUMERIC(15,2) DEFAULT 0`);
     await client.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS estrelas INTEGER DEFAULT 0`);
@@ -71,19 +165,24 @@ async function initDB() {
     await client.query(`
       CREATE TABLE IF NOT EXISTS mesas (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        numero VARCHAR(10) UNIQUE NOT NULL,
+        tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+        numero VARCHAR(10) NOT NULL,
         capacidade INTEGER DEFAULT 4,
         zona VARCHAR(50),
         status VARCHAR(20) DEFAULT 'LIVRE' CHECK (status IN ('LIVRE','OCUPADA','RESERVADA','LIMPEZA','MANUTENCAO')),
         ultima_atividade TIMESTAMPTZ,
-        criado_em TIMESTAMPTZ DEFAULT NOW()
+        criado_em TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(tenant_id, numero)
       )
     `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_mesas_tenant ON mesas(tenant_id)`);
+    await client.query(`ALTER TABLE mesas ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE`);
 
     // Produtos
     await client.query(`
       CREATE TABLE IF NOT EXISTS produtos (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
         nome VARCHAR(200) NOT NULL,
         descricao TEXT,
         categoria VARCHAR(30) CHECK (categoria IN ('CHURRASCO','PEIXE','BEBIDA','SOBREMESA','ACOMPANHAMENTO','COCKTAIL','ENTRADA','SHISHA')),
@@ -94,11 +193,14 @@ async function initDB() {
         atualizado_em TIMESTAMPTZ DEFAULT NOW()
       )
     `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_produtos_tenant ON produtos(tenant_id)`);
+    await client.query(`ALTER TABLE produtos ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE`);
 
     // Pedidos
     await client.query(`
       CREATE TABLE IF NOT EXISTS pedidos (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
         mesa_id UUID REFERENCES mesas(id),
         cliente_id UUID REFERENCES clientes(id),
         funcionario_id UUID REFERENCES funcionarios(id),
@@ -110,6 +212,7 @@ async function initDB() {
         atualizado_em TIMESTAMPTZ DEFAULT NOW()
       )
     `);
+    await client.query(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE`);
 
     await client.query(`CREATE INDEX IF NOT EXISTS idx_pedidos_status ON pedidos(status)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_pedidos_mesa ON pedidos(mesa_id)`);
@@ -135,7 +238,8 @@ async function initDB() {
     await client.query(`
       CREATE TABLE IF NOT EXISTS quartos (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        numero VARCHAR(10) UNIQUE NOT NULL,
+        tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+        numero VARCHAR(10) NOT NULL,
         tipo VARCHAR(20) CHECK (tipo IN ('STANDARD','SUPERIOR','SUITE','SUITE_PRESIDENCIAL','VIP_EXECUTIVO')),
         andar INTEGER DEFAULT 0,
         preco_2h NUMERIC(10,2) NOT NULL,
@@ -144,9 +248,12 @@ async function initDB() {
         status VARCHAR(20) DEFAULT 'DISPONIVEL' CHECK (status IN ('DISPONIVEL','OCUPADO','LIMPEZA','MANUTENCAO','BLOQUEADO')),
         descricao TEXT,
         criado_em TIMESTAMPTZ DEFAULT NOW(),
-        atualizado_em TIMESTAMPTZ DEFAULT NOW()
+        atualizado_em TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(tenant_id, numero)
       )
     `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_quartos_tenant ON quartos(tenant_id)`);
+    await client.query(`ALTER TABLE quartos ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE`);
 
     // Reservas
     await client.query(`
@@ -286,20 +393,24 @@ async function initDB() {
       )
     `);
 
-    // Configurações do sistema
+    // Configurações do sistema (por tenant)
     await client.query(`
       CREATE TABLE IF NOT EXISTS configuracoes (
-        chave VARCHAR(100) PRIMARY KEY,
+        tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        chave VARCHAR(100) NOT NULL,
         valor TEXT NOT NULL,
         descricao TEXT,
-        atualizado_em TIMESTAMPTZ DEFAULT NOW()
+        atualizado_em TIMESTAMPTZ DEFAULT NOW(),
+        PRIMARY KEY (tenant_id, chave)
       )
     `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_config_tenant ON configuracoes(tenant_id)`);
 
     // Refresh tokens
     await client.query(`
       CREATE TABLE IF NOT EXISTS refresh_tokens (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
         funcionario_id UUID NOT NULL REFERENCES funcionarios(id) ON DELETE CASCADE,
         token VARCHAR(500) UNIQUE NOT NULL,
         expira_em TIMESTAMPTZ NOT NULL,
@@ -322,19 +433,58 @@ async function initDB() {
 async function seedDB(pool) {
   const bcrypt = require('bcryptjs');
 
-  // ADMIN
-  const existeAdmin = await pool.query(`SELECT id FROM funcionarios WHERE email = 'admin@nukpos.ao' LIMIT 1`);
+  // ───── PLANOS DE ASSINATURA ─────
+  const existePlano = await pool.query(`SELECT id FROM planos_assinatura WHERE nome = 'BASICO' LIMIT 1`);
+  if (existePlano.rows.length === 0) {
+    const planos = [
+      ['BASICO',      'Plano de entrada para pequenos negócios',     3,  50,  20,  15000,  150000],
+      ['PRO',         'Para negócios em crescimento',                10, 200, 50,  35000,  350000],
+      ['ENTERPRISE',  'Para grandes operações — sem limites',        -1,  -1, -1, 100000, 1000000],
+    ];
+    for (const [nome, desc, max_f, max_p, max_m, preco_m, preco_a] of planos) {
+      await pool.query(`
+        INSERT INTO planos_assinatura (nome, descricao, max_funcionarios, max_produtos, max_mesas, preco_mensal, preco_anual)
+        VALUES ($1,$2,$3,$4,$5,$6,$7)
+      `, [nome, desc, max_f, max_p, max_m, preco_m, preco_a]);
+    }
+    console.log('📦 Planos de assinatura criados: BASICO / PRO / ENTERPRISE');
+  }
+
+  // ───── TENANT DEMO (para desenvolvimento e testes) ─────
+  const planoPro = await pool.query(`SELECT id FROM planos_assinatura WHERE nome = 'PRO' LIMIT 1`);
+  const planoId = planoPro.rows[0]?.id;
+
+  let tenantId;
+  const existeTenant = await pool.query(`SELECT id FROM tenants WHERE slug = 'demo' LIMIT 1`);
+  if (existeTenant.rows.length === 0 && planoId) {
+    const r = await pool.query(`
+      INSERT INTO tenants (nome, telefone_whatsapp, email, plano_id, estado, slug)
+      VALUES ('Nuk_POS Demo', '244900000000', 'demo@nukpos.ao', $1, 'ACTIVA', 'demo')
+      RETURNING id
+    `, [planoId]);
+    tenantId = r.rows[0].id;
+    console.log('🏢 Tenant demo criado (slug: demo)');
+  } else {
+    tenantId = existeTenant.rows[0]?.id;
+  }
+
+  if (!tenantId) return; // sem tenant não há seed operacional
+
+  // ───── ADMIN DO TENANT DEMO ─────
+  const existeAdmin = await pool.query(
+    `SELECT id FROM funcionarios WHERE email = 'admin@nukpos.ao' AND tenant_id = $1 LIMIT 1`, [tenantId]
+  );
   if (existeAdmin.rows.length === 0) {
     const hash = await bcrypt.hash('Admin@NukPOS25!', 12);
     await pool.query(`
-      INSERT INTO funcionarios (nome, email, password_hash, cargo, nivel_acesso, salario)
-      VALUES ('Administrador', 'admin@nukpos.ao', $1, 'Administrador', 'ADMIN', 450000)
-    `, [hash]);
-    console.log('👤 Admin criado: admin@nukpos.ao / Admin@NukPOS25!');
+      INSERT INTO funcionarios (tenant_id, nome, email, password_hash, cargo, nivel_acesso, salario)
+      VALUES ($1, 'Administrador', 'admin@nukpos.ao', $2, 'Administrador', 'ADMIN', 450000)
+    `, [tenantId, hash]);
+    console.log('👤 Admin demo criado: admin@nukpos.ao / Admin@NukPOS25!');
   }
 
-  // Mesas
-  const existeMesa = await pool.query(`SELECT id FROM mesas LIMIT 1`);
+  // ───── MESAS DO TENANT DEMO ─────
+  const existeMesa = await pool.query(`SELECT id FROM mesas WHERE tenant_id = $1 LIMIT 1`, [tenantId]);
   if (existeMesa.rows.length === 0) {
     const mesas = [
       ['M01', 4, 'Esplanada'], ['M02', 4, 'Esplanada'], ['M03', 6, 'Esplanada'],
@@ -343,13 +493,16 @@ async function seedDB(pool) {
       ['M10', 4, 'Salão'], ['P01', 6, 'Piscina'], ['P02', 4, 'Piscina'],
     ];
     for (const [num, cap, zona] of mesas) {
-      await pool.query(`INSERT INTO mesas (numero, capacidade, zona) VALUES ($1, $2, $3)`, [num, cap, zona]);
+      await pool.query(
+        `INSERT INTO mesas (tenant_id, numero, capacidade, zona) VALUES ($1, $2, $3, $4)`,
+        [tenantId, num, cap, zona]
+      );
     }
-    console.log('🍽️  Mesas criadas');
+    console.log('🍽️  Mesas demo criadas');
   }
 
-  // Produtos
-  const existeProd = await pool.query(`SELECT id FROM produtos LIMIT 1`);
+  // ───── PRODUTOS DO TENANT DEMO ─────
+  const existeProd = await pool.query(`SELECT id FROM produtos WHERE tenant_id = $1 LIMIT 1`, [tenantId]);
   if (existeProd.rows.length === 0) {
     const produtos = [
       ['Picanha Angus', 'Churrasco premium de picanha angus', 'CHURRASCO', 4500],
@@ -367,15 +520,15 @@ async function seedDB(pool) {
     ];
     for (const [nome, desc, cat, preco] of produtos) {
       await pool.query(
-        `INSERT INTO produtos (nome, descricao, categoria, preco) VALUES ($1, $2, $3, $4)`,
-        [nome, desc, cat, preco]
+        `INSERT INTO produtos (tenant_id, nome, descricao, categoria, preco) VALUES ($1, $2, $3, $4, $5)`,
+        [tenantId, nome, desc, cat, preco]
       );
     }
-    console.log('🍖 Produtos criados');
+    console.log('🍖 Produtos demo criados');
   }
 
-  // Quartos
-  const existeQuarto = await pool.query(`SELECT id FROM quartos LIMIT 1`);
+  // ───── QUARTOS DO TENANT DEMO ─────
+  const existeQuarto = await pool.query(`SELECT id FROM quartos WHERE tenant_id = $1 LIMIT 1`, [tenantId]);
   if (existeQuarto.rows.length === 0) {
     const quartos = [
       ['Q01', 'STANDARD', 1, 18000, 22000, 30000],
@@ -391,20 +544,20 @@ async function seedDB(pool) {
     ];
     for (const [num, tipo, andar, p2h, pp, pd] of quartos) {
       await pool.query(
-        `INSERT INTO quartos (numero, tipo, andar, preco_2h, preco_pernoite, preco_diaria) VALUES ($1,$2,$3,$4,$5,$6)`,
-        [num, tipo, andar, p2h, pp, pd]
+        `INSERT INTO quartos (tenant_id, numero, tipo, andar, preco_2h, preco_pernoite, preco_diaria) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [tenantId, num, tipo, andar, p2h, pp, pd]
       );
     }
-    console.log('🛏️  Quartos criados');
+    console.log('🛏️  Quartos demo criados');
   }
 
-  // Configurações
+  // ───── CONFIGURAÇÕES DO TENANT DEMO ─────
   const configs = [
-    ['nome_estabelecimento', 'Nuk_POS', 'Nome do estabelecimento'],
+    ['nome_estabelecimento', 'Nuk_POS Demo', 'Nome do estabelecimento'],
     ['iva_padrao', '14', 'Taxa de IVA padrão (%)'],
     ['moeda', 'Kz', 'Moeda utilizada'],
     ['timezone', 'Africa/Luanda', 'Fuso horário'],
-    ['versao', '1.0.0', 'Versão do sistema'],
+    ['versao', '2.0.0', 'Versão do sistema'],
     ['nukcoin_desconto_pct', '10', 'Desconto (%) ao pagar com Nuk-Coin'],
     ['estrelas_minimo_consumo', '25000', 'Valor mínimo de consumo (Kz) para ganhar 1 estrela'],
     ['estrelas_para_desconto', '5', 'Número de estrelas para activar desconto'],
@@ -415,10 +568,12 @@ async function seedDB(pool) {
   ];
   for (const [chave, valor, desc] of configs) {
     await pool.query(
-      `INSERT INTO configuracoes (chave, valor, descricao) VALUES ($1,$2,$3) ON CONFLICT (chave) DO NOTHING`,
-      [chave, valor, desc]
+      `INSERT INTO configuracoes (tenant_id, chave, valor, descricao) VALUES ($1,$2,$3,$4)
+       ON CONFLICT (tenant_id, chave) DO NOTHING`,
+      [tenantId, chave, valor, desc]
     );
   }
+  console.log('⚙️  Configurações demo criadas');
 }
 
 module.exports = { pool, initDB };

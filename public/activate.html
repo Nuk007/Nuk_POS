@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Activar Licença — Nuk POS</title>
+  <style>
+    :root {
+      --bg: #f5f6fa;
+      --card: #ffffff;
+      --fg: #1a1d27;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+      --accent: #6c47ff;
+      --accent-dark: #5235d4;
+      --success: #10b981;
+      --error: #ef4444;
+      --warning: #f59e0b;
+      --radius: 12px;
+      --shadow: 0 4px 24px rgba(0,0,0,.08);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg: #0f1117; --card: #1a1d27; --fg: #f1f5f9;
+        --muted: #94a3b8; --border: #2d3244;
+        color-scheme: dark;
+      }
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg); color: var(--fg);
+      min-height: 100vh; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 24px 16px;
+    }
+
+    /* ── Logo ── */
+    .logo { display: flex; align-items: center; gap: 10px; margin-bottom: 32px; }
+    .logo-icon {
+      width: 44px; height: 44px; border-radius: 10px;
+      background: var(--accent);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px; font-weight: 800; color: #fff;
+    }
+    .logo-text { font-size: 22px; font-weight: 700; letter-spacing: -.5px; }
+    .logo-text span { color: var(--accent); }
+
+    /* ── Card ── */
+    .card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); box-shadow: var(--shadow);
+      padding: 36px 32px; width: 100%; max-width: 480px;
+    }
+    .card-header { text-align: center; margin-bottom: 28px; }
+    .card-header h1 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+    .card-header p { color: var(--muted); font-size: 14px; line-height: 1.5; }
+
+    /* ── Plan badge ── */
+    .plan-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 600;
+      background: #ede9ff; color: var(--accent); border: 1px solid #c4b5fd;
+      margin-bottom: 4px;
+    }
+
+    /* ── Company info bar ── */
+    .company-bar {
+      background: #f8f7ff; border: 1px solid #ede9ff;
+      border-radius: 8px; padding: 14px 16px; margin-bottom: 24px;
+      display: flex; align-items: center; gap: 12px;
+    }
+    .company-bar .icon { font-size: 28px; }
+    .company-bar .info h3 { font-size: 16px; font-weight: 600; }
+    .company-bar .info p { font-size: 13px; color: var(--muted); }
+
+    /* ── Form ── */
+    .form-group { margin-bottom: 18px; }
+    label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; }
+    input {
+      width: 100%; padding: 10px 14px; border: 1.5px solid var(--border);
+      border-radius: 8px; font-size: 15px; background: var(--bg); color: var(--fg);
+      transition: border-color .2s;
+    }
+    input:focus { outline: none; border-color: var(--accent); }
+    input.error { border-color: var(--error); }
+    .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+    /* ── Button ── */
+    .btn {
+      width: 100%; padding: 13px; border: none; border-radius: 8px;
+      font-size: 15px; font-weight: 600; cursor: pointer;
+      transition: opacity .2s, transform .1s;
+    }
+    .btn:active { transform: scale(.99); }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { opacity: .9; }
+    .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+
+    /* ── States ── */
+    #state-loading, #state-error, #state-success, #state-invalid {
+      text-align: center; padding: 20px 0;
+    }
+    .spinner {
+      width: 36px; height: 36px; border: 3px solid var(--border);
+      border-top-color: var(--accent); border-radius: 50%;
+      animation: spin .8s linear infinite; margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .icon-big { font-size: 48px; margin-bottom: 12px; }
+    .success-box {
+      background: #ecfdf5; border: 1px solid #6ee7b7;
+      border-radius: 10px; padding: 20px; margin-top: 20px;
+    }
+    .success-box h3 { color: var(--success); font-size: 18px; margin-bottom: 8px; }
+    .success-box p { font-size: 14px; color: #065f46; }
+    .error-box {
+      background: #fff1f2; border: 1px solid #fecaca;
+      border-radius: 10px; padding: 16px; margin-top: 16px;
+    }
+    .error-box p { font-size: 14px; color: #991b1b; }
+    .field-error { font-size: 12px; color: var(--error); margin-top: 4px; }
+
+    #state-loading, #state-error, #state-form, #state-success, #state-invalid {
+      display: none;
+    }
+    .active { display: block !important; }
+  </style>
+</head>
+<body>
+  <div class="logo">
+    <div class="logo-icon">N</div>
+    <div class="logo-text">Nuk<span>POS</span></div>
+  </div>
+
+  <div class="card">
+    <!-- A carregar licença -->
+    <div id="state-loading" class="active">
+      <div class="spinner"></div>
+      <p style="color:var(--muted);font-size:14px;">A verificar licença…</p>
+    </div>
+
+    <!-- Chave inválida -->
+    <div id="state-invalid">
+      <div class="icon-big">🔑</div>
+      <h2 style="margin-bottom:8px;">Licença Inválida</h2>
+      <p style="color:var(--muted);font-size:14px;" id="invalid-msg">Esta licença não foi encontrada ou já foi utilizada.</p>
+    </div>
+
+    <!-- Formulário de activação -->
+    <div id="state-form">
+      <div class="card-header">
+        <h1>Activar o seu plano</h1>
+        <p>Complete o registo para activar o sistema<br>para a sua empresa.</p>
+      </div>
+
+      <div id="company-bar" class="company-bar">
+        <div class="icon">🏢</div>
+        <div class="info">
+          <h3 id="company-name">—</h3>
+          <p><span id="plan-badge" class="plan-badge">⚡ PRO</span></p>
+        </div>
+      </div>
+
+      <form id="activate-form">
+        <div class="form-group">
+          <label for="nome">Nome do Administrador *</label>
+          <input type="text" id="nome" placeholder="Ex: João Silva" autocomplete="name" required>
+          <div class="field-error" id="err-nome"></div>
+        </div>
+        <div class="form-group">
+          <label for="email">E-mail (opcional)</label>
+          <input type="email" id="email" placeholder="admin@empresa.co.ao" autocomplete="email">
+          <div class="hint">Usado para recuperação de conta</div>
+        </div>
+        <div class="form-group">
+          <label for="password">Password *</label>
+          <input type="password" id="password" placeholder="Mínimo 8 caracteres" autocomplete="new-password" required>
+          <div class="field-error" id="err-password"></div>
+        </div>
+        <div class="form-group">
+          <label for="password2">Confirmar Password *</label>
+          <input type="password" id="password2" placeholder="Repita a password" autocomplete="new-password" required>
+          <div class="field-error" id="err-password2"></div>
+        </div>
+
+        <div id="form-error" class="error-box" style="display:none;">
+          <p id="form-error-msg"></p>
+        </div>
+
+        <button type="submit" class="btn btn-primary" id="submit-btn">
+          🚀 Activar Licença
+        </button>
+      </form>
+    </div>
+
+    <!-- Sucesso -->
+    <div id="state-success">
+      <div style="text-align:center;">
+        <div class="icon-big">🎉</div>
+        <h2 style="margin-bottom:8px;">Tudo Pronto!</h2>
+        <p style="color:var(--muted);font-size:14px;">O seu sistema está activo e configurado.</p>
+        <div class="success-box">
+          <h3>✅ Licença Activada</h3>
+          <p id="success-msg">A sua conta de administrador foi criada com sucesso.<br>
+          Pode agora entrar no sistema.</p>
+        </div>
+        <a href="/" style="display:block;margin-top:20px;" class="btn btn-primary"
+           style="text-decoration:none; text-align:center; display:block;">
+          Ir para o Sistema →
+        </a>
+      </div>
+    </div>
+
+    <!-- Erro fatal -->
+    <div id="state-error">
+      <div class="icon-big">⚠️</div>
+      <h2 style="margin-bottom:8px;">Erro</h2>
+      <p style="color:var(--muted);font-size:14px;" id="error-msg">Ocorreu um erro ao processar a sua activação.</p>
+    </div>
+  </div>
+
+  <script>
+    const BASE = '';
+    let licenseKey = null;
+    let tenantInfo = null;
+
+    function showState(id) {
+      ['loading','invalid','form','success','error'].forEach(s => {
+        document.getElementById('state-' + s).classList.remove('active');
+      });
+      document.getElementById('state-' + id).classList.add('active');
+    }
+
+    // Extrair chave da URL: /activate/NUKP-XXXX-XXXX-XXXX
+    function getKeyFromPath() {
+      const parts = window.location.pathname.split('/');
+      const idx = parts.indexOf('activate');
+      return idx !== -1 && parts[idx + 1] ? parts[idx + 1] : null;
+    }
+
+    async function verificarLicenca(key) {
+      showState('loading');
+      try {
+        const res = await fetch(`/api/activate/${key}`);
+        const data = await res.json();
+        if (!res.ok) {
+          document.getElementById('invalid-msg').textContent = data.erro || 'Licença inválida';
+          showState('invalid');
+          return;
+        }
+        tenantInfo = data;
+        document.getElementById('company-name').textContent = data.tenant_nome;
+        document.getElementById('plan-badge').textContent = '⚡ ' + (data.plano || 'PRO');
+        showState('form');
+      } catch (e) {
+        document.getElementById('error-msg').textContent = 'Não foi possível verificar a licença. Tente novamente.';
+        showState('error');
+      }
+    }
+
+    document.getElementById('activate-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      // Limpar erros
+      ['nome','password','password2'].forEach(id => {
+        document.getElementById('err-' + id).textContent = '';
+        document.getElementById(id).classList.remove('error');
+      });
+      document.getElementById('form-error').style.display = 'none';
+
+      const nome = document.getElementById('nome').value.trim();
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value;
+      const password2 = document.getElementById('password2').value;
+
+      let valid = true;
+      if (nome.length < 2) {
+        document.getElementById('err-nome').textContent = 'Nome deve ter pelo menos 2 caracteres';
+        document.getElementById('nome').classList.add('error');
+        valid = false;
+      }
+      if (password.length < 8) {
+        document.getElementById('err-password').textContent = 'Password deve ter pelo menos 8 caracteres';
+        document.getElementById('password').classList.add('error');
+        valid = false;
+      }
+      if (password !== password2) {
+        document.getElementById('err-password2').textContent = 'As passwords não coincidem';
+        document.getElementById('password2').classList.add('error');
+        valid = false;
+      }
+      if (!valid) return;
+
+      const btn = document.getElementById('submit-btn');
+      btn.disabled = true;
+      btn.textContent = 'A activar…';
+
+      try {
+        const res = await fetch(`/api/activate/${licenseKey}/confirmar`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nome, email: email || undefined, password }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          document.getElementById('form-error-msg').textContent = data.erro || 'Erro ao activar';
+          document.getElementById('form-error').style.display = 'block';
+          btn.disabled = false;
+          btn.textContent = '🚀 Activar Licença';
+          return;
+        }
+        document.getElementById('success-msg').innerHTML =
+          `A sua conta de administrador foi criada com sucesso.<br>
+           Entre com o seu telemóvel <strong>${tenantInfo?.telefone || ''}</strong> e a password definida.`;
+        showState('success');
+      } catch (e) {
+        document.getElementById('form-error-msg').textContent = 'Erro de ligação. Tente novamente.';
+        document.getElementById('form-error').style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = '🚀 Activar Licença';
+      }
+    });
+
+    // Iniciar
+    licenseKey = getKeyFromPath();
+    if (!licenseKey) {
+      document.getElementById('invalid-msg').textContent = 'Chave de licença não encontrada no endereço.';
+      showState('invalid');
+    } else {
+      verificarLicenca(licenseKey);
+    }
+  </script>
+</body>
+</html>
