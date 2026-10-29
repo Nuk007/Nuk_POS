@@ -185,73 +185,66 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
   const { email, password, tenant_slug } = req.body;
   if (!email || !password) return res.status(400).json({ erro: 'Email e senha são obrigatórios' });
 
-  // Multi-tenant: procurar funcionário no tenant correcto
-  // Se tenant_slug for fornecido, filtrar por tenant; caso contrário aceita qualquer (modo demo/dev)
-  let query, params;
-  if (tenant_slug) {
-    query = `
-      SELECT f.id, f.nome, f.email, f.password_hash, f.nivel_acesso, f.cargo, f.ativo,
-             f.tenant_id, t.slug AS tenant_slug, t.nome AS tenant_nome, t.estado AS tenant_estado
-      FROM funcionarios f
-      JOIN tenants t ON t.id = f.tenant_id
-      WHERE f.email = $1 AND t.slug = $2
-      LIMIT 1
-    `;
-    params = [email.toLowerCase(), tenant_slug];
-  } else {
-    query = `
-      SELECT f.id, f.nome, f.email, f.password_hash, f.nivel_acesso, f.cargo, f.ativo,
-             f.tenant_id, t.slug AS tenant_slug, t.nome AS tenant_nome, t.estado AS tenant_estado
-      FROM funcionarios f
-      LEFT JOIN tenants t ON t.id = f.tenant_id
-      WHERE f.email = $1
-      LIMIT 1
-    `;
-    params = [email.toLowerCase()];
-  }
+  try {
+    // Multi-tenant: procurar funcionário no tenant correcto
+    let query, params;
+    if (tenant_slug) {
+      query = `
+        SELECT f.id, f.nome, f.email, f.password_hash, f.nivel_acesso, f.cargo, f.ativo,
+               f.tenant_id, t.slug AS tenant_slug, t.nome AS tenant_nome, t.estado AS tenant_estado
+        FROM funcionarios f
+        JOIN tenants t ON t.id = f.tenant_id
+        WHERE f.email = $1 AND t.slug = $2
+        LIMIT 1
+      `;
+      params = [email.toLowerCase(), tenant_slug];
+    } else {
+      query = `
+        SELECT f.id, f.nome, f.email, f.password_hash, f.nivel_acesso, f.cargo, f.ativo,
+               f.tenant_id, t.slug AS tenant_slug, t.nome AS tenant_nome, t.estado AS tenant_estado
+        FROM funcionarios f
+        LEFT JOIN tenants t ON t.id = f.tenant_id
+        WHERE f.email = $1
+        LIMIT 1
+      `;
+      params = [email.toLowerCase()];
+    }
 
-  const r = await pool.query(query, params);
-  const func = r.rows[0];
-  if (!func || !func.ativo) return res.status(401).json({ erro: 'Credenciais inválidas' });
+    const r = await pool.query(query, params);
+    const func = r.rows[0];
+    if (!func || !func.ativo) return res.status(401).json({ erro: 'Credenciais inválidas' });
 
-  // Verificar estado do tenant
-  if (func.tenant_estado && !['ACTIVA'].includes(func.tenant_estado)) {
-    return res.status(403).json({
-      erro: `Conta da empresa ${func.tenant_estado === 'SUSPENSA' ? 'suspensa' : 'inactiva'}. Contacte o suporte.`,
-      codigo: `TENANT_${func.tenant_estado}`,
+    if (func.tenant_estado && !['ACTIVA'].includes(func.tenant_estado)) {
+      return res.status(403).json({
+        erro: `Conta da empresa ${func.tenant_estado === 'SUSPENSA' ? 'suspensa' : 'inactiva'}. Contacte o suporte.`,
+        codigo: `TENANT_${func.tenant_estado}`,
+      });
+    }
+
+    const ok = await bcrypt.compare(password, func.password_hash);
+    if (!ok) return res.status(401).json({ erro: 'Credenciais inválidas' });
+
+    await pool.query(`UPDATE funcionarios SET ultimo_acesso = NOW() WHERE id = $1`, [func.id]);
+
+    const payload = {
+      id: func.id, nome: func.nome, email: func.email,
+      nivel_acesso: func.nivel_acesso, cargo: func.cargo,
+      tenantId: func.tenant_id, tenantSlug: func.tenant_slug, tenantNome: func.tenant_nome,
+    };
+
+    const token = gerarToken(payload);
+    res.json({
+      token,
+      utilizador: {
+        id: func.id, nome: func.nome, email: func.email,
+        nivel_acesso: func.nivel_acesso, cargo: func.cargo,
+        tenant_id: func.tenant_id, tenant_slug: func.tenant_slug, tenant_nome: func.tenant_nome,
+      },
     });
+  } catch (e) {
+    console.error('POST /api/auth/login:', e.message);
+    res.status(500).json({ erro: 'Erro interno do servidor' });
   }
-
-  const ok = await bcrypt.compare(password, func.password_hash);
-  if (!ok) return res.status(401).json({ erro: 'Credenciais inválidas' });
-
-  await pool.query(`UPDATE funcionarios SET ultimo_acesso = NOW() WHERE id = $1`, [func.id]);
-
-  const payload = {
-    id: func.id,
-    nome: func.nome,
-    email: func.email,
-    nivel_acesso: func.nivel_acesso,
-    cargo: func.cargo,
-    tenantId: func.tenant_id,       // ← injectado no token para multi-tenant
-    tenantSlug: func.tenant_slug,
-    tenantNome: func.tenant_nome,
-  };
-
-  const token = gerarToken(payload);
-  res.json({
-    token,
-    utilizador: {
-      id: func.id,
-      nome: func.nome,
-      email: func.email,
-      nivel_acesso: func.nivel_acesso,
-      cargo: func.cargo,
-      tenant_id: func.tenant_id,
-      tenant_slug: func.tenant_slug,
-      tenant_nome: func.tenant_nome,
-    },
-  });
 });
 
 app.get('/api/auth/me', authMiddleware, async (req, res) => {
@@ -270,14 +263,19 @@ app.get('/api/auth/me', authMiddleware, async (req, res) => {
 // ── Funcionários ─────────────────────────────────────────────
 app.get('/api/funcionarios', authMiddleware, async (req, res) => {
   const tenantId = req.tenantId;
-  const r = await pool.query(
-    `SELECT id, nome, email, cargo, nivel_acesso, salario, media_avaliacao, total_avaliacoes, ativo, ultimo_acesso
-     FROM funcionarios
-     WHERE ($1::uuid IS NULL OR tenant_id = $1)
-     ORDER BY nome`,
-    [tenantId || null]
-  );
-  res.json(r.rows);
+  try {
+    const r = await pool.query(
+      `SELECT id, nome, email, cargo, nivel_acesso, salario, media_avaliacao, total_avaliacoes, ativo, ultimo_acesso
+       FROM funcionarios
+       WHERE ($1::uuid IS NULL OR tenant_id = $1)
+       ORDER BY nome`,
+      [tenantId || null]
+    );
+    res.json(r.rows);
+  } catch (e) {
+    console.error('GET /api/funcionarios:', e.message);
+    res.status(500).json({ erro: 'Erro interno do servidor' });
+  }
 });
 
 app.post('/api/funcionarios', authMiddleware, requerNivel(['ADMIN', 'GERENTE']), async (req, res) => {
@@ -343,15 +341,20 @@ app.put('/api/funcionarios/:id', authMiddleware, validarUUID('id'), requerNivel(
 // ── Mesas ────────────────────────────────────────────────────
 app.get('/api/mesas', authMiddleware, async (req, res) => {
   const tenantId = req.tenantId;
-  const r = await pool.query(
-    `SELECT m.*,
-      (SELECT COUNT(*) FROM pedidos p WHERE p.mesa_id = m.id AND p.status NOT IN ('FECHADO','CANCELADO')) as pedidos_activos
-     FROM mesas m
-     WHERE ($1::uuid IS NULL OR m.tenant_id = $1)
-     ORDER BY m.zona, m.numero`,
-    [tenantId || null]
-  );
-  res.json(r.rows);
+  try {
+    const r = await pool.query(
+      `SELECT m.*,
+        (SELECT COUNT(*) FROM pedidos p WHERE p.mesa_id = m.id AND p.status NOT IN ('FECHADO','CANCELADO')) as pedidos_activos
+       FROM mesas m
+       WHERE ($1::uuid IS NULL OR m.tenant_id = $1)
+       ORDER BY m.zona, m.numero`,
+      [tenantId || null]
+    );
+    res.json(r.rows);
+  } catch (e) {
+    console.error('GET /api/mesas:', e.message);
+    res.status(500).json({ erro: 'Erro interno do servidor' });
+  }
 });
 
 app.patch('/api/mesas/:id/status', authMiddleware, validarUUID('id'), async (req, res) => {
@@ -359,27 +362,37 @@ app.patch('/api/mesas/:id/status', authMiddleware, validarUUID('id'), async (req
   const { status } = req.body;
   if (!STATUSES_VALIDOS.includes(status)) return res.status(400).json({ erro: 'Status inválido' });
   const tenantId = req.tenantId;
-  const r = await pool.query(
-    `UPDATE mesas SET status=$1, ultima_atividade=NOW()
-     WHERE id=$2 AND ($3::uuid IS NULL OR tenant_id = $3) RETURNING *`,
-    [status, req.params.id, tenantId || null]
-  );
-  if (!r.rows[0]) return res.status(404).json({ erro: 'Mesa não encontrada' });
-  broadcast('mesa_atualizada', r.rows[0], tenantId);
-  res.json(r.rows[0]);
+  try {
+    const r = await pool.query(
+      `UPDATE mesas SET status=$1, ultima_atividade=NOW()
+       WHERE id=$2 AND ($3::uuid IS NULL OR tenant_id = $3) RETURNING *`,
+      [status, req.params.id, tenantId || null]
+    );
+    if (!r.rows[0]) return res.status(404).json({ erro: 'Mesa não encontrada' });
+    broadcast('mesa_atualizada', r.rows[0], tenantId);
+    res.json(r.rows[0]);
+  } catch (e) {
+    console.error('PATCH /api/mesas/:id/status:', e.message);
+    res.status(500).json({ erro: 'Erro interno do servidor' });
+  }
 });
 
 // ── Produtos ─────────────────────────────────────────────────
 app.get('/api/produtos', authMiddleware, async (req, res) => {
   const { categoria, disponivel } = req.query;
   const tenantId = req.tenantId;
-  let q = `SELECT * FROM produtos WHERE ativo = true AND ($1::uuid IS NULL OR tenant_id = $1)`;
-  const vals = [tenantId || null];
-  if (categoria) { q += ` AND categoria = $${vals.length + 1}`; vals.push(categoria); }
-  if (disponivel !== undefined) { q += ` AND disponivel = $${vals.length + 1}`; vals.push(disponivel === 'true'); }
-  q += ` ORDER BY categoria, nome`;
-  const r = await pool.query(q, vals);
-  res.json(r.rows);
+  try {
+    let q = `SELECT * FROM produtos WHERE ativo = true AND ($1::uuid IS NULL OR tenant_id = $1)`;
+    const vals = [tenantId || null];
+    if (categoria) { q += ` AND categoria = $${vals.length + 1}`; vals.push(categoria); }
+    if (disponivel !== undefined) { q += ` AND disponivel = $${vals.length + 1}`; vals.push(disponivel === 'true'); }
+    q += ` ORDER BY categoria, nome`;
+    const r = await pool.query(q, vals);
+    res.json(r.rows);
+  } catch (e) {
+    console.error('GET /api/produtos:', e.message);
+    res.status(500).json({ erro: 'Erro interno do servidor' });
+  }
 });
 
 app.post('/api/produtos', authMiddleware, requerNivel(['ADMIN', 'GERENTE']), async (req, res) => {
@@ -447,28 +460,38 @@ app.get('/api/pedidos', authMiddleware, async (req, res) => {
   if (data_inicio) { q += ` AND p.criado_em >= $${vals.length + 1}`; vals.push(data_inicio); }
   if (data_fim) { q += ` AND p.criado_em <= $${vals.length + 1}`; vals.push(data_fim); }
   q += ` GROUP BY p.id, m.numero, m.zona, f.nome ORDER BY p.criado_em DESC`;
-  const r = await pool.query(q, vals);
-  res.json(r.rows);
+  try {
+    const r = await pool.query(q, vals);
+    res.json(r.rows);
+  } catch (e) {
+    console.error('GET /api/pedidos:', e.message);
+    res.status(500).json({ erro: 'Erro interno do servidor' });
+  }
 });
 
 app.get('/api/pedidos/hoje', authMiddleware, async (req, res) => {
   const tenantId = req.tenantId;
-  const r = await pool.query(`
-    SELECT p.*, m.numero as mesa_numero,
-           json_agg(json_build_object(
-             'produto_nome', pr.nome, 'quantidade', ip.quantidade,
-             'preco_unitario', ip.preco_unitario, 'status_cozinha', ip.status_cozinha
-           )) FILTER (WHERE ip.id IS NOT NULL) as itens
-    FROM pedidos p
-    LEFT JOIN mesas m ON p.mesa_id = m.id
-    LEFT JOIN itens_pedido ip ON p.id = ip.pedido_id
-    LEFT JOIN produtos pr ON ip.produto_id = pr.id
-    WHERE p.criado_em >= CURRENT_DATE AT TIME ZONE 'Africa/Luanda'
-      AND ($1::uuid IS NULL OR p.tenant_id = $1)
-    GROUP BY p.id, m.numero
-    ORDER BY p.criado_em DESC
-  `, [tenantId || null]);
-  res.json(r.rows);
+  try {
+    const r = await pool.query(`
+      SELECT p.*, m.numero as mesa_numero,
+             json_agg(json_build_object(
+               'produto_nome', pr.nome, 'quantidade', ip.quantidade,
+               'preco_unitario', ip.preco_unitario, 'status_cozinha', ip.status_cozinha
+             )) FILTER (WHERE ip.id IS NOT NULL) as itens
+      FROM pedidos p
+      LEFT JOIN mesas m ON p.mesa_id = m.id
+      LEFT JOIN itens_pedido ip ON p.id = ip.pedido_id
+      LEFT JOIN produtos pr ON ip.produto_id = pr.id
+      WHERE p.criado_em >= CURRENT_DATE AT TIME ZONE 'Africa/Luanda'
+        AND ($1::uuid IS NULL OR p.tenant_id = $1)
+      GROUP BY p.id, m.numero
+      ORDER BY p.criado_em DESC
+    `, [tenantId || null]);
+    res.json(r.rows);
+  } catch (e) {
+    console.error('GET /api/pedidos/hoje:', e.message);
+    res.status(500).json({ erro: 'Erro interno do servidor' });
+  }
 });
 
 app.post('/api/pedidos', authMiddleware, async (req, res) => {
@@ -549,52 +572,67 @@ app.patch('/api/pedidos/:id/status', authMiddleware, validarUUID('id'), async (r
   const { status } = req.body;
   if (!STATUSES_VALIDOS.includes(status)) return res.status(400).json({ erro: 'Status inválido' });
   const tenantId = req.tenantId;
-  const r = await pool.query(
-    `UPDATE pedidos SET status=$1, atualizado_em=NOW()
-     WHERE id=$2 AND ($3::uuid IS NULL OR tenant_id = $3) RETURNING *`,
-    [status, req.params.id, tenantId || null]
-  );
-  if (!r.rows[0]) return res.status(404).json({ erro: 'Pedido não encontrado' });
-
-  // Se fechado, libertar mesa
-  if (status === 'FECHADO' && r.rows[0].mesa_id) {
-    const outrosPedidos = await pool.query(
-      `SELECT id FROM pedidos WHERE mesa_id=$1 AND status NOT IN ('FECHADO','CANCELADO') AND id != $2`,
-      [r.rows[0].mesa_id, req.params.id]
+  try {
+    const r = await pool.query(
+      `UPDATE pedidos SET status=$1, atualizado_em=NOW()
+       WHERE id=$2 AND ($3::uuid IS NULL OR tenant_id = $3) RETURNING *`,
+      [status, req.params.id, tenantId || null]
     );
-    if (!outrosPedidos.rows.length) {
-      await pool.query(`UPDATE mesas SET status='LIVRE' WHERE id=$1`, [r.rows[0].mesa_id]);
-    }
-  }
+    if (!r.rows[0]) return res.status(404).json({ erro: 'Pedido não encontrado' });
 
-  broadcast('pedido_atualizado', { id: req.params.id, status }, tenantId);
-  res.json(r.rows[0]);
+    // Se fechado, libertar mesa
+    if (status === 'FECHADO' && r.rows[0].mesa_id) {
+      const outrosPedidos = await pool.query(
+        `SELECT id FROM pedidos WHERE mesa_id=$1 AND status NOT IN ('FECHADO','CANCELADO') AND id != $2`,
+        [r.rows[0].mesa_id, req.params.id]
+      );
+      if (!outrosPedidos.rows.length) {
+        await pool.query(`UPDATE mesas SET status='LIVRE' WHERE id=$1`, [r.rows[0].mesa_id]);
+      }
+    }
+
+    broadcast('pedido_atualizado', { id: req.params.id, status }, tenantId);
+    res.json(r.rows[0]);
+  } catch (e) {
+    console.error('PATCH /api/pedidos/:id/status:', e.message);
+    res.status(500).json({ erro: 'Erro interno do servidor' });
+  }
 });
 
 app.patch('/api/pedidos/:pedidoId/itens/:itemId/status', authMiddleware, validarUUID('pedidoId'), validarUUID('itemId'), async (req, res) => {
   const { status_cozinha } = req.body;
-  const r = await pool.query(
-    `UPDATE itens_pedido SET status_cozinha=$1 WHERE id=$2 AND pedido_id=$3 RETURNING *`,
-    [status_cozinha, req.params.itemId, req.params.pedidoId]
-  );
-  if (!r.rows[0]) return res.status(404).json({ erro: 'Item não encontrado' });
-  broadcast('item_atualizado', r.rows[0], req.tenantId);
-  res.json(r.rows[0]);
+  try {
+    const r = await pool.query(
+      `UPDATE itens_pedido SET status_cozinha=$1 WHERE id=$2 AND pedido_id=$3 RETURNING *`,
+      [status_cozinha, req.params.itemId, req.params.pedidoId]
+    );
+    if (!r.rows[0]) return res.status(404).json({ erro: 'Item não encontrado' });
+    broadcast('item_atualizado', r.rows[0], req.tenantId);
+    res.json(r.rows[0]);
+  } catch (e) {
+    console.error('PATCH itens status:', e.message);
+    res.status(500).json({ erro: 'Erro interno do servidor' });
+  }
 });
 
 // ── Quartos ──────────────────────────────────────────────────
 app.get('/api/quartos', authMiddleware, async (req, res) => {
   const tenantId = req.tenantId;
-  const r = await pool.query(`
-    SELECT q.*,
-      (SELECT json_agg(json_build_object('id',r.id,'checkin',r.checkin,'checkout',r.checkout,'status',r.status,'nome_hospede',r.nome_hospede,'fracao',r.fracao))
-       FROM reservas r WHERE r.quarto_id = q.id AND r.status IN ('CONFIRMADA','CHECKIN')
-       AND r.checkout > NOW()) as reservas_activas
-    FROM quartos q
-    WHERE ($1::uuid IS NULL OR q.tenant_id = $1)
-    ORDER BY q.tipo, q.numero
-  `, [tenantId || null]);
-  res.json(r.rows);
+  try {
+    const r = await pool.query(`
+      SELECT q.*,
+        (SELECT json_agg(json_build_object('id',r.id,'checkin',r.checkin,'checkout',r.checkout,'status',r.status,'nome_hospede',r.nome_hospede,'fracao',r.fracao))
+         FROM reservas r WHERE r.quarto_id = q.id AND r.status IN ('CONFIRMADA','CHECKIN')
+         AND r.checkout > NOW()) as reservas_activas
+      FROM quartos q
+      WHERE ($1::uuid IS NULL OR q.tenant_id = $1)
+      ORDER BY q.tipo, q.numero
+    `, [tenantId || null]);
+    res.json(r.rows);
+  } catch (e) {
+    console.error('GET /api/quartos:', e.message);
+    res.status(500).json({ erro: 'Erro interno do servidor' });
+  }
 });
 
 app.post('/api/quartos/reserva', authMiddleware, async (req, res) => {
@@ -957,13 +995,18 @@ app.post('/api/financeiro/faturas', authMiddleware, async (req, res) => {
 app.get('/api/clientes', authMiddleware, async (req, res) => {
   const { q } = req.query;
   const tenantId = req.tenantId;
-  let query = `SELECT id, nome, telefone, email, nivel_fidelizacao, saldo_carteira, criado_em
-               FROM clientes WHERE ativo=true AND ($1::uuid IS NULL OR tenant_id = $1)`;
-  const vals = [tenantId || null];
-  if (q) { query += ` AND (nome ILIKE $2 OR telefone ILIKE $2 OR email ILIKE $2)`; vals.push(`%${q}%`); }
-  query += ` ORDER BY nome`;
-  const r = await pool.query(query, vals);
-  res.json(r.rows);
+  try {
+    let query = `SELECT id, nome, telefone, email, nivel_fidelizacao, saldo_carteira, criado_em
+                 FROM clientes WHERE ativo=true AND ($1::uuid IS NULL OR tenant_id = $1)`;
+    const vals = [tenantId || null];
+    if (q) { query += ` AND (nome ILIKE $2 OR telefone ILIKE $2 OR email ILIKE $2)`; vals.push(`%${q}%`); }
+    query += ` ORDER BY nome`;
+    const r = await pool.query(query, vals);
+    res.json(r.rows);
+  } catch (e) {
+    console.error('GET /api/clientes:', e.message);
+    res.status(500).json({ erro: 'Erro interno do servidor' });
+  }
 });
 
 app.post('/api/clientes', authMiddleware, async (req, res) => {
@@ -1080,14 +1123,19 @@ app.patch('/api/chamadas/:id/atender', authMiddleware, validarUUID('id'), async 
 // ── Configurações ─────────────────────────────────────────────
 app.get('/api/configuracoes', authMiddleware, async (req, res) => {
   const tenantId = req.tenantId;
-  const r = await pool.query(
-    `SELECT chave, valor, descricao FROM configuracoes
-     WHERE ($1::uuid IS NULL OR tenant_id = $1) ORDER BY chave`,
-    [tenantId || null]
-  );
-  const cfg = {};
-  r.rows.forEach(row => { cfg[row.chave] = row.valor; });
-  res.json(cfg);
+  try {
+    const r = await pool.query(
+      `SELECT chave, valor, descricao FROM configuracoes
+       WHERE ($1::uuid IS NULL OR tenant_id = $1) ORDER BY chave`,
+      [tenantId || null]
+    );
+    const cfg = {};
+    r.rows.forEach(row => { cfg[row.chave] = row.valor; });
+    res.json(cfg);
+  } catch (e) {
+    console.error('GET /api/configuracoes:', e.message);
+    res.status(500).json({ erro: 'Erro interno do servidor' });
+  }
 });
 
 app.put('/api/configuracoes', authMiddleware, requerNivel(['ADMIN']), async (req, res) => {
