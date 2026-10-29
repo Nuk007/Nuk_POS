@@ -1,9 +1,8 @@
 services:
   - type: web
     name: nukpos
-    env: node
-    buildCommand: npm install
-    startCommand: node server/app.js
+    env: docker
+    dockerfilePath: ./Dockerfile
     healthCheckPath: /api/health
     disk:
       name: nukpos-data
