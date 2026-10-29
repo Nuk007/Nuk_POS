@@ -19,7 +19,7 @@ async function modulo_dashboard(el) {
         <div class="kpi-card">
           <div class="kpi-label">Receita Hoje <span class="kpi-icon">💰</span></div>
           <div class="kpi-valor texto-primario">${formatarMoeda(d.resumo_hoje.receita_hoje)}</div>
-          <div class="kpi-sub">${d.resumo_hoje.pedidos_fechados} pedidos fechados</div>
+          <div class="kpi-sub">${d.resumo_hoje.fechados || 0} pedidos fechados</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-label">Pedidos Activos <span class="kpi-icon">🍽️</span></div>

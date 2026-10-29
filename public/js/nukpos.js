@@ -24,7 +24,8 @@ async function api(metodo, path, dados) {
   const json = await r.json().catch(() => ({}));
 
   if (!r.ok) {
-    if (r.status === 401) { logout(); return; }
+    // Só faz logout em 401 se já estiver autenticado (não durante o próprio login)
+    if (r.status === 401 && NUK.token && path !== '/auth/login') { logout(); return; }
     throw new Error(json.erro || `Erro ${r.status}`);
   }
   return json;
@@ -172,8 +173,13 @@ function carregarModulo(modulo) {
   el.innerHTML = '<div class="loading-spinner">A carregar...</div>';
 
   const fn = window['modulo_' + modulo];
-  if (fn) fn(el);
-  else el.innerHTML = `<div style="padding:2rem;color:var(--c-muted)">Módulo "${modulo}" em construção.</div>`;
+  if (fn) {
+    Promise.resolve().then(() => fn(el)).catch(err => {
+      el.innerHTML = `<div class="erro-msg" style="margin:2rem">Erro ao carregar módulo: ${err.message}</div>`;
+    });
+  } else {
+    el.innerHTML = `<div style="padding:2rem;color:var(--c-muted)">Módulo "${modulo}" em construção.</div>`;
+  }
 }
 
 async function actualizarBadgePedidos() {
