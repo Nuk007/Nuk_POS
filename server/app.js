@@ -20,6 +20,11 @@ const { router: saasRouter, verificarLicencaTenant, resolverTenant, resolverTena
 const app = express();
 const server = http.createServer(app);
 
+// ── Protecção global — evita crash em rotas async sem try/catch ──
+process.on('unhandledRejection', (reason) => {
+  console.error('⚠️  UnhandledRejection (ignorado para não crashar):', reason?.message || reason);
+});
+
 // ── WebSocket ───────────────────────────────────────────────
 const allowedOriginsWS = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',')
@@ -274,18 +279,26 @@ app.get('/api/funcionarios', authMiddleware, async (req, res) => {
 app.post('/api/funcionarios', authMiddleware, requerNivel(['ADMIN', 'GERENTE']), async (req, res) => {
   const { nome, email, password, cargo, nivel_acesso, salario } = req.body;
   if (!nome || !email || !password) return res.status(400).json({ erro: 'Nome, email e senha são obrigatórios' });
-  const hash = await bcrypt.hash(password, 12);
-  const tenantId = req.tenantId;
+  // Validar nivel_acesso ANTES de ir à BD (evita crash por constraint violation)
+  const NIVEIS_VALIDOS = ['ADMIN', 'GERENTE', 'OPERADOR'];
+  const nivelFinal = nivel_acesso || 'OPERADOR';
+  if (!NIVEIS_VALIDOS.includes(nivelFinal)) {
+    return res.status(400).json({ erro: `nivel_acesso inválido. Valores aceites: ${NIVEIS_VALIDOS.join(', ')}` });
+  }
   try {
+    const hash = await bcrypt.hash(password, 12);
+    const tenantId = req.tenantId;
     const r = await pool.query(
       `INSERT INTO funcionarios (tenant_id, nome, email, password_hash, cargo, nivel_acesso, salario)
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, nome, email, cargo, nivel_acesso`,
-      [tenantId, nome, email.toLowerCase(), hash, cargo || null, nivel_acesso || 'OPERADOR', salario || 0]
+      [tenantId, nome, email.toLowerCase(), hash, cargo || null, nivelFinal, salario || 0]
     );
     res.status(201).json(r.rows[0]);
   } catch (e) {
+    console.error('❌ Erro POST /api/funcionarios:', e.message, e.detail || '');
     if (e.code === '23505') return res.status(409).json({ erro: 'Email já registado' });
-    throw e;
+    if (e.code === '23514') return res.status(400).json({ erro: 'Valor inválido para nivel_acesso' });
+    res.status(500).json({ erro: 'Erro interno do servidor' });
   }
 });
 
@@ -295,27 +308,32 @@ app.put('/api/funcionarios/:id', authMiddleware, validarUUID('id'), requerNivel(
   if (nivel_acesso && !NIVEIS_VALIDOS.includes(nivel_acesso)) {
     return res.status(400).json({ erro: 'nivel_acesso inválido. Valores aceites: ADMIN, GERENTE, OPERADOR' });
   }
-  const campos = [];
-  const vals = [];
-  let i = 1;
-  if (nome) { campos.push(`nome=$${i++}`); vals.push(nome); }
-  if (cargo !== undefined) { campos.push(`cargo=$${i++}`); vals.push(cargo); }
-  if (nivel_acesso) { campos.push(`nivel_acesso=$${i++}`); vals.push(nivel_acesso); }
-  if (salario !== undefined) { campos.push(`salario=$${i++}`); vals.push(salario); }
-  if (ativo !== undefined) { campos.push(`ativo=$${i++}`); vals.push(ativo); }
-  if (password && password.length >= 8) {
-    const hash = await bcrypt.hash(password, 12);
-    campos.push(`password_hash=$${i++}`); vals.push(hash);
+  try {
+    const campos = [];
+    const vals = [];
+    let i = 1;
+    if (nome) { campos.push(`nome=$${i++}`); vals.push(nome); }
+    if (cargo !== undefined) { campos.push(`cargo=$${i++}`); vals.push(cargo); }
+    if (nivel_acesso) { campos.push(`nivel_acesso=$${i++}`); vals.push(nivel_acesso); }
+    if (salario !== undefined) { campos.push(`salario=$${i++}`); vals.push(salario); }
+    if (ativo !== undefined) { campos.push(`ativo=$${i++}`); vals.push(ativo); }
+    if (password && password.length >= 8) {
+      const hash = await bcrypt.hash(password, 12);
+      campos.push(`password_hash=$${i++}`); vals.push(hash);
+    }
+    if (!campos.length) return res.status(400).json({ erro: 'Nenhum campo para actualizar' });
+    campos.push(`atualizado_em=NOW()`);
+    vals.push(req.params.id);
+    const r = await pool.query(
+      `UPDATE funcionarios SET ${campos.join(',')} WHERE id=$${i} RETURNING id, nome, email, cargo, nivel_acesso, ativo`,
+      vals
+    );
+    if (!r.rows[0]) return res.status(404).json({ erro: 'Não encontrado' });
+    res.json(r.rows[0]);
+  } catch (e) {
+    console.error('❌ Erro PUT /api/funcionarios/:id:', e.message, e.detail || '');
+    res.status(500).json({ erro: 'Erro interno do servidor' });
   }
-  if (!campos.length) return res.status(400).json({ erro: 'Nenhum campo para actualizar' });
-  campos.push(`atualizado_em=NOW()`);
-  vals.push(req.params.id);
-  const r = await pool.query(
-    `UPDATE funcionarios SET ${campos.join(',')} WHERE id=$${i} RETURNING id, nome, email, cargo, nivel_acesso, ativo`,
-    vals
-  );
-  if (!r.rows[0]) return res.status(404).json({ erro: 'Não encontrado' });
-  res.json(r.rows[0]);
 });
 
 // ── Mesas ────────────────────────────────────────────────────
@@ -1564,10 +1582,18 @@ app.get('/api/qrcode', authMiddleware, requerNivel(['ADMIN', 'GERENTE']), async 
 });
 
 // ════════════════════════════════════════════════════════════
-// Erro global
+// Erro global — captura erros via next(err) ou throw em async handlers
 // ════════════════════════════════════════════════════════════
 app.use((err, req, res, next) => {
-  console.error('❌ Erro:', err.message);
+  console.error('❌ Erro global:', err.message, err.detail || '', err.code || '');
+  if (res.headersSent) return;
+  // Erros conhecidos do PostgreSQL
+  if (err.code === '23505') return res.status(409).json({ erro: 'Registo duplicado' });
+  if (err.code === '23514') return res.status(400).json({ erro: 'Valor inválido (constraint violada)' });
+  if (err.code === '23503') return res.status(400).json({ erro: 'Referência inválida' });
+  // Erros de JWT
+  if (err.name === 'JsonWebTokenError') return res.status(401).json({ erro: 'Token inválido' });
+  if (err.name === 'TokenExpiredError') return res.status(401).json({ erro: 'Token expirado' });
   res.status(500).json({ erro: 'Erro interno do servidor' });
 });
 
