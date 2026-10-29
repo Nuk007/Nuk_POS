@@ -701,6 +701,59 @@ app.patch('/api/quartos/:id/status', authMiddleware, validarUUID('id'), requerNi
   }
 });
 
+// ── GET /api/reservas — listagem de reservas de quartos ──────
+app.get('/api/reservas', authMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
+  try {
+    const r = await pool.query(
+      `SELECT r.*, q.numero as quarto_numero, q.tipo as quarto_tipo
+       FROM reservas r
+       LEFT JOIN quartos q ON q.id = r.quarto_id
+       WHERE ($1::uuid IS NULL OR q.tenant_id = $1)
+       ORDER BY r.criado_em DESC LIMIT 100`,
+      [tenantId || null]
+    );
+    res.json(r.rows);
+  } catch (e) {
+    console.error('GET /api/reservas:', e.message);
+    res.status(500).json({ erro: 'Erro interno do servidor' });
+  }
+});
+
+// ── GET /api/solicitacoes-hospedagem — solicitações do portal cliente ──
+app.get('/api/solicitacoes-hospedagem', authMiddleware, async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT s.*, c.nome as cliente_nome, c.telefone as cliente_telefone
+       FROM solicitacoes_hospedagem s
+       LEFT JOIN clientes c ON c.id = s.cliente_id
+       ORDER BY s.criado_em DESC LIMIT 100`
+    );
+    res.json(r.rows);
+  } catch (e) {
+    console.error('GET /api/solicitacoes-hospedagem:', e.message);
+    res.status(500).json({ erro: 'Erro interno do servidor' });
+  }
+});
+
+// ── PATCH /api/solicitacoes-hospedagem/:id/status ────────────
+app.patch('/api/solicitacoes-hospedagem/:id/status', authMiddleware, validarUUID('id'), requerNivel(['ADMIN','GERENTE']), async (req, res) => {
+  const STATUSES_VALIDOS = ['PENDENTE','CONFIRMADA','CANCELADA'];
+  const { status } = req.body;
+  if (!STATUSES_VALIDOS.includes(status)) return res.status(400).json({ erro: 'Status inválido' });
+  try {
+    const r = await pool.query(
+      `UPDATE solicitacoes_hospedagem SET status=$1, atualizado_em=NOW() WHERE id=$2 RETURNING *`,
+      [status, req.params.id]
+    );
+    if (!r.rows[0]) return res.status(404).json({ erro: 'Solicitação não encontrada' });
+    res.json(r.rows[0]);
+  } catch (e) {
+    console.error('PATCH /api/solicitacoes-hospedagem/:id/status:', e.message);
+    res.status(500).json({ erro: 'Erro interno do servidor' });
+  }
+});
+
 // ── Stock ────────────────────────────────────────────────────
 app.get('/api/stock', authMiddleware, async (req, res) => {
   const tenantId = req.tenantId;
