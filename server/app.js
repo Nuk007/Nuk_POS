@@ -21,8 +21,19 @@ const app = express();
 const server = http.createServer(app);
 
 // ── WebSocket ───────────────────────────────────────────────
+const allowedOriginsWS = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',')
+  : ['http://localhost:3000'];
 const io = new Server(server, {
-  cors: { origin: '*', methods: ['GET', 'POST'] },
+  cors: {
+    origin: process.env.NODE_ENV === 'production'
+      ? (origin, cb) => {
+          if (!origin || allowedOriginsWS.some(o => origin.startsWith(o))) cb(null, true);
+          else cb(new Error('WS CORS não permitido'));
+        }
+      : true,
+    methods: ['GET', 'POST'],
+  },
   pingTimeout: 60000,
   pingInterval: 25000,
 });
@@ -121,9 +132,13 @@ function requerNivel(niveis) {
   };
 }
 
-// broadcast helper
-function broadcast(evento, dados) {
-  io.emit(evento, dados);
+// broadcast helper — emite apenas para a room do tenant quando tenantId fornecido
+function broadcast(evento, dados, tenantId) {
+  if (tenantId) {
+    io.to(`tenant:${tenantId}`).emit(evento, dados);
+  } else {
+    io.emit(evento, dados);
+  }
 }
 
 // ════════════════════════════════════════════════════════════
@@ -228,12 +243,16 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
 });
 
 app.get('/api/auth/me', authMiddleware, async (req, res) => {
-  const r = await pool.query(
-    `SELECT id, nome, email, cargo, nivel_acesso, media_avaliacao, total_avaliacoes, ultimo_acesso FROM funcionarios WHERE id = $1`,
-    [req.user.id]
-  );
-  if (!r.rows[0]) return res.status(404).json({ erro: 'Utilizador não encontrado' });
-  res.json(r.rows[0]);
+  try {
+    const r = await pool.query(
+      `SELECT id, nome, email, cargo, nivel_acesso, media_avaliacao, total_avaliacoes, ultimo_acesso FROM funcionarios WHERE id = $1`,
+      [req.user.id]
+    );
+    if (!r.rows[0]) return res.status(404).json({ erro: 'Utilizador não encontrado' });
+    res.json(r.rows[0]);
+  } catch (e) {
+    res.status(500).json({ erro: 'Erro interno do servidor' });
+  }
 });
 
 // ── Funcionários ─────────────────────────────────────────────
@@ -321,7 +340,7 @@ app.patch('/api/mesas/:id/status', authMiddleware, validarUUID('id'), async (req
     [status, req.params.id, tenantId || null]
   );
   if (!r.rows[0]) return res.status(404).json({ erro: 'Mesa não encontrada' });
-  broadcast('mesa_atualizada', r.rows[0]);
+  broadcast('mesa_atualizada', r.rows[0], tenantId);
   res.json(r.rows[0]);
 });
 
@@ -474,7 +493,7 @@ app.post('/api/pedidos', authMiddleware, async (req, res) => {
       GROUP BY p.id, m.numero
     `, [pedido.id]);
 
-    broadcast('novo_pedido', pedidoCompleto.rows[0]);
+    broadcast('novo_pedido', pedidoCompleto.rows[0], tenantId || null);
     res.status(201).json(pedidoCompleto.rows[0]);
   } catch (e) {
     await client.query('ROLLBACK');
@@ -507,7 +526,7 @@ app.patch('/api/pedidos/:id/status', authMiddleware, validarUUID('id'), async (r
     }
   }
 
-  broadcast('pedido_atualizado', { id: req.params.id, status });
+  broadcast('pedido_atualizado', { id: req.params.id, status }, tenantId);
   res.json(r.rows[0]);
 });
 
@@ -518,7 +537,7 @@ app.patch('/api/pedidos/:pedidoId/itens/:itemId/status', authMiddleware, validar
     [status_cozinha, req.params.itemId, req.params.pedidoId]
   );
   if (!r.rows[0]) return res.status(404).json({ erro: 'Item não encontrado' });
-  broadcast('item_atualizado', r.rows[0]);
+  broadcast('item_atualizado', r.rows[0], req.tenantId);
   res.json(r.rows[0]);
 });
 
@@ -578,7 +597,7 @@ app.post('/api/quartos/reserva', authMiddleware, async (req, res) => {
     await client.query(`UPDATE quartos SET status='OCUPADO', atualizado_em=NOW() WHERE id=$1`, [quarto_id]);
 
     await client.query('COMMIT');
-    broadcast('quarto_atualizado', { quarto_id, status: 'OCUPADO' });
+    broadcast('quarto_atualizado', { quarto_id, status: 'OCUPADO' }, tenantId || null);
     res.status(201).json(r.rows[0]);
   } catch (e) {
     await client.query('ROLLBACK');
@@ -589,38 +608,56 @@ app.post('/api/quartos/reserva', authMiddleware, async (req, res) => {
 });
 
 app.patch('/api/reservas/:id/status', authMiddleware, validarUUID('id'), async (req, res) => {
+  const STATUSES_VALIDOS = ['CONFIRMADA','CHECKIN','CHECKOUT','CANCELADA','NO_SHOW'];
   const { status } = req.body;
-  const r = await pool.query(
-    `UPDATE reservas SET status=$1, atualizado_em=NOW() WHERE id=$2 RETURNING *`,
-    [status, req.params.id]
-  );
-  if (!r.rows[0]) return res.status(404).json({ erro: 'Reserva não encontrada' });
-
-  if (['CHECKOUT', 'CANCELADA'].includes(status)) {
-    const outrasReservas = await pool.query(
-      `SELECT id FROM reservas WHERE quarto_id=$1 AND status IN ('CONFIRMADA','CHECKIN') AND id != $2`,
-      [r.rows[0].quarto_id, req.params.id]
+  if (!STATUSES_VALIDOS.includes(status)) return res.status(400).json({ erro: 'Status inválido' });
+  const tenantId = req.tenantId;
+  try {
+    // Verificar que a reserva pertence a um quarto do tenant
+    const r = await pool.query(
+      `UPDATE reservas rv SET status=$1, atualizado_em=NOW()
+       FROM quartos q
+       WHERE rv.id=$2 AND rv.quarto_id = q.id
+         AND ($3::uuid IS NULL OR q.tenant_id = $3)
+       RETURNING rv.*`,
+      [status, req.params.id, tenantId || null]
     );
-    if (!outrasReservas.rows.length) {
-      await pool.query(`UPDATE quartos SET status='LIMPEZA', atualizado_em=NOW() WHERE id=$1`, [r.rows[0].quarto_id]);
-    }
-  }
+    if (!r.rows[0]) return res.status(404).json({ erro: 'Reserva não encontrada' });
 
-  broadcast('quarto_atualizado', { quarto_id: r.rows[0].quarto_id, status });
-  res.json(r.rows[0]);
+    if (['CHECKOUT', 'CANCELADA'].includes(status)) {
+      const outrasReservas = await pool.query(
+        `SELECT id FROM reservas WHERE quarto_id=$1 AND status IN ('CONFIRMADA','CHECKIN') AND id != $2`,
+        [r.rows[0].quarto_id, req.params.id]
+      );
+      if (!outrasReservas.rows.length) {
+        await pool.query(`UPDATE quartos SET status='LIMPEZA', atualizado_em=NOW() WHERE id=$1`, [r.rows[0].quarto_id]);
+      }
+    }
+
+    broadcast('quarto_atualizado', { quarto_id: r.rows[0].quarto_id, status }, tenantId);
+    res.json(r.rows[0]);
+  } catch (e) {
+    res.status(500).json({ erro: 'Erro interno do servidor' });
+  }
 });
 
 app.patch('/api/quartos/:id/status', authMiddleware, validarUUID('id'), requerNivel(['ADMIN','GERENTE']), async (req, res) => {
   const STATUSES_VALIDOS = ['DISPONIVEL','OCUPADO','LIMPEZA','MANUTENCAO','BLOQUEADO'];
   const { status } = req.body;
   if (!STATUSES_VALIDOS.includes(status)) return res.status(400).json({ erro: 'Status inválido' });
-  const r = await pool.query(
-    `UPDATE quartos SET status=$1, atualizado_em=NOW() WHERE id=$2 RETURNING *`,
-    [status, req.params.id]
-  );
-  if (!r.rows[0]) return res.status(404).json({ erro: 'Quarto não encontrado' });
-  broadcast('quarto_atualizado', { quarto_id: req.params.id, status });
-  res.json(r.rows[0]);
+  const tenantId = req.tenantId;
+  try {
+    const r = await pool.query(
+      `UPDATE quartos SET status=$1, atualizado_em=NOW()
+       WHERE id=$2 AND ($3::uuid IS NULL OR tenant_id = $3) RETURNING *`,
+      [status, req.params.id, tenantId || null]
+    );
+    if (!r.rows[0]) return res.status(404).json({ erro: 'Quarto não encontrado' });
+    broadcast('quarto_atualizado', { quarto_id: req.params.id, status }, tenantId);
+    res.json(r.rows[0]);
+  } catch (e) {
+    res.status(500).json({ erro: 'Erro interno do servidor' });
+  }
 });
 
 // ── Stock ────────────────────────────────────────────────────
@@ -693,29 +730,33 @@ app.post('/api/stock/:id/movimento', authMiddleware, validarUUID('id'), async (r
 app.get('/api/financeiro/resumo', authMiddleware, async (req, res) => {
   const { data } = req.query;
   const dataFiltro = data || new Date().toISOString().split('T')[0];
-
+  const tenantId = req.tenantId;
+  try {
   const [vendas, porCategoria, porStatus, quartos] = await Promise.all([
     pool.query(`
       SELECT COUNT(*) as total_pedidos, COALESCE(SUM(total),0) as receita_total,
              COUNT(CASE WHEN status='FECHADO' THEN 1 END) as pedidos_fechados
-      FROM pedidos WHERE criado_em::date = $1
-    `, [dataFiltro]),
+      FROM pedidos WHERE criado_em::date = $1 AND ($2::uuid IS NULL OR tenant_id=$2)
+    `, [dataFiltro, tenantId || null]),
     pool.query(`
       SELECT pr.categoria, COUNT(ip.id) as itens_vendidos, COALESCE(SUM(ip.quantidade * ip.preco_unitario),0) as total
       FROM itens_pedido ip
       JOIN produtos pr ON ip.produto_id = pr.id
       JOIN pedidos p ON ip.pedido_id = p.id
       WHERE p.criado_em::date = $1 AND p.status = 'FECHADO'
+        AND ($2::uuid IS NULL OR p.tenant_id=$2)
       GROUP BY pr.categoria ORDER BY total DESC
-    `, [dataFiltro]),
+    `, [dataFiltro, tenantId || null]),
     pool.query(`
       SELECT status, COUNT(*) as total, COALESCE(SUM(total),0) as valor
-      FROM pedidos WHERE criado_em::date = $1 GROUP BY status
-    `, [dataFiltro]),
+      FROM pedidos WHERE criado_em::date = $1 AND ($2::uuid IS NULL OR tenant_id=$2) GROUP BY status
+    `, [dataFiltro, tenantId || null]),
     pool.query(`
-      SELECT COUNT(*) as total_reservas, COALESCE(SUM(valor_total),0) as receita_quartos
-      FROM reservas WHERE criado_em::date = $1 AND status != 'CANCELADA'
-    `, [dataFiltro]),
+      SELECT COUNT(*) as total_reservas, COALESCE(SUM(rv.valor_total),0) as receita_quartos
+      FROM reservas rv JOIN quartos q ON rv.quarto_id=q.id
+      WHERE rv.criado_em::date = $1 AND rv.status != 'CANCELADA'
+        AND ($2::uuid IS NULL OR q.tenant_id=$2)
+    `, [dataFiltro, tenantId || null]),
   ]);
 
   res.json({
@@ -725,60 +766,80 @@ app.get('/api/financeiro/resumo', authMiddleware, async (req, res) => {
     por_status: porStatus.rows,
     quartos: quartos.rows[0],
   });
+  } catch (e) {
+    res.status(500).json({ erro: 'Erro interno do servidor' });
+  }
 });
 
 app.get('/api/financeiro/faturas', authMiddleware, async (req, res) => {
-  const r = await pool.query(`
-    SELECT f.*, c.nome as cliente_nome
-    FROM faturas f LEFT JOIN clientes c ON f.cliente_id = c.id
-    ORDER BY f.emitida_em DESC LIMIT 100
-  `);
-  res.json(r.rows);
+  const tenantId = req.tenantId;
+  try {
+    const r = await pool.query(`
+      SELECT f.*, c.nome as cliente_nome
+      FROM faturas f LEFT JOIN clientes c ON f.cliente_id = c.id
+      WHERE ($1::uuid IS NULL OR f.tenant_id = $1)
+      ORDER BY f.emitida_em DESC LIMIT 100
+    `, [tenantId || null]);
+    res.json(r.rows);
+  } catch (e) {
+    res.status(500).json({ erro: 'Erro interno do servidor' });
+  }
 });
 
 app.post('/api/financeiro/faturas', authMiddleware, async (req, res) => {
   const { pedido_id, reserva_id, cliente_id, nif_cliente, nome_cliente } = req.body;
-
-  // Calcular sequencial
-  const ano = new Date().getFullYear();
-  const seq = await pool.query(`SELECT COALESCE(MAX(sequencial),0)+1 as prox FROM faturas WHERE serie='FT' AND ano=$1`, [ano]);
-  const sequencial = seq.rows[0].prox;
-  const numero_fatura = `FT ${ano}/${String(sequencial).padStart(6, '0')}`;
+  const tenantId = req.tenantId;
 
   // Validar UUIDs fornecidos
   if (pedido_id && !isUUID(pedido_id)) return res.status(400).json({ erro: 'pedido_id inválido' });
   if (reserva_id && !isUUID(reserva_id)) return res.status(400).json({ erro: 'reserva_id inválido' });
   if (cliente_id && !isUUID(cliente_id)) return res.status(400).json({ erro: 'cliente_id inválido' });
 
-  let total = 0;
-  if (pedido_id) {
-    const p = await pool.query(`SELECT total FROM pedidos WHERE id=$1`, [pedido_id]);
-    if (!p.rows[0]) return res.status(404).json({ erro: 'Pedido não encontrado' });
-    total = parseFloat(p.rows[0].total || 0);
-  } else if (reserva_id) {
-    const rv = await pool.query(`SELECT valor_total FROM reservas WHERE id=$1`, [reserva_id]);
-    if (!rv.rows[0]) return res.status(404).json({ erro: 'Reserva não encontrada' });
-    total = parseFloat(rv.rows[0].valor_total || 0);
-  } else if (req.body.total_manual !== undefined) {
-    total = parseFloat(req.body.total_manual) || 0;
-    if (total <= 0) return res.status(400).json({ erro: 'total_manual deve ser positivo' });
-  } else {
-    return res.status(400).json({ erro: 'Fornecer pedido_id, reserva_id ou total_manual' });
+  try {
+    // Calcular sequencial
+    const ano = new Date().getFullYear();
+    const seq = await pool.query(`SELECT COALESCE(MAX(sequencial),0)+1 as prox FROM faturas WHERE serie='FT' AND ano=$1 AND ($2::uuid IS NULL OR tenant_id=$2)`, [ano, tenantId || null]);
+    const sequencial = seq.rows[0].prox;
+    const numero_fatura = `FT ${ano}/${String(sequencial).padStart(6, '0')}`;
+
+    let total = 0;
+    if (pedido_id) {
+      // Verificar que o pedido pertence ao tenant
+      const p = await pool.query(`SELECT total FROM pedidos WHERE id=$1 AND ($2::uuid IS NULL OR tenant_id=$2)`, [pedido_id, tenantId || null]);
+      if (!p.rows[0]) return res.status(404).json({ erro: 'Pedido não encontrado' });
+      total = parseFloat(p.rows[0].total || 0);
+    } else if (reserva_id) {
+      // Verificar que a reserva pertence ao tenant (via quarto)
+      const rv = await pool.query(`
+        SELECT rv.valor_total FROM reservas rv
+        JOIN quartos q ON rv.quarto_id = q.id
+        WHERE rv.id=$1 AND ($2::uuid IS NULL OR q.tenant_id=$2)
+      `, [reserva_id, tenantId || null]);
+      if (!rv.rows[0]) return res.status(404).json({ erro: 'Reserva não encontrada' });
+      total = parseFloat(rv.rows[0].valor_total || 0);
+    } else if (req.body.total_manual !== undefined) {
+      total = parseFloat(req.body.total_manual) || 0;
+      if (total <= 0) return res.status(400).json({ erro: 'total_manual deve ser positivo' });
+    } else {
+      return res.status(400).json({ erro: 'Fornecer pedido_id, reserva_id ou total_manual' });
+    }
+
+    const taxa_iva = 14;
+    const total_sem_iva = total / (1 + taxa_iva / 100);
+    const iva = total - total_sem_iva;
+    const hash = require('crypto').createHash('sha256').update(`${numero_fatura}${total}${Date.now()}`).digest('hex');
+
+    const r = await pool.query(`
+      INSERT INTO faturas (tenant_id, pedido_id, reserva_id, cliente_id, serie, ano, sequencial, numero_fatura,
+                           nif_cliente, nome_cliente, total_sem_iva, iva, total, taxa_iva, hash_assinatura)
+      VALUES ($1,$2,$3,$4,'FT',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *
+    `, [tenantId || null, pedido_id || null, reserva_id || null, cliente_id || null, ano, sequencial, numero_fatura,
+        nif_cliente || null, nome_cliente || null, total_sem_iva.toFixed(2), iva.toFixed(2), total.toFixed(2), taxa_iva, hash]);
+
+    res.status(201).json(r.rows[0]);
+  } catch (e) {
+    res.status(500).json({ erro: 'Erro interno do servidor' });
   }
-
-  const taxa_iva = 14;
-  const total_sem_iva = total / (1 + taxa_iva / 100);
-  const iva = total - total_sem_iva;
-  const hash = require('crypto').createHash('sha256').update(`${numero_fatura}${total}${Date.now()}`).digest('hex');
-
-  const r = await pool.query(`
-    INSERT INTO faturas (pedido_id, reserva_id, cliente_id, serie, ano, sequencial, numero_fatura,
-                         nif_cliente, nome_cliente, total_sem_iva, iva, total, taxa_iva, hash_assinatura)
-    VALUES ($1,$2,$3,'FT',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *
-  `, [pedido_id || null, reserva_id || null, cliente_id || null, ano, sequencial, numero_fatura,
-      nif_cliente || null, nome_cliente || null, total_sem_iva.toFixed(2), iva.toFixed(2), total.toFixed(2), taxa_iva, hash]);
-
-  res.status(201).json(r.rows[0]);
 });
 
 // ── Clientes ──────────────────────────────────────────────────
@@ -812,68 +873,97 @@ app.post('/api/clientes', authMiddleware, async (req, res) => {
 
 // ── Dashboard ─────────────────────────────────────────────────
 app.get('/api/dashboard', authMiddleware, async (req, res) => {
-  const [
-    resumoHoje, mesasStatus, quartosStatus, stockAlertas,
-    pedidosAbertos, topProdutos
-  ] = await Promise.all([
-    pool.query(`
-      SELECT COUNT(*) as total_pedidos, COALESCE(SUM(total),0) as receita_hoje,
-             COUNT(CASE WHEN status='FECHADO' THEN 1 END) as fechados
-      FROM pedidos WHERE criado_em::date = CURRENT_DATE
-    `),
-    pool.query(`SELECT status, COUNT(*) as total FROM mesas GROUP BY status`),
-    pool.query(`SELECT status, COUNT(*) as total FROM quartos GROUP BY status`),
-    pool.query(`SELECT COUNT(*) as total FROM stock_items WHERE ativo=true AND stock_atual <= stock_minimo`),
-    pool.query(`
-      SELECT p.id, p.status, m.numero as mesa, p.total, p.criado_em,
-             COUNT(ip.id) as num_itens
-      FROM pedidos p
-      LEFT JOIN mesas m ON p.mesa_id = m.id
-      LEFT JOIN itens_pedido ip ON p.id = ip.pedido_id
-      WHERE p.status IN ('ABERTO','EM_PREPARO','PRONTO')
-      GROUP BY p.id, m.numero
-      ORDER BY p.criado_em ASC
-    `),
-    pool.query(`
-      SELECT pr.nome, pr.categoria, SUM(ip.quantidade) as total_vendido
-      FROM itens_pedido ip
-      JOIN produtos pr ON ip.produto_id = pr.id
-      JOIN pedidos p ON ip.pedido_id = p.id
-      WHERE p.criado_em::date = CURRENT_DATE AND p.status = 'FECHADO'
-      GROUP BY pr.id ORDER BY total_vendido DESC LIMIT 5
-    `),
-  ]);
+  const tenantId = req.tenantId;
+  try {
+    const [
+      resumoHoje, mesasStatus, quartosStatus, stockAlertas,
+      pedidosAbertos, topProdutos
+    ] = await Promise.all([
+      pool.query(`
+        SELECT COUNT(*) as total_pedidos, COALESCE(SUM(total),0) as receita_hoje,
+               COUNT(CASE WHEN status='FECHADO' THEN 1 END) as fechados
+        FROM pedidos WHERE criado_em::date = CURRENT_DATE
+          AND ($1::uuid IS NULL OR tenant_id = $1)
+      `, [tenantId || null]),
+      pool.query(`SELECT status, COUNT(*) as total FROM mesas WHERE ($1::uuid IS NULL OR tenant_id = $1) GROUP BY status`, [tenantId || null]),
+      pool.query(`SELECT status, COUNT(*) as total FROM quartos WHERE ($1::uuid IS NULL OR tenant_id = $1) GROUP BY status`, [tenantId || null]),
+      pool.query(`SELECT COUNT(*) as total FROM stock_items WHERE ativo=true AND stock_atual <= stock_minimo`),
+      pool.query(`
+        SELECT p.id, p.status, m.numero as mesa, p.total, p.criado_em,
+               COUNT(ip.id) as num_itens
+        FROM pedidos p
+        LEFT JOIN mesas m ON p.mesa_id = m.id
+        LEFT JOIN itens_pedido ip ON p.id = ip.pedido_id
+        WHERE p.status IN ('ABERTO','EM_PREPARO','PRONTO')
+          AND ($1::uuid IS NULL OR p.tenant_id = $1)
+        GROUP BY p.id, m.numero
+        ORDER BY p.criado_em ASC
+      `, [tenantId || null]),
+      pool.query(`
+        SELECT pr.nome, pr.categoria, SUM(ip.quantidade) as total_vendido
+        FROM itens_pedido ip
+        JOIN produtos pr ON ip.produto_id = pr.id
+        JOIN pedidos p ON ip.pedido_id = p.id
+        WHERE p.criado_em::date = CURRENT_DATE AND p.status = 'FECHADO'
+          AND ($1::uuid IS NULL OR p.tenant_id = $1)
+        GROUP BY pr.id ORDER BY total_vendido DESC LIMIT 5
+      `, [tenantId || null]),
+    ]);
 
-  res.json({
-    resumo_hoje: resumoHoje.rows[0],
-    mesas: mesasStatus.rows,
-    quartos: quartosStatus.rows,
-    alertas_stock: parseInt(stockAlertas.rows[0].total),
-    pedidos_abertos: pedidosAbertos.rows,
-    top_produtos: topProdutos.rows,
-  });
+    res.json({
+      resumo_hoje: resumoHoje.rows[0],
+      mesas: mesasStatus.rows,
+      quartos: quartosStatus.rows,
+      alertas_stock: parseInt(stockAlertas.rows[0].total),
+      pedidos_abertos: pedidosAbertos.rows,
+      top_produtos: topProdutos.rows,
+    });
+  } catch (e) {
+    res.status(500).json({ erro: 'Erro interno do servidor' });
+  }
 });
 
 // ── Chamadas Staff ────────────────────────────────────────────
 app.post('/api/chamadas', authMiddleware, async (req, res) => {
   const { mesa_id, motivo } = req.body;
-  const r = await pool.query(
-    `INSERT INTO chamadas_staff (mesa_id, motivo) VALUES ($1,$2) RETURNING *`,
-    [mesa_id, motivo || null]
-  );
-  broadcast('chamada_staff', { mesa_id, motivo, id: r.rows[0].id });
-  res.status(201).json(r.rows[0]);
+  if (!mesa_id || !isUUID(mesa_id)) return res.status(400).json({ erro: 'mesa_id inválido' });
+  const tenantId = req.tenantId;
+  try {
+    // Verificar que a mesa pertence ao tenant
+    const mesa = await pool.query(
+      `SELECT id FROM mesas WHERE id=$1 AND ($2::uuid IS NULL OR tenant_id=$2)`,
+      [mesa_id, tenantId || null]
+    );
+    if (!mesa.rows[0]) return res.status(404).json({ erro: 'Mesa não encontrada' });
+    const r = await pool.query(
+      `INSERT INTO chamadas_staff (mesa_id, motivo) VALUES ($1,$2) RETURNING *`,
+      [mesa_id, motivo || null]
+    );
+    broadcast('chamada_staff', { mesa_id, motivo, id: r.rows[0].id }, tenantId);
+    res.status(201).json(r.rows[0]);
+  } catch (e) {
+    res.status(500).json({ erro: 'Erro interno do servidor' });
+  }
 });
 
-app.patch('/api/chamadas/:id/atender', authMiddleware, async (req, res) => {
-  const r = await pool.query(`
-    UPDATE chamadas_staff SET funcionario_id=$1, atendido_em=NOW(),
-    tempo_resposta_seg=EXTRACT(EPOCH FROM (NOW()-solicitado_em))::INTEGER
-    WHERE id=$2 RETURNING *
-  `, [req.user.id, req.params.id]);
-  if (!r.rows[0]) return res.status(404).json({ erro: 'Chamada não encontrada' });
-  broadcast('chamada_atendida', r.rows[0]);
-  res.json(r.rows[0]);
+app.patch('/api/chamadas/:id/atender', authMiddleware, validarUUID('id'), async (req, res) => {
+  const tenantId = req.tenantId;
+  try {
+    // Verificar que a chamada pertence ao tenant (via mesa)
+    const r = await pool.query(`
+      UPDATE chamadas_staff cs SET funcionario_id=$1, atendido_em=NOW(),
+      tempo_resposta_seg=EXTRACT(EPOCH FROM (NOW()-cs.solicitado_em))::INTEGER
+      FROM mesas m
+      WHERE cs.id=$2 AND cs.mesa_id = m.id
+        AND ($3::uuid IS NULL OR m.tenant_id=$3)
+      RETURNING cs.*
+    `, [req.user.id, req.params.id, tenantId || null]);
+    if (!r.rows[0]) return res.status(404).json({ erro: 'Chamada não encontrada' });
+    broadcast('chamada_atendida', r.rows[0], tenantId);
+    res.json(r.rows[0]);
+  } catch (e) {
+    res.status(500).json({ erro: 'Erro interno do servidor' });
+  }
 });
 
 // ── Configurações ─────────────────────────────────────────────
@@ -941,9 +1031,22 @@ io.use((socket, next) => {
 io.on('connection', (socket) => {
   console.log(`🔌 WebSocket conectado: ${socket.id} (${socket.user?.email})`);
 
+  // Entrar automaticamente na sala do tenant
+  if (socket.user?.tenantId) {
+    socket.join(`tenant:${socket.user.tenantId}`);
+  }
 
-  socket.on('join_room', (room) => socket.join(room));
-  socket.on('leave_room', (room) => socket.leave(room));
+  socket.on('join_room', (room) => {
+    // Apenas permitir entrar em salas genéricas (não em salas de outros tenants)
+    if (typeof room === 'string' && !room.startsWith('tenant:')) {
+      socket.join(room);
+    }
+  });
+  socket.on('leave_room', (room) => {
+    if (typeof room === 'string' && !room.startsWith('tenant:')) {
+      socket.leave(room);
+    }
+  });
 
   socket.on('disconnect', () => {
     console.log('🔌 Cliente WebSocket desconectado:', socket.id);

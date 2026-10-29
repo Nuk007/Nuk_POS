@@ -28,13 +28,24 @@ const TWILIO_FROM = process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886';
 // Chave separada do JWT dos tenants — definida em SUPERADMIN_KEY
 // ──────────────────────────────────────────────────────────────
 function superAdminAuth(req, res, next) {
-  const key = req.headers['x-superadmin-key'] || req.query.key;
+  // Aceitar apenas via header — nunca via query string (apareceria nos logs do servidor)
+  const key = req.headers['x-superadmin-key'];
   const SUPER_KEY = process.env.SUPERADMIN_KEY;
   if (!SUPER_KEY) {
-    return res.status(503).json({ erro: 'SUPERADMIN_KEY não configurada no servidor' });
+    return res.status(503).json({ erro: 'Serviço indisponível' });
   }
-  if (!key || key !== SUPER_KEY) {
-    return res.status(401).json({ erro: 'Chave de superadmin inválida' });
+  if (!key) {
+    return res.status(401).json({ erro: 'Autenticação obrigatória' });
+  }
+  // Comparação timing-safe para prevenir ataques de temporização
+  try {
+    const keyBuf = Buffer.from(key);
+    const secretBuf = Buffer.from(SUPER_KEY);
+    if (keyBuf.length !== secretBuf.length || !crypto.timingSafeEqual(keyBuf, secretBuf)) {
+      return res.status(401).json({ erro: 'Chave inválida' });
+    }
+  } catch {
+    return res.status(401).json({ erro: 'Chave inválida' });
   }
   next();
 }
@@ -130,7 +141,7 @@ router.get('/dashboard', superAdminAuth, async (req, res) => {
       por_plano: planos.rows,
     });
   } catch (err) {
-    res.status(500).json({ erro: err.message });
+    res.status(500).json({ erro: 'Erro interno do servidor' });
   }
 });
 
@@ -143,7 +154,7 @@ router.get('/planos', superAdminAuth, async (req, res) => {
     const r = await pool.query(`SELECT * FROM planos_assinatura ORDER BY preco_mensal ASC`);
     res.json(r.rows);
   } catch (err) {
-    res.status(500).json({ erro: err.message });
+    res.status(500).json({ erro: 'Erro interno do servidor' });
   }
 });
 
@@ -162,7 +173,7 @@ router.put('/planos/:id', superAdminAuth, async (req, res) => {
     `, [nome, descricao, max_funcionarios, max_produtos, max_mesas, preco_mensal, preco_anual, ativo, req.params.id]);
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ erro: err.message });
+    res.status(500).json({ erro: 'Erro interno do servidor' });
   }
 });
 
@@ -207,7 +218,7 @@ router.get('/tenants', superAdminAuth, async (req, res) => {
       paginas: Math.ceil(parseInt(total.rows[0].count) / limit),
     });
   } catch (err) {
-    res.status(500).json({ erro: err.message });
+    res.status(500).json({ erro: 'Erro interno do servidor' });
   }
 });
 
@@ -288,7 +299,7 @@ router.post('/tenants', superAdminAuth, async (req, res) => {
     });
   } catch (err) {
     await client.query('ROLLBACK');
-    res.status(500).json({ erro: err.message });
+    res.status(500).json({ erro: 'Erro interno do servidor' });
   } finally {
     client.release();
   }
@@ -325,7 +336,7 @@ router.get('/tenants/:id', superAdminAuth, async (req, res) => {
 
     res.json({ ...tenant.rows[0], licencas: licencas.rows, stats: stats.rows[0] });
   } catch (err) {
-    res.status(500).json({ erro: err.message });
+    res.status(500).json({ erro: 'Erro interno do servidor' });
   }
 });
 
@@ -346,7 +357,7 @@ router.patch('/tenants/:id/estado', superAdminAuth, async (req, res) => {
     );
     res.json({ ok: true, estado });
   } catch (err) {
-    res.status(500).json({ erro: err.message });
+    res.status(500).json({ erro: 'Erro interno do servidor' });
   }
 });
 
@@ -376,7 +387,7 @@ router.post('/licencas/:key/reenviar', superAdminAuth, async (req, res) => {
 
     res.json({ ok: true, link, whatsapp_enviado: true });
   } catch (err) {
-    res.status(500).json({ erro: err.message });
+    res.status(500).json({ erro: 'Erro interno do servidor' });
   }
 });
 
@@ -417,7 +428,7 @@ router.post('/tenants/:id/renovar', superAdminAuth, async (req, res) => {
 
     res.json({ ok: true, license_key: licenseKey, activation_link: activationLink, whatsapp_enviado: whatsappEnviado });
   } catch (err) {
-    res.status(500).json({ erro: err.message });
+    res.status(500).json({ erro: 'Erro interno do servidor' });
   }
 });
 
@@ -466,7 +477,7 @@ router.get('/activate/:key', async (req, res) => {
       estado: lic.estado,
     });
   } catch (err) {
-    res.status(500).json({ erro: err.message });
+    res.status(500).json({ erro: 'Erro interno do servidor' });
   }
 });
 
@@ -588,7 +599,10 @@ router.post('/activate/:key/confirmar', async (req, res) => {
     });
   } catch (err) {
     await client.query('ROLLBACK');
-    res.status(400).json({ erro: err.message });
+    console.error('Activação licença:', err.message);
+    // Erros de validação (ex: campo obrigatório) são repassados; erros de DB são genéricos
+    const isValidationError = ['obrigatório','inválid','não encontrad','expirada','já activa'].some(s => err.message.toLowerCase().includes(s));
+    res.status(400).json({ erro: isValidationError ? err.message : 'Erro ao activar licença' });
   } finally {
     client.release();
   }
