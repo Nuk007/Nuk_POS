@@ -1432,10 +1432,10 @@ app.post('/api/cliente/pedido-hospedagem', clienteLimiter, resolverTenantPublico
 
     // Registar como solicitação pendente de confirmação
     await pool.query(
-      `INSERT INTO solicitacoes_hospedagem (id, tenant_id, cliente_id, tipo_fracao, quantidade_quartos, status,
+      `INSERT INTO solicitacoes_hospedagem (id, cliente_id, tipo_fracao, quantidade_quartos, status,
                             nome_responsavel, telefone_contacto, observacoes, criado_em, atualizado_em)
-       VALUES ($1, $2, $3, $4, $5, 'PENDENTE', $6, $7, $8, NOW(), NOW())`,
-      [solicitacaoId, req.tenantId || null, cliente_id || null, fracao, qty,
+       VALUES ($1, $2, $3, $4, 'PENDENTE', $5, $6, $7, NOW(), NOW())`,
+      [solicitacaoId, cliente_id || null, fracao, qty,
        nome_hospede || null, telefone || null, observacoes || null]
     );
 
