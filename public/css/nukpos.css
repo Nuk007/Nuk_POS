@@ -57,6 +57,7 @@ body {
   margin-bottom: 2rem;
 }
 .login-logo .logo-icon { font-size: 3rem; }
+.logo-img { width: 140px; height: 140px; object-fit: contain; margin-bottom: .5rem; }
 .login-logo h1 { font-size: 1.8rem; font-weight: 700; color: var(--c-primary); margin: .3rem 0 .1rem; }
 .login-logo p { color: var(--c-muted); font-size: .85rem; }
 
@@ -82,7 +83,8 @@ body {
   justify-content: space-between;
   border-bottom: 1px solid var(--c-border);
 }
-.sidebar-logo { font-size: 1.1rem; font-weight: 700; color: var(--c-primary); }
+.sidebar-logo { font-size: 1.1rem; font-weight: 700; color: var(--c-primary); display: flex; align-items: center; gap: .5rem; }
+.sidebar-logo-img { width: 32px; height: 32px; object-fit: contain; }
 .btn-fechar-sidebar { display: none; background: none; border: none; color: var(--c-muted); cursor: pointer; font-size: 1.1rem; padding: 4px; }
 
 .sidebar-nav {
