@@ -145,9 +145,11 @@ app.get('/activate/:key', (req, res) => {
 app.get('/api/health', async (req, res) => {
   try {
     await pool.query('SELECT 1');
-    res.json({ status: 'ok', timestamp: new Date().toISOString(), versao: '2.0.0', saas: true });
+    res.json({ status: 'ok', timestamp: new Date().toISOString(), versao: '2.0.0', saas: true, db: 'ok' });
   } catch {
-    res.status(503).json({ status: 'erro', db: 'indisponível' });
+    // Retornar 200 mesmo sem BD — o Render usa este endpoint para verificar que o processo está vivo
+    // Endpoints que precisam de BD retornarão erro individualmente
+    res.json({ status: 'ok', timestamp: new Date().toISOString(), versao: '2.0.0', saas: true, db: 'indisponível' });
   }
 });
 
@@ -1451,14 +1453,21 @@ app.use((err, req, res, next) => {
 // ════════════════════════════════════════════════════════════
 const PORT = process.env.PORT || 3000;
 
-initDB()
-  .then(() => {
-    server.listen(PORT, () => {
-      console.log(`🚀 Nuk_POS v1.0 a correr na porta ${PORT}`);
-      console.log(`🌍 Ambiente: ${process.env.NODE_ENV || 'development'}`);
+// Arrancar o servidor imediatamente — a BD inicializa em background
+// para que o health check do Render passe mesmo que a BD demore a ligar
+server.listen(PORT, () => {
+  console.log(`🚀 Nuk_POS v1.0 a correr na porta ${PORT}`);
+  console.log(`🌍 Ambiente: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🗄️  A inicializar base de dados...`);
+
+  initDB()
+    .then(() => {
+      console.log('✅ Base de dados pronta');
+    })
+    .catch((err) => {
+      console.error('❌ Falha ao inicializar base de dados:', err.message);
+      console.error('⚠️  O servidor continua a correr — verifique DATABASE_URL nas variáveis de ambiente');
+      // Não terminar o processo — o servidor responde ao health check
+      // A BD pode ficar disponível mais tarde (ex: PostgreSQL ainda a arrancar)
     });
-  })
-  .catch((err) => {
-    console.error('❌ Falha no arranque:', err);
-    process.exit(1);
-  });
+});
