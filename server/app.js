@@ -1373,9 +1373,9 @@ app.post('/api/cliente/pedido-restaurante', clienteLimiter, resolverTenantPublic
     // Inserir itens
     for (const item of itensFull) {
       await pool.query(
-        `INSERT INTO itens_pedido (id, pedido_id, produto_id, quantidade, preco_unitario, subtotal)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [uuidv4(), pedidoId, item.produto_id, item.quantidade, item.preco_unitario, item.subtotal]
+        `INSERT INTO itens_pedido (id, pedido_id, produto_id, quantidade, preco_unitario)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [uuidv4(), pedidoId, item.produto_id, item.quantidade, item.preco_unitario]
       );
     }
 
