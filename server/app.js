@@ -310,6 +310,7 @@ app.put('/api/funcionarios/:id', authMiddleware, validarUUID('id'), requerNivel(
   if (nivel_acesso && !NIVEIS_VALIDOS.includes(nivel_acesso)) {
     return res.status(400).json({ erro: 'nivel_acesso inválido. Valores aceites: ADMIN, GERENTE, OPERADOR' });
   }
+  const tenantId = req.tenantId;
   try {
     const campos = [];
     const vals = [];
@@ -326,8 +327,9 @@ app.put('/api/funcionarios/:id', authMiddleware, validarUUID('id'), requerNivel(
     if (!campos.length) return res.status(400).json({ erro: 'Nenhum campo para actualizar' });
     campos.push(`atualizado_em=NOW()`);
     vals.push(req.params.id);
+    vals.push(tenantId || null);
     const r = await pool.query(
-      `UPDATE funcionarios SET ${campos.join(',')} WHERE id=$${i} RETURNING id, nome, email, cargo, nivel_acesso, ativo`,
+      `UPDATE funcionarios SET ${campos.join(',')} WHERE id=$${i} AND ($${i + 1}::uuid IS NULL OR tenant_id=$${i + 1}) RETURNING id, nome, email, cargo, nivel_acesso, ativo`,
       vals
     );
     if (!r.rows[0]) return res.status(404).json({ erro: 'Não encontrado' });
@@ -601,13 +603,23 @@ app.patch('/api/pedidos/:id/status', authMiddleware, validarUUID('id'), async (r
 
 app.patch('/api/pedidos/:pedidoId/itens/:itemId/status', authMiddleware, validarUUID('pedidoId'), validarUUID('itemId'), async (req, res) => {
   const { status_cozinha } = req.body;
+  const STATUSES_COZINHA = ['PENDENTE', 'EM_PREPARO', 'PRONTO', 'ENTREGUE', 'CANCELADO'];
+  if (status_cozinha && !STATUSES_COZINHA.includes(status_cozinha)) {
+    return res.status(400).json({ erro: 'status_cozinha inválido' });
+  }
+  const tenantId = req.tenantId;
   try {
+    // Verificar que o pedido pertence ao tenant antes de actualizar o item
     const r = await pool.query(
-      `UPDATE itens_pedido SET status_cozinha=$1 WHERE id=$2 AND pedido_id=$3 RETURNING *`,
-      [status_cozinha, req.params.itemId, req.params.pedidoId]
+      `UPDATE itens_pedido ip SET status_cozinha=$1
+       FROM pedidos p
+       WHERE ip.id=$2 AND ip.pedido_id=$3 AND p.id=ip.pedido_id
+         AND ($4::uuid IS NULL OR p.tenant_id=$4)
+       RETURNING ip.*`,
+      [status_cozinha, req.params.itemId, req.params.pedidoId, tenantId || null]
     );
     if (!r.rows[0]) return res.status(404).json({ erro: 'Item não encontrado' });
-    broadcast('item_atualizado', r.rows[0], req.tenantId);
+    broadcast('item_atualizado', r.rows[0], tenantId);
     res.json(r.rows[0]);
   } catch (e) {
     console.error('PATCH itens status:', e.message);
@@ -760,12 +772,15 @@ app.get('/api/reservas', authMiddleware, async (req, res) => {
 
 // ── GET /api/solicitacoes-hospedagem — solicitações do portal cliente ──
 app.get('/api/solicitacoes-hospedagem', authMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
   try {
     const r = await pool.query(
       `SELECT s.*, c.nome as cliente_nome, c.telefone as cliente_telefone
        FROM solicitacoes_hospedagem s
        LEFT JOIN clientes c ON c.id = s.cliente_id
-       ORDER BY s.criado_em DESC LIMIT 100`
+       WHERE ($1::uuid IS NULL OR c.tenant_id = $1 OR (s.cliente_id IS NULL AND $1 IS NULL))
+       ORDER BY s.criado_em DESC LIMIT 100`,
+      [tenantId || null]
     );
     res.json(r.rows);
   } catch (e) {
@@ -779,10 +794,20 @@ app.patch('/api/solicitacoes-hospedagem/:id/status', authMiddleware, validarUUID
   const STATUSES_VALIDOS = ['PENDENTE','CONFIRMADA','CANCELADA'];
   const { status } = req.body;
   if (!STATUSES_VALIDOS.includes(status)) return res.status(400).json({ erro: 'Status inválido' });
+  const tenantId = req.tenantId;
   try {
+    // Verificar isolamento tenant: solicitação deve pertencer a cliente do tenant
     const r = await pool.query(
-      `UPDATE solicitacoes_hospedagem SET status=$1, atualizado_em=NOW() WHERE id=$2 RETURNING *`,
-      [status, req.params.id]
+      `UPDATE solicitacoes_hospedagem s SET status=$1, atualizado_em=NOW()
+       FROM (
+         SELECT sh.id FROM solicitacoes_hospedagem sh
+         LEFT JOIN clientes c ON c.id = sh.cliente_id
+         WHERE sh.id = $2
+           AND ($3::uuid IS NULL OR c.tenant_id = $3 OR sh.cliente_id IS NULL)
+       ) sub
+       WHERE s.id = sub.id
+       RETURNING s.*`,
+      [status, req.params.id, tenantId || null]
     );
     if (!r.rows[0]) return res.status(404).json({ erro: 'Solicitação não encontrada' });
     res.json(r.rows[0]);
@@ -822,7 +847,7 @@ app.post('/api/stock', authMiddleware, requerNivel(['ADMIN', 'GERENTE']), async 
     res.status(201).json(r.rows[0]);
   } catch (e) {
     console.error('❌ Erro POST /api/stock:', e.message, e.detail || '');
-    res.status(500).json({ erro: 'Erro interno do servidor', detalhe: process.env.NODE_ENV !== 'production' ? e.message : undefined });
+    res.status(500).json({ erro: 'Erro interno do servidor' });
   }
 });
 
@@ -878,7 +903,9 @@ app.post('/api/stock/:id/movimento', authMiddleware, validarUUID('id'), async (r
 // ── Financeiro ───────────────────────────────────────────────
 app.get('/api/financeiro/resumo', authMiddleware, async (req, res) => {
   const { data } = req.query;
-  const dataFiltro = data || new Date().toISOString().split('T')[0];
+  // Validar formato de data para prevenir injecção
+  const dataValida = data && /^\d{4}-\d{2}-\d{2}$/.test(data) ? data : null;
+  const dataFiltro = dataValida || new Date().toISOString().split('T')[0];
   const tenantId = req.tenantId;
   try {
   const [vendas, porCategoria, porStatus, quartos] = await Promise.all([
@@ -1021,7 +1048,8 @@ app.post('/api/clientes', authMiddleware, async (req, res) => {
     res.status(201).json(r.rows[0]);
   } catch (e) {
     if (e.code === '23505') return res.status(409).json({ erro: 'Telefone ou email já registado' });
-    throw e;
+    console.error('❌ Erro POST /api/clientes:', e.message);
+    res.status(500).json({ erro: 'Erro interno do servidor' });
   }
 });
 
@@ -1356,15 +1384,26 @@ app.post('/api/cliente/pedido-restaurante', clienteLimiter, resolverTenantPublic
   if (!itens || !Array.isArray(itens) || itens.length === 0) {
     return res.status(400).json({ erro: 'Itens do pedido são obrigatórios' });
   }
+  // Limitar número de itens por pedido para prevenir abuso
+  if (itens.length > 50) {
+    return res.status(400).json({ erro: 'Máximo de 50 itens por pedido' });
+  }
   const METODOS = ['CASH', 'TPA', 'NUKCOIN', 'EXPRESS', 'TRANSFERENCIA'];
   const metodo = (metodo_pagamento || 'CASH').toUpperCase();
   if (!METODOS.includes(metodo)) {
     return res.status(400).json({ erro: `Método de pagamento inválido. Aceites: ${METODOS.join(', ')}` });
   }
+  // Validar cliente_id se fornecido
+  if (cliente_id && !isUUID(cliente_id)) {
+    return res.status(400).json({ erro: 'cliente_id inválido' });
+  }
   // Validar itens
   for (const item of itens) {
-    if (!item.produto_id || !item.quantidade || item.quantidade < 1) {
-      return res.status(400).json({ erro: 'Cada item deve ter produto_id e quantidade válidos' });
+    if (!item.produto_id || !isUUID(item.produto_id)) {
+      return res.status(400).json({ erro: 'produto_id inválido em item do pedido' });
+    }
+    if (!item.quantidade || !Number.isInteger(item.quantidade) || item.quantidade < 1 || item.quantidade > 100) {
+      return res.status(400).json({ erro: 'Quantidade inválida (1-100 por item)' });
     }
   }
   const tenantId = req.tenantId;
@@ -1604,6 +1643,7 @@ app.post('/api/cliente/nukcoin/carregar', clienteLimiter, resolverTenantPublico,
   const VALORES_VALIDOS = [5000, 10000, 15000, 20000, 25000, 50000];
   const { cliente_id, valor } = req.body;
   if (!cliente_id) return res.status(400).json({ erro: 'cliente_id obrigatório' });
+  if (!isUUID(cliente_id)) return res.status(400).json({ erro: 'cliente_id inválido' });
   const valorNum = parseFloat(valor);
   if (!VALORES_VALIDOS.includes(valorNum)) {
     return res.status(400).json({ erro: `Valor inválido. Opções: ${VALORES_VALIDOS.join(', ')} Kz` });
@@ -1645,6 +1685,7 @@ app.post('/api/cliente/nukcoin/carregar', clienteLimiter, resolverTenantPublico,
 app.get('/api/cliente/nukcoin/historico', clienteLimiter, resolverTenantPublico, async (req, res) => {
   const { cliente_id } = req.query;
   if (!cliente_id) return res.status(400).json({ erro: 'cliente_id obrigatório' });
+  if (!isUUID(cliente_id)) return res.status(400).json({ erro: 'cliente_id inválido' });
   const tenantId = req.tenantId;
   try {
     // Verificar que o cliente pertence a este tenant
