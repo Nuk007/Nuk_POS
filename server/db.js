@@ -264,6 +264,7 @@ async function initDB() {
     await client.query(`
       CREATE TABLE IF NOT EXISTS reservas (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
         quarto_id UUID NOT NULL REFERENCES quartos(id),
         cliente_id UUID REFERENCES clientes(id),
         nome_hospede VARCHAR(200),
@@ -278,6 +279,8 @@ async function initDB() {
       )
     `);
 
+    await client.query(`ALTER TABLE reservas ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_reservas_tenant ON reservas(tenant_id)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_reservas_quarto ON reservas(quarto_id)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_reservas_checkin ON reservas(checkin)`);
 
@@ -354,6 +357,7 @@ async function initDB() {
     await client.query(`
       CREATE TABLE IF NOT EXISTS faturas (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
         pedido_id UUID UNIQUE REFERENCES pedidos(id),
         reserva_id UUID REFERENCES reservas(id),
         cliente_id UUID REFERENCES clientes(id),
@@ -372,6 +376,9 @@ async function initDB() {
         UNIQUE(serie, ano, sequencial)
       )
     `);
+
+    await client.query(`ALTER TABLE faturas ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_faturas_tenant ON faturas(tenant_id)`);
 
     // Avaliacoes de staff
     await client.query(`
