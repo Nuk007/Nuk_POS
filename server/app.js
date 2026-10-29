@@ -1354,7 +1354,7 @@ app.post('/api/cliente/pedido-restaurante', clienteLimiter, resolverTenantPublic
     let mesa_id = null;
     if (mesa_ref) {
       const m = await pool.query(
-        `SELECT id FROM mesas WHERE (numero = $1 OR nome ILIKE $1)
+        `SELECT id FROM mesas WHERE numero = $1
          AND ($2::uuid IS NULL OR tenant_id = $2)`,
         [mesa_ref, tenantId || null]
       );
