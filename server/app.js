@@ -38,6 +38,9 @@ const io = new Server(server, {
   pingInterval: 25000,
 });
 
+// ── Trust proxy (Render usa reverse proxy) ───────────────────
+app.set('trust proxy', 1);
+
 // ── Middlewares ─────────────────────────────────────────────
 app.use(helmet({
   contentSecurityPolicy: {
@@ -689,7 +692,8 @@ app.post('/api/stock', authMiddleware, requerNivel(['ADMIN', 'GERENTE']), async 
     );
     res.status(201).json(r.rows[0]);
   } catch (e) {
-    res.status(500).json({ erro: 'Erro interno do servidor' });
+    console.error('❌ Erro POST /api/stock:', e.message, e.detail || '');
+    res.status(500).json({ erro: 'Erro interno do servidor', detalhe: process.env.NODE_ENV !== 'production' ? e.message : undefined });
   }
 });
 
