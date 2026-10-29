@@ -1108,19 +1108,8 @@ io.on('connection', (socket) => {
 });
 
 // ════════════════════════════════════════════════════════════
-// SPA fallback (frontend)
-// ════════════════════════════════════════════════════════════
-app.get('*', (req, res) => {
-  if (req.path.startsWith('/api/')) return res.status(404).json({ erro: 'Rota não encontrada' });
-  // Portal do cliente
-  if (req.path === '/cliente' || req.path === '/cliente/') {
-    return res.sendFile(path.join(__dirname, '..', 'public', 'cliente.html'));
-  }
-  res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
-});
-
-// ════════════════════════════════════════════════════════════
 // PORTAL DO CLIENTE — Rotas públicas (sem JWT)
+// NOTA: deve ficar ANTES do SPA fallback (*) para não ser interceptado
 // ════════════════════════════════════════════════════════════
 
 // Rate limiter mais restritivo para rotas públicas
@@ -1595,6 +1584,18 @@ app.get('/api/qrcode', authMiddleware, requerNivel(['ADMIN', 'GERENTE']), async 
   } catch (e) {
     res.status(500).json({ erro: 'Erro ao gerar QR code' });
   }
+});
+
+// ════════════════════════════════════════════════════════════
+// SPA fallback (frontend) — deve ficar DEPOIS de todas as rotas /api/
+// ════════════════════════════════════════════════════════════
+app.get('*', (req, res) => {
+  if (req.path.startsWith('/api/')) return res.status(404).json({ erro: 'Rota não encontrada' });
+  // Portal do cliente
+  if (req.path === '/cliente' || req.path === '/cliente/') {
+    return res.sendFile(path.join(__dirname, '..', 'public', 'cliente.html'));
+  }
+  res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 
 // ════════════════════════════════════════════════════════════
