@@ -195,6 +195,14 @@ async function initDB() {
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_produtos_tenant ON produtos(tenant_id)`);
     await client.query(`ALTER TABLE produtos ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE`);
+    // Migração: expandir categorias de produtos para incluir PRATO e OUTRO
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE produtos DROP CONSTRAINT IF EXISTS produtos_categoria_check;
+        ALTER TABLE produtos ADD CONSTRAINT produtos_categoria_check
+          CHECK (categoria IN ('CHURRASCO','PEIXE','BEBIDA','SOBREMESA','ACOMPANHAMENTO','COCKTAIL','ENTRADA','SHISHA','PRATO','OUTRO'));
+      EXCEPTION WHEN OTHERS THEN NULL; END $$
+    `);
 
     // Pedidos
     await client.query(`

@@ -381,25 +381,41 @@ app.get('/api/produtos', authMiddleware, async (req, res) => {
 app.post('/api/produtos', authMiddleware, requerNivel(['ADMIN', 'GERENTE']), async (req, res) => {
   const { nome, descricao, categoria, preco, disponivel } = req.body;
   if (!nome || !categoria || !preco) return res.status(400).json({ erro: 'Nome, categoria e preço são obrigatórios' });
-  const tenantId = req.tenantId;
-  const r = await pool.query(
-    `INSERT INTO produtos (tenant_id, nome, descricao, categoria, preco, disponivel) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-    [tenantId, nome, descricao || null, categoria, preco, disponivel !== false]
-  );
-  res.status(201).json(r.rows[0]);
+  const CATS_VALIDAS = ['CHURRASCO','PEIXE','BEBIDA','SOBREMESA','ACOMPANHAMENTO','COCKTAIL','ENTRADA','SHISHA','PRATO','OUTRO'];
+  if (!CATS_VALIDAS.includes(categoria)) {
+    return res.status(400).json({ erro: `Categoria inválida. Válidas: ${CATS_VALIDAS.join(', ')}` });
+  }
+  try {
+    const tenantId = req.tenantId;
+    const r = await pool.query(
+      `INSERT INTO produtos (tenant_id, nome, descricao, categoria, preco, disponivel) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+      [tenantId, nome, descricao || null, categoria, preco, disponivel !== false]
+    );
+    res.status(201).json(r.rows[0]);
+  } catch (e) {
+    console.error('❌ Erro POST /api/produtos:', e.message, e.detail || '');
+    if (e.code === '23514') return res.status(400).json({ erro: 'Categoria inválida' });
+    res.status(500).json({ erro: 'Erro interno do servidor' });
+  }
 });
 
 app.put('/api/produtos/:id', authMiddleware, validarUUID('id'), requerNivel(['ADMIN', 'GERENTE']), async (req, res) => {
   const { nome, descricao, categoria, preco, disponivel, ativo } = req.body;
-  const tenantId = req.tenantId;
-  const r = await pool.query(
-    `UPDATE produtos SET nome=COALESCE($1,nome), descricao=COALESCE($2,descricao), categoria=COALESCE($3,categoria),
-     preco=COALESCE($4,preco), disponivel=COALESCE($5,disponivel), ativo=COALESCE($6,ativo), atualizado_em=NOW()
-     WHERE id=$7 AND ($8::uuid IS NULL OR tenant_id = $8) RETURNING *`,
-    [nome, descricao, categoria, preco, disponivel, ativo, req.params.id, tenantId || null]
-  );
-  if (!r.rows[0]) return res.status(404).json({ erro: 'Produto não encontrado' });
-  res.json(r.rows[0]);
+  try {
+    const tenantId = req.tenantId;
+    const r = await pool.query(
+      `UPDATE produtos SET nome=COALESCE($1,nome), descricao=COALESCE($2,descricao), categoria=COALESCE($3,categoria),
+       preco=COALESCE($4,preco), disponivel=COALESCE($5,disponivel), ativo=COALESCE($6,ativo), atualizado_em=NOW()
+       WHERE id=$7 AND ($8::uuid IS NULL OR tenant_id = $8) RETURNING *`,
+      [nome, descricao, categoria, preco, disponivel, ativo, req.params.id, tenantId || null]
+    );
+    if (!r.rows[0]) return res.status(404).json({ erro: 'Produto não encontrado' });
+    res.json(r.rows[0]);
+  } catch (e) {
+    console.error('❌ Erro PUT /api/produtos/:id:', e.message, e.detail || '');
+    if (e.code === '23514') return res.status(400).json({ erro: 'Categoria inválida' });
+    res.status(500).json({ erro: 'Erro interno do servidor' });
+  }
 });
 
 // ── Pedidos ──────────────────────────────────────────────────
