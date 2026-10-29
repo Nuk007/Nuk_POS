@@ -76,6 +76,10 @@ app.use(cors({
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
 
+// Render e outros proxies definem X-Forwarded-For; sem isto o rate-limiter
+// não consegue identificar o IP real e lança ValidationError
+app.set('trust proxy', 1);
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 200,
@@ -1164,7 +1168,7 @@ app.post('/api/cliente/login', clienteLimiter, resolverTenantPublico, async (req
     const tel = telefone.replace(/\s/g, '');
     const r = await pool.query(
       `SELECT id, nome, telefone, provincia,
-              pontos_fidelizacao AS pontos, nivel_fidelizacao,
+              pontos, nivel_fidelizacao,
               nukcoin_saldo, estrelas, criado_em
        FROM clientes
        WHERE telefone = $1 AND ativo = true
@@ -1217,10 +1221,10 @@ app.post('/api/cliente/cadastrar', clienteLimiter, resolverTenantPublico, async 
 
     const novoId = uuidv4();
     const r = await pool.query(
-      `INSERT INTO clientes (id, tenant_id, nome, telefone, provincia, pontos_fidelizacao,
+      `INSERT INTO clientes (id, tenant_id, nome, telefone, provincia, pontos,
                              nivel_fidelizacao, nukcoin_saldo, estrelas, referido_por, ativo, criado_em)
        VALUES ($1, $2, $3, $4, $5, 50, 'BRONZE', 0, 0, $6, true, NOW())
-       RETURNING id, nome, telefone, provincia, pontos_fidelizacao AS pontos,
+       RETURNING id, nome, telefone, provincia, pontos,
                  nivel_fidelizacao, nukcoin_saldo, estrelas`,
       [novoId, tenantId || null, nome.trim(), tel, provincia || null, referidoPorId]
     );
@@ -1463,7 +1467,7 @@ app.get('/api/cliente/perfil', clienteLimiter, resolverTenantPublico, async (req
   try {
     const r = await pool.query(
       `SELECT id, nome, telefone, provincia,
-              pontos_fidelizacao AS pontos, nivel_fidelizacao,
+              pontos, nivel_fidelizacao,
               nukcoin_saldo, estrelas, criado_em
        FROM clientes WHERE telefone = $1 AND ativo = true
          AND ($2::uuid IS NULL OR tenant_id = $2)`,
