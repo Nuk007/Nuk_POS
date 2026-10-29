@@ -662,23 +662,35 @@ app.patch('/api/quartos/:id/status', authMiddleware, validarUUID('id'), requerNi
 
 // ── Stock ────────────────────────────────────────────────────
 app.get('/api/stock', authMiddleware, async (req, res) => {
-  const r = await pool.query(`
-    SELECT s.*,
-      CASE WHEN s.stock_atual <= s.stock_minimo THEN true ELSE false END as alerta_stock
-    FROM stock_items s WHERE s.ativo = true ORDER BY s.categoria, s.nome
-  `);
-  res.json(r.rows);
+  const tenantId = req.tenantId;
+  try {
+    const r = await pool.query(`
+      SELECT s.*,
+        CASE WHEN s.stock_atual <= s.stock_minimo THEN true ELSE false END as alerta_stock
+      FROM stock_items s
+      WHERE s.ativo = true AND ($1::uuid IS NULL OR s.tenant_id = $1)
+      ORDER BY s.categoria, s.nome
+    `, [tenantId || null]);
+    res.json(r.rows);
+  } catch (e) {
+    res.status(500).json({ erro: 'Erro interno do servidor' });
+  }
 });
 
 app.post('/api/stock', authMiddleware, requerNivel(['ADMIN', 'GERENTE']), async (req, res) => {
   const { nome, categoria, stock_atual, stock_minimo, stock_ideal, unidade, custo_unitario, fornecedor } = req.body;
   if (!nome || !categoria || !unidade) return res.status(400).json({ erro: 'Nome, categoria e unidade são obrigatórios' });
-  const r = await pool.query(
-    `INSERT INTO stock_items (nome, categoria, stock_atual, stock_minimo, stock_ideal, unidade, custo_unitario, fornecedor)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-    [nome, categoria, stock_atual || 0, stock_minimo || 0, stock_ideal || 0, unidade, custo_unitario || null, fornecedor || null]
-  );
-  res.status(201).json(r.rows[0]);
+  const tenantId = req.tenantId;
+  try {
+    const r = await pool.query(
+      `INSERT INTO stock_items (tenant_id, nome, categoria, stock_atual, stock_minimo, stock_ideal, unidade, custo_unitario, fornecedor)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [tenantId || null, nome, categoria, stock_atual || 0, stock_minimo || 0, stock_ideal || 0, unidade, custo_unitario || null, fornecedor || null]
+    );
+    res.status(201).json(r.rows[0]);
+  } catch (e) {
+    res.status(500).json({ erro: 'Erro interno do servidor' });
+  }
 });
 
 app.post('/api/stock/:id/movimento', authMiddleware, validarUUID('id'), async (req, res) => {
@@ -687,10 +699,14 @@ app.post('/api/stock/:id/movimento', authMiddleware, validarUUID('id'), async (r
   if (!TIPOS_VALIDOS.includes(tipo)) return res.status(400).json({ erro: 'Tipo de movimento inválido' });
   if (!quantidade || isNaN(quantidade) || parseFloat(quantidade) === 0) return res.status(400).json({ erro: 'Quantidade inválida' });
 
+  const tenantId = req.tenantId;
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const s = await client.query(`SELECT stock_atual FROM stock_items WHERE id=$1 FOR UPDATE`, [req.params.id]);
+    const s = await client.query(
+      `SELECT stock_atual FROM stock_items WHERE id=$1 AND ($2::uuid IS NULL OR tenant_id=$2) FOR UPDATE`,
+      [req.params.id, tenantId || null]
+    );
     if (!s.rows[0]) throw new Error('Item não encontrado');
 
     const antes = parseFloat(s.rows[0].stock_atual);
@@ -714,7 +730,7 @@ app.post('/api/stock/:id/movimento', authMiddleware, validarUUID('id'), async (r
     // Verificar alerta de stock
     const item = await pool.query(`SELECT * FROM stock_items WHERE id=$1`, [req.params.id]);
     if (parseFloat(item.rows[0].stock_atual) <= parseFloat(item.rows[0].stock_minimo)) {
-      broadcast('alerta_stock', { item: item.rows[0], mensagem: `Stock baixo: ${item.rows[0].nome}` });
+      broadcast('alerta_stock', { item: item.rows[0], mensagem: `Stock baixo: ${item.rows[0].nome}` }, item.rows[0].tenant_id || null);
     }
 
     res.status(201).json(r.rows[0]);
@@ -887,7 +903,7 @@ app.get('/api/dashboard', authMiddleware, async (req, res) => {
       `, [tenantId || null]),
       pool.query(`SELECT status, COUNT(*) as total FROM mesas WHERE ($1::uuid IS NULL OR tenant_id = $1) GROUP BY status`, [tenantId || null]),
       pool.query(`SELECT status, COUNT(*) as total FROM quartos WHERE ($1::uuid IS NULL OR tenant_id = $1) GROUP BY status`, [tenantId || null]),
-      pool.query(`SELECT COUNT(*) as total FROM stock_items WHERE ativo=true AND stock_atual <= stock_minimo`),
+      pool.query(`SELECT COUNT(*) as total FROM stock_items WHERE ativo=true AND stock_atual <= stock_minimo AND ($1::uuid IS NULL OR tenant_id=$1)`, [tenantId || null]),
       pool.query(`
         SELECT p.id, p.status, m.numero as mesa, p.total, p.criado_em,
                COUNT(ip.id) as num_itens
