@@ -35,8 +35,19 @@ router.get('/', authMiddleware, async (req, res) => {
   q += ` GROUP BY p.id, m.numero, m.zona, f.nome ORDER BY p.criado_em DESC LIMIT $${vals.length + 1} OFFSET $${vals.length + 2}`;
   vals.push(limit, offset);
   try {
-    const r = await pool.query(q, vals);
-    res.json({ data: r.rows, page, limit, total: r.rows.length });
+    // M-01 fix: contar total real sem LIMIT/OFFSET para paginação correcta
+    const countVals = vals.slice(0, vals.length - 2); // remove limit e offset
+    let countQ = `SELECT COUNT(*) FROM pedidos p WHERE ($1::uuid IS NULL OR p.tenant_id = $1)`;
+    const statusIdx = status ? countVals.indexOf(status) + 1 : null;
+    const mesaIdx = mesa_id ? countVals.indexOf(mesa_id) + 1 : null;
+    const dInicioIdx = data_inicio ? countVals.indexOf(data_inicio) + 1 : null;
+    const dFimIdx = data_fim ? countVals.indexOf(data_fim) + 1 : null;
+    if (statusIdx) countQ += ` AND p.status = $${statusIdx}`;
+    if (mesaIdx) countQ += ` AND p.mesa_id = $${mesaIdx}`;
+    if (dInicioIdx) countQ += ` AND p.criado_em >= $${dInicioIdx}`;
+    if (dFimIdx) countQ += ` AND p.criado_em <= $${dFimIdx}`;
+    const [r, countR] = await Promise.all([pool.query(q, vals), pool.query(countQ, countVals)]);
+    res.json({ data: r.rows, page, limit, total: parseInt(countR.rows[0].count) });
   } catch (e) {
     console.error('GET /api/pedidos:', e.message);
     res.status(500).json({ erro: 'Erro interno do servidor' });

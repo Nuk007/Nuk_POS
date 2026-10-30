@@ -8,6 +8,11 @@ const CHAVES_PERMITIDAS = [
   'nome_estabelecimento', 'iva_padrao', 'moeda', 'timezone',
   'telefone', 'email_contato', 'morada', 'nif_empresa',
   'taxa_servico', 'stock_alerta_minimo', 'versao',
+  // M-04 fix: chaves do sistema de fidelização NukCoin/estrelas
+  'nukcoin_desconto_pct', 'estrelas_minimo_consumo', 'estrelas_para_desconto',
+  'desconto_estrelas_pct', 'desconto_estrelas_limite', 'pontos_boas_vindas', 'portal_url',
+  // Chaves de eventos/promoções
+  'evento_nome', 'evento_data', 'evento_descricao', 'evento_ativo',
 ];
 
 // GET /api/configuracoes

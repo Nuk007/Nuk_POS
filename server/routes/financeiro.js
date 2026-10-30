@@ -91,6 +91,13 @@ router.post('/faturas', authMiddleware, async (req, res) => {
     const sequencial = seq.rows[0].prox;
     const numero_fatura = `FT ${ano}/${String(sequencial).padStart(6, '0')}`;
 
+    // M-07 fix: ler taxa_iva da configuração do tenant em vez de valor fixo 14%
+    const cfgIva = await pool.query(
+      `SELECT valor FROM configuracoes WHERE chave='iva_padrao' AND ($1::uuid IS NULL OR tenant_id=$1)`,
+      [tenantId || null]
+    );
+    const taxa_iva = cfgIva.rows[0] ? parseFloat(cfgIva.rows[0].valor) || 14 : 14;
+
     let total = 0;
     if (pedido_id) {
       const p = await pool.query(
@@ -114,11 +121,11 @@ router.post('/faturas', authMiddleware, async (req, res) => {
       return res.status(400).json({ erro: 'Fornecer pedido_id, reserva_id ou total_manual' });
     }
 
-    const taxa_iva = 14;
     const total_sem_iva = total / (1 + taxa_iva / 100);
     const iva = total - total_sem_iva;
+    // B-01 fix: hash determinístico — sem randomBytes, verificável a partir dos dados da fatura
     const hash = crypto.createHash('sha256')
-      .update(`${numero_fatura}${total}${crypto.randomBytes(4).toString('hex')}`)
+      .update(`${numero_fatura}|${total.toFixed(2)}|${taxa_iva}|${tenantId || ''}`)
       .digest('hex');
 
     const r = await pool.query(`

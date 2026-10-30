@@ -23,15 +23,20 @@ function initWebSocket(io) {
       socket.join(`tenant:${socket.user.tenantId}`);
     }
 
+    // B-03 fix: join_room restrito à sala do próprio tenant do utilizador.
+    // Impede que um cliente entre em salas de outros tenants ou salas arbitrárias.
     socket.on('join_room', (room) => {
-      // Apenas permitir entrar em salas genéricas (não em salas de outros tenants)
-      if (typeof room === 'string' && !room.startsWith('tenant:')) {
+      const tenantRoom = `tenant:${socket.user?.tenantId}`;
+      if (typeof room === 'string' && room === tenantRoom) {
         socket.join(room);
+      } else {
+        console.warn(`[WS] join_room bloqueado: ${socket.user?.email} tentou entrar em '${room}'`);
       }
     });
 
     socket.on('leave_room', (room) => {
-      if (typeof room === 'string' && !room.startsWith('tenant:')) {
+      // Permitir sair de qualquer sala — não há risco de segurança em deixar uma sala
+      if (typeof room === 'string') {
         socket.leave(room);
       }
     });

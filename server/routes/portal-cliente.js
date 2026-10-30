@@ -3,10 +3,21 @@ const express = require('express');
 const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
+const bcrypt = require('bcrypt');
 const rateLimit = require('express-rate-limit');
 const { pool } = require('../db');
 const { authMiddleware, requerNivel, isUUID } = require('../middleware/auth');
 const { broadcast } = require('../middleware/broadcast');
+
+// Helper: gerar PIN hash (bcrypt)
+async function hashPin(pin) {
+  return bcrypt.hash(pin, 10);
+}
+// Helper: verificar PIN
+async function verificarPin(pin, hash) {
+  if (!hash) return false;
+  return bcrypt.compare(pin, hash);
+}
 
 // resolverTenantPublico is injected via app.use — import from saas module
 const { resolverTenantPublico } = require('../saas');
@@ -52,28 +63,70 @@ router.get('/eventos', clienteLimiter, resolverTenantPublico, async (req, res) =
 });
 
 // ── POST /api/cliente/login ──
+// A-01 fix: exige PIN (4 dígitos) para autenticação além do número de telefone
 router.post('/login', clienteLimiter, resolverTenantPublico, async (req, res) => {
-  const { telefone } = req.body;
+  const { telefone, pin } = req.body;
   if (!telefone || !/^9[0-9]{8}$/.test(telefone.replace(/\s/g, ''))) {
     return res.status(400).json({ erro: 'Número de telefone inválido' });
+  }
+  if (!pin || !/^\d{4}$/.test(String(pin))) {
+    return res.status(400).json({ erro: 'PIN obrigatório (4 dígitos)' });
   }
   try {
     const tel = telefone.replace(/\s/g, '');
     const r = await pool.query(
       `SELECT id, nome, telefone, provincia,
               pontos, nivel_fidelizacao,
-              nukcoin_saldo, estrelas, criado_em
+              nukcoin_saldo, estrelas, criado_em, pin_hash
        FROM clientes
        WHERE telefone = $1 AND ativo = true
          AND ($2::uuid IS NULL OR tenant_id = $2)`,
       [tel, req.tenantId || null]
     );
     if (!r.rows[0]) {
-      return res.status(404).json({ erro: 'Cliente não encontrado', nao_encontrado: true });
+      // Resposta genérica para não revelar se o número existe
+      return res.status(401).json({ erro: 'Credenciais inválidas' });
     }
-    res.json({ cliente: r.rows[0] });
+    const cliente = r.rows[0];
+    if (!cliente.pin_hash) {
+      // Cliente ainda não tem PIN definido — pede para definir primeiro
+      return res.status(403).json({ erro: 'PIN não configurado. Por favor defina o seu PIN.', sem_pin: true });
+    }
+    const pinValido = await verificarPin(String(pin), cliente.pin_hash);
+    if (!pinValido) {
+      return res.status(401).json({ erro: 'Credenciais inválidas' });
+    }
+    // Não retornar pin_hash ao cliente
+    const { pin_hash: _, ...clienteSemPin } = cliente;
+    res.json({ cliente: clienteSemPin });
   } catch (e) {
+    console.error('login cliente:', e.message);
     res.status(500).json({ erro: 'Erro ao autenticar cliente' });
+  }
+});
+
+// ── POST /api/cliente/definir-pin ── (A-01: primeiro acesso ou reset de PIN)
+router.post('/definir-pin', clienteLimiter, resolverTenantPublico, async (req, res) => {
+  const { telefone, pin } = req.body;
+  if (!telefone || !/^9[0-9]{8}$/.test(telefone.replace(/\s/g, ''))) {
+    return res.status(400).json({ erro: 'Número de telefone inválido' });
+  }
+  if (!pin || !/^\d{4}$/.test(String(pin))) {
+    return res.status(400).json({ erro: 'PIN deve ter exactamente 4 dígitos' });
+  }
+  try {
+    const tel = telefone.replace(/\s/g, '');
+    const r = await pool.query(
+      `SELECT id FROM clientes WHERE telefone = $1 AND ativo = true AND ($2::uuid IS NULL OR tenant_id = $2)`,
+      [tel, req.tenantId || null]
+    );
+    if (!r.rows[0]) return res.status(404).json({ erro: 'Cliente não encontrado' });
+    const hash = await hashPin(String(pin));
+    await pool.query(`UPDATE clientes SET pin_hash = $1 WHERE id = $2`, [hash, r.rows[0].id]);
+    res.json({ mensagem: 'PIN definido com sucesso.' });
+  } catch (e) {
+    console.error('definir-pin:', e.message);
+    res.status(500).json({ erro: 'Erro ao definir PIN' });
   }
 });
 
@@ -118,10 +171,10 @@ router.post('/cadastrar', clienteLimiter, resolverTenantPublico, async (req, res
 
     if (referidoPorId) {
       await pool.query(`UPDATE clientes SET estrelas = estrelas + 1 WHERE id = $1`, [referidoPorId]);
-      broadcast('estrela_referral', { cliente_id: referidoPorId, motivo: 'Referência de novo cliente' });
+      broadcast('estrela_referral', { cliente_id: referidoPorId, motivo: 'Referência de novo cliente' }, tenantId);
     }
 
-    broadcast('cliente_novo', { nome: r.rows[0].nome });
+    broadcast('cliente_novo', { nome: r.rows[0].nome }, tenantId);
     res.status(201).json({
       cliente: r.rows[0],
       mensagem: 'Cadastro realizado com sucesso! 🎉 Bónus de 50 pontos creditados.',
@@ -268,7 +321,7 @@ router.post('/pedido-restaurante', clienteLimiter, resolverTenantPublico, async 
       pedido_id: pedidoId, codigo, mesa_ref: mesa_ref || null,
       itens: itensFull.map(i => `${i.quantidade}x ${i.nome}`),
       total: totalFinal, metodo_pagamento: metodo, fonte: 'PORTAL_CLIENTE',
-    });
+    }, tenantId);
 
     res.status(201).json({
       codigo, pedido_id: pedidoId, total_bruto: total,
@@ -292,19 +345,21 @@ router.post('/pedido-hospedagem', clienteLimiter, resolverTenantPublico, async (
   }
   const qty = parseInt(quantidade) || 1;
   if (qty < 1 || qty > 20) return res.status(400).json({ erro: 'Quantidade inválida (1-20)' });
+  const tenantId = req.tenantId;
   try {
     const solicitacaoId = uuidv4();
     const codigo = 'H' + Date.now().toString().slice(-4);
+    // A-02 fix: incluir tenant_id no INSERT para isolamento multi-tenant
     await pool.query(
-      `INSERT INTO solicitacoes_hospedagem (id, cliente_id, tipo_fracao, quantidade_quartos, status,
+      `INSERT INTO solicitacoes_hospedagem (id, tenant_id, cliente_id, tipo_fracao, quantidade_quartos, status,
                             nome_responsavel, telefone_contacto, observacoes, criado_em, atualizado_em)
-       VALUES ($1, $2, $3, $4, 'PENDENTE', $5, $6, $7, NOW(), NOW())`,
-      [solicitacaoId, cliente_id || null, fracao, qty, nome_hospede || null, telefone || null, observacoes || null]
+       VALUES ($1, $2, $3, $4, $5, 'PENDENTE', $6, $7, $8, NOW(), NOW())`,
+      [solicitacaoId, tenantId || null, cliente_id || null, fracao, qty, nome_hospede || null, telefone || null, observacoes || null]
     );
     broadcast('nova_solicitacao_hospedagem', {
       id: solicitacaoId, codigo, fracao, quantidade: qty,
       nome_hospede: nome_hospede || 'Visitante', telefone: telefone || '—', fonte: 'PORTAL_CLIENTE',
-    });
+    }, tenantId);
     res.status(201).json({ codigo, solicitacao_id: solicitacaoId, mensagem: 'Solicitação enviada! A nossa equipa entrará em contacto brevemente.' });
   } catch (e) {
     console.error('pedido-hospedagem:', e.message);
@@ -312,9 +367,9 @@ router.post('/pedido-hospedagem', clienteLimiter, resolverTenantPublico, async (
   }
 });
 
-// ── GET /api/cliente/perfil ──
-router.get('/perfil', clienteLimiter, resolverTenantPublico, async (req, res) => {
-  const tel = (req.query.tel || '').replace(/\s/g, '');
+// ── POST /api/cliente/perfil ── (M-05 fix: telefone no body, não na query string para não aparecer em logs)
+router.post('/perfil', clienteLimiter, resolverTenantPublico, async (req, res) => {
+  const tel = ((req.body && req.body.telefone) || '').replace(/\s/g, '');
   if (!/^9[0-9]{8}$/.test(tel)) return res.status(400).json({ erro: 'Telefone inválido' });
   const tenantId = req.tenantId;
   try {

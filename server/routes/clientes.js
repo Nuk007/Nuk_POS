@@ -16,10 +16,14 @@ router.get('/', authMiddleware, async (req, res) => {
                  FROM clientes WHERE ativo=true AND ($1::uuid IS NULL OR tenant_id = $1)`;
     const vals = [tenantId || null];
     if (q) { query += ` AND (nome ILIKE $2 OR telefone ILIKE $2 OR email ILIKE $2)`; vals.push(`%${q}%`); }
+    // M-01 fix: contar total real antes de aplicar LIMIT/OFFSET
+    let countQ = `SELECT COUNT(*) FROM clientes WHERE ativo=true AND ($1::uuid IS NULL OR tenant_id = $1)`;
+    const countVals = [tenantId || null];
+    if (q) { countQ += ` AND (nome ILIKE $2 OR telefone ILIKE $2 OR email ILIKE $2)`; countVals.push(`%${q}%`); }
     query += ` ORDER BY nome LIMIT $${vals.length + 1} OFFSET $${vals.length + 2}`;
     vals.push(limit, offset);
-    const r = await pool.query(query, vals);
-    res.json({ data: r.rows, page, limit, total: r.rows.length });
+    const [r, countR] = await Promise.all([pool.query(query, vals), pool.query(countQ, countVals)]);
+    res.json({ data: r.rows, page, limit, total: parseInt(countR.rows[0].count) });
   } catch (e) {
     console.error('GET /api/clientes:', e.message);
     res.status(500).json({ erro: 'Erro interno do servidor' });

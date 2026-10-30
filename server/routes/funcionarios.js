@@ -35,10 +35,12 @@ router.post('/', authMiddleware, requerNivel(['ADMIN']), async (req, res) => {
   }
   const tenantId = req.tenantId;
   try {
+    // M-02 fix: unicidade de email por tenant, não global
     const ex = await pool.query(
-      `SELECT id FROM funcionarios WHERE LOWER(email) = LOWER($1)`, [email.trim()]
+      `SELECT id FROM funcionarios WHERE LOWER(email) = LOWER($1) AND ($2::uuid IS NULL OR tenant_id = $2)`,
+      [email.trim(), tenantId || null]
     );
-    if (ex.rows[0]) return res.status(409).json({ erro: 'Email já registado' });
+    if (ex.rows[0]) return res.status(409).json({ erro: 'Email já registado neste estabelecimento' });
 
     const hash = await bcrypt.hash(password, 12);
     const r = await pool.query(
@@ -58,6 +60,11 @@ router.put('/:id', authMiddleware, requerNivel(['ADMIN']), async (req, res) => {
   const { id } = req.params;
   if (!isUUID(id)) return res.status(400).json({ erro: 'id inválido' });
   const { nome, nivel_acesso, ativo, password } = req.body;
+  // M-03 fix: validar nivel_acesso também no PUT, não apenas no POST
+  const NIVEIS = ['ADMIN', 'GERENTE', 'OPERADOR', 'CAIXA'];
+  if (nivel_acesso !== undefined && !NIVEIS.includes(nivel_acesso)) {
+    return res.status(400).json({ erro: `nivel_acesso inválido. Valores: ${NIVEIS.join(', ')}` });
+  }
   const tenantId = req.tenantId;
   try {
     let hash = undefined;

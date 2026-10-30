@@ -11,7 +11,9 @@ function broadcast(evento, dados, tenantId) {
   if (tenantId) {
     _io.to(`tenant:${tenantId}`).emit(evento, dados);
   } else {
-    _io.emit(evento, dados);
+    // M-06 fix: sem tenantId, NÃO emitir para todos — registar aviso e ignorar
+    // para evitar fuga de dados entre tenants
+    console.warn(`[broadcast] Evento '${evento}' ignorado: tenantId em falta. Passar sempre tenantId para evitar fuga cross-tenant.`);
   }
 }
 

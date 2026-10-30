@@ -160,6 +160,8 @@ async function initDB() {
     await client.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS estrelas INTEGER DEFAULT 0`);
     await client.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS pontos INTEGER DEFAULT 50`);
     await client.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS referido_por UUID REFERENCES clientes(id)`);
+    // A-01 fix: PIN para autenticação do portal cliente
+    await client.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS pin_hash VARCHAR(255)`);
 
     // Mesas
     await client.query(`
@@ -296,6 +298,7 @@ async function initDB() {
     await client.query(`
       CREATE TABLE IF NOT EXISTS solicitacoes_hospedagem (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
         cliente_id UUID REFERENCES clientes(id),
         nome_responsavel VARCHAR(200),
         telefone_contacto VARCHAR(30),
@@ -309,6 +312,9 @@ async function initDB() {
       )
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_solicitacoes_status ON solicitacoes_hospedagem(status)`);
+    // A-02 fix: adicionar tenant_id a tabelas existentes sem a coluna
+    await client.query(`ALTER TABLE solicitacoes_hospedagem ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_solicitacoes_tenant ON solicitacoes_hospedagem(tenant_id)`);
 
     // Stock (ingredientes)
     await client.query(`
@@ -405,6 +411,7 @@ async function initDB() {
     await client.query(`
       CREATE TABLE IF NOT EXISTS chamadas_staff (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
         mesa_id UUID NOT NULL REFERENCES mesas(id),
         funcionario_id UUID REFERENCES funcionarios(id),
         motivo VARCHAR(200),
@@ -413,6 +420,9 @@ async function initDB() {
         tempo_resposta_seg INTEGER
       )
     `);
+    // A-03 fix: adicionar tenant_id à tabela chamadas_staff existente
+    await client.query(`ALTER TABLE chamadas_staff ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_chamadas_tenant ON chamadas_staff(tenant_id)`);
 
     // Configurações do sistema (por tenant)
     await client.query(`

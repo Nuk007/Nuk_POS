@@ -12,15 +12,19 @@ router.get('/', authMiddleware, async (req, res) => {
   const limit = Math.min(500, Math.max(1, parseInt(req.query.limit) || 200));
   const offset = (page - 1) * limit;
   try {
-    const r = await pool.query(`
-      SELECT s.*,
-        CASE WHEN s.stock_atual <= s.stock_minimo THEN true ELSE false END as alerta_stock
-      FROM stock_items s
-      WHERE s.ativo = true AND ($1::uuid IS NULL OR s.tenant_id = $1)
-      ORDER BY s.categoria, s.nome
-      LIMIT $2 OFFSET $3
-    `, [tenantId || null, limit, offset]);
-    res.json({ data: r.rows, page, limit, total: r.rows.length });
+    // M-01 fix: contar total real antes de aplicar LIMIT/OFFSET
+    const [r, countR] = await Promise.all([
+      pool.query(`
+        SELECT s.*,
+          CASE WHEN s.stock_atual <= s.stock_minimo THEN true ELSE false END as alerta_stock
+        FROM stock_items s
+        WHERE s.ativo = true AND ($1::uuid IS NULL OR s.tenant_id = $1)
+        ORDER BY s.categoria, s.nome
+        LIMIT $2 OFFSET $3
+      `, [tenantId || null, limit, offset]),
+      pool.query(`SELECT COUNT(*) FROM stock_items WHERE ativo = true AND ($1::uuid IS NULL OR tenant_id = $1)`, [tenantId || null]),
+    ]);
+    res.json({ data: r.rows, page, limit, total: parseInt(countR.rows[0].count) });
   } catch (e) {
     res.status(500).json({ erro: 'Erro interno do servidor' });
   }

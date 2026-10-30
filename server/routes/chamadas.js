@@ -16,9 +16,10 @@ router.post('/', authMiddleware, async (req, res) => {
       [mesa_id, tenantId || null]
     );
     if (!mesa.rows[0]) return res.status(404).json({ erro: 'Mesa não encontrada' });
+    // A-03 fix: incluir tenant_id no INSERT para isolamento multi-tenant
     const r = await pool.query(
-      `INSERT INTO chamadas_staff (mesa_id, motivo) VALUES ($1,$2) RETURNING *`,
-      [mesa_id, motivo || null]
+      `INSERT INTO chamadas_staff (tenant_id, mesa_id, motivo) VALUES ($1,$2,$3) RETURNING *`,
+      [tenantId || null, mesa_id, motivo || null]
     );
     broadcast('chamada_staff', { mesa_id, motivo, id: r.rows[0].id }, tenantId);
     res.status(201).json(r.rows[0]);

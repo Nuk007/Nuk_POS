@@ -1,10 +1,10 @@
 // Nuk_POS — Servidor Principal (refactored)
 // Stack: Node.js + Express + PostgreSQL + Socket.io
 // SaaS multi-tenant: cada empresa tem tenant_id em todas as operações
-// v2026.10.30.9-csp-fix
+// v2026.10.30.14-security-hardening-complete
 
 require('dotenv').config();
-console.log('[NukPOS] server/app.js v2026.10.30.9-csp-fix a arrancar');
+console.log('[NukPOS] server/app.js v2026.10.30.14-security-hardening-complete a arrancar');
 
 const express = require('express');
 const http = require('http');
@@ -59,8 +59,9 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.socket.io"],
-      scriptSrcAttr: ["'unsafe-inline'"],
+      // B-02 fix: removido 'unsafe-inline' de scriptSrc; os handlers onclick= foram migrados para addEventListener
+      scriptSrc: ["'self'", "https://cdn.socket.io"],
+      scriptSrcAttr: ["'none'"],
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       styleSrcElem: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       connectSrc: ["'self'", "ws:", "wss:"],
@@ -109,21 +110,23 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use('/api/saas', saasRouter);
 
 // ── Rotas autenticadas ───────────────────────────────────────
+// C-01 fix: resolverTenant corre PRIMEIRO para popular req.tenantId a partir do JWT,
+// depois verificarLicencaTenant valida a licença usando esse tenantId.
 app.use('/api/auth',           require('./routes/auth'));
-app.use('/api/dashboard',      verificarLicencaTenant, resolverTenant, require('./routes/dashboard'));
-app.use('/api/funcionarios',   verificarLicencaTenant, resolverTenant, require('./routes/funcionarios'));
-app.use('/api/mesas',          verificarLicencaTenant, resolverTenant, require('./routes/mesas'));
-app.use('/api/produtos',       verificarLicencaTenant, resolverTenant, require('./routes/produtos'));
-app.use('/api/pedidos',        verificarLicencaTenant, resolverTenant, require('./routes/pedidos'));
-app.use('/api/quartos',        verificarLicencaTenant, resolverTenant, require('./routes/quartos'));
-app.use('/api/reservas',       verificarLicencaTenant, resolverTenant, require('./routes/reservas'));
-app.use('/api/solicitacoes-hospedagem', verificarLicencaTenant, resolverTenant, require('./routes/solicitacoes'));
-app.use('/api/stock',          verificarLicencaTenant, resolverTenant, require('./routes/stock'));
-app.use('/api/financeiro',     verificarLicencaTenant, resolverTenant, require('./routes/financeiro'));
-app.use('/api/clientes',       verificarLicencaTenant, resolverTenant, require('./routes/clientes'));
-app.use('/api/chamadas',       verificarLicencaTenant, resolverTenant, require('./routes/chamadas'));
-app.use('/api/configuracoes',  verificarLicencaTenant, resolverTenant, require('./routes/configuracoes'));
-app.use('/api/qrcode',         verificarLicencaTenant, resolverTenant, require('./routes/qrcode'));
+app.use('/api/dashboard',      resolverTenant, verificarLicencaTenant, require('./routes/dashboard'));
+app.use('/api/funcionarios',   resolverTenant, verificarLicencaTenant, require('./routes/funcionarios'));
+app.use('/api/mesas',          resolverTenant, verificarLicencaTenant, require('./routes/mesas'));
+app.use('/api/produtos',       resolverTenant, verificarLicencaTenant, require('./routes/produtos'));
+app.use('/api/pedidos',        resolverTenant, verificarLicencaTenant, require('./routes/pedidos'));
+app.use('/api/quartos',        resolverTenant, verificarLicencaTenant, require('./routes/quartos'));
+app.use('/api/reservas',       resolverTenant, verificarLicencaTenant, require('./routes/reservas'));
+app.use('/api/solicitacoes-hospedagem', resolverTenant, verificarLicencaTenant, require('./routes/solicitacoes'));
+app.use('/api/stock',          resolverTenant, verificarLicencaTenant, require('./routes/stock'));
+app.use('/api/financeiro',     resolverTenant, verificarLicencaTenant, require('./routes/financeiro'));
+app.use('/api/clientes',       resolverTenant, verificarLicencaTenant, require('./routes/clientes'));
+app.use('/api/chamadas',       resolverTenant, verificarLicencaTenant, require('./routes/chamadas'));
+app.use('/api/configuracoes',  resolverTenant, verificarLicencaTenant, require('./routes/configuracoes'));
+app.use('/api/qrcode',         resolverTenant, verificarLicencaTenant, require('./routes/qrcode'));
 
 // ── Portal cliente — rotas públicas (sem JWT, com resolverTenantPublico) ──
 // NOTA: deve ficar ANTES do SPA fallback (*)
