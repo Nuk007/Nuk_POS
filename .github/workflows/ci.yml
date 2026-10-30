@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main, develop]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  test:
+    name: Testes Jest + Supertest
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Correr testes
+        run: npm test
+        env:
+          NODE_ENV: test
+          JWT_SECRET: test-secret-jwt-jest-nukpos
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+
+  lint:
+    name: Verificação de sintaxe
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Verificar sintaxe (node --check)
+        run: |
+          find server -name "*.js" | xargs -I{} node --check {}
+          find tests -name "*.js" | xargs -I{} node --check {}
