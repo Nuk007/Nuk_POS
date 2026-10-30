@@ -3,7 +3,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 const router = express.Router();
-const pool = require('../db');
+const { pool } = require('../db');
 const { authMiddleware, requerNivel, isUUID } = require('../middleware/auth');
 
 // GET /api/funcionarios

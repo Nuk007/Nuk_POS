@@ -1,7 +1,7 @@
 'use strict';
 const express = require('express');
 const router = express.Router();
-const pool = require('../db');
+const { pool } = require('../db');
 const { authMiddleware, requerNivel, isUUID } = require('../middleware/auth');
 const { broadcast } = require('../middleware/broadcast');
 

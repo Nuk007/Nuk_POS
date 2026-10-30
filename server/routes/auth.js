@@ -3,7 +3,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const rateLimit = require('express-rate-limit');
 const router = express.Router();
-const pool = require('../db');
+const { pool } = require('../db');
 const { gerarToken, authMiddleware } = require('../middleware/auth');
 
 const loginLimiter = rateLimit({

@@ -4,7 +4,7 @@ const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
-const pool = require('../db');
+const { pool } = require('../db');
 const { authMiddleware, requerNivel, isUUID } = require('../middleware/auth');
 const { broadcast } = require('../middleware/broadcast');
 
