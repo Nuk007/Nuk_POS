@@ -1,6 +1,7 @@
 // Nuk_POS — Servidor Principal
 // Stack: Node.js + Express + PostgreSQL + Socket.io
 // SaaS multi-tenant: cada empresa tem tenant_id em todas as operações
+// v2026.10.30.6
 
 require('dotenv').config();
 const express = require('express');
