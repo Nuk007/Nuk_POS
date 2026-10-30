@@ -4,6 +4,7 @@
 // v2026.10.30.6
 
 require('dotenv').config();
+console.log('[NukPOS] server/app.js v2026.10.30.6 a arrancar');
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
