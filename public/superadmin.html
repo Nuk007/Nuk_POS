@@ -1071,15 +1071,15 @@ async function verTenant(id) {
         <div class="detail-item"><div class="di-label">EMAIL</div><div class="di-val">${t.email || '—'}</div></div>
         <div class="detail-item"><div class="di-label">NIF</div><div class="di-val">${t.nif || '—'}</div></div>
         <div class="detail-item"><div class="di-label">LICENÇA EXPIRA</div><div class="di-val ${dias!==null&&dias<=7?'exp-warn':''}">${fmt(t.licenca_fim)}</div></div>
-        ${licKey ? `<div class="detail-item full"><div class="di-label">CHAVE DE LICENÇA</div><div class="key-box"><code>${licKey}</code><button class="copy-btn" title="Copiar" onclick="copyText('${licKey}')">📋</button></div></div>` : ''}
+        ${licKey ? `<div class="detail-item full"><div class="di-label">CHAVE DE LICENÇA</div><div class="key-box"><code>${licKey}</code><button class="copy-btn" title="Copiar" data-action="copy" data-key="${licKey}">📋</button></div></div>` : ''}
         ${t.notas ? `<div class="detail-item full"><div class="di-label">NOTAS</div><div class="di-val" style="color:var(--muted);font-size:13px">${t.notas}</div></div>` : ''}
       </div>`;
     footer.innerHTML = `
-      <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-tenant')">Fechar</button>
-      ${t.estado==='ACTIVA'   ? `<button class="btn btn-danger btn-sm"  onclick="alterarEstado('${t.id}','SUSPENSA','${t.nome}')">Suspender</button>`  : ''}
-      ${t.estado==='SUSPENSA' ? `<button class="btn btn-success btn-sm" onclick="alterarEstado('${t.id}','ACTIVA','${t.nome}')">Reactivar</button>` : ''}
-      <button class="btn btn-blue btn-sm" onclick="renovarLicenca('${t.id}','${t.nome}')">Renovar licença</button>
-      ${licKey ? `<button class="btn btn-ghost btn-sm" onclick="reenviarWA('${licKey}','${t.nome}')">📲 Reenviar link</button>` : ''}`;
+      <button class="btn btn-ghost btn-sm" data-action="close-modal" data-modal="modal-tenant">Fechar</button>
+      ${t.estado==='ACTIVA'   ? `<button class="btn btn-danger btn-sm"  data-action="alterar-estado" data-id="${t.id}" data-estado="SUSPENSA" data-nome="${t.nome}">Suspender</button>`  : ''}
+      ${t.estado==='SUSPENSA' ? `<button class="btn btn-success btn-sm" data-action="alterar-estado" data-id="${t.id}" data-estado="ACTIVA"   data-nome="${t.nome}">Reactivar</button>` : ''}
+      <button class="btn btn-blue btn-sm" data-action="renovar-licenca" data-id="${t.id}" data-nome="${t.nome}">Renovar licença</button>
+      ${licKey ? `<button class="btn btn-ghost btn-sm" data-action="reenviar-wa" data-key="${licKey}" data-nome="${t.nome}">📲 Reenviar link</button>` : ''}`;
   } catch (e) { body.innerHTML = `<div class="alert alert-err">${e.message}</div>`; }
 }
 
@@ -1220,8 +1220,8 @@ async function loadExpiracoes() {
             <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
               <div class="exp-days">${dias<=0?'Expirada':`${dias} dia${dias===1?'':'s'}`}</div>
               <div style="display:flex;gap:6px">
-                <button class="btn btn-sm btn-blue" onclick="renovarLicenca('${t.id}','${t.nome}')">Renovar</button>
-                <button class="btn btn-sm btn-ghost" onclick="reenviarWAById('${t.id}','${t.nome}')">📲</button>
+                <button class="btn btn-sm btn-blue" data-action="renovar-licenca" data-id="${t.id}" data-nome="${t.nome}">Renovar</button>
+                <button class="btn btn-sm btn-ghost" data-action="reenviar-wa-by-id" data-id="${t.id}" data-nome="${t.nome}">📲</button>
               </div>
             </div>
           </div>`;
@@ -1251,5 +1251,19 @@ document.addEventListener('keydown', e => {
   if (dinamico) { document.body.removeChild(dinamico); return; }
   // Só então fechar modais estáticos
   document.querySelectorAll('.modal-overlay:not([hidden])').forEach(m => m.hidden = true);
+});
+
+// Event delegation — substitui todos os onclick= inline (bloqueados pela CSP)
+document.addEventListener('click', e => {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  e.stopPropagation();
+  const action = btn.dataset.action;
+  if (action === 'copy')                 copyText(btn.dataset.key);
+  else if (action === 'close-modal')     closeModal(btn.dataset.modal);
+  else if (action === 'alterar-estado')  alterarEstado(btn.dataset.id, btn.dataset.estado, btn.dataset.nome);
+  else if (action === 'renovar-licenca') renovarLicenca(btn.dataset.id, btn.dataset.nome);
+  else if (action === 'reenviar-wa')     reenviarWA(btn.dataset.key, btn.dataset.nome);
+  else if (action === 'reenviar-wa-by-id') reenviarWAById(btn.dataset.id, btn.dataset.nome);
 });
 </script>
