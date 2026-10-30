@@ -701,7 +701,7 @@ tbody tr:hover td { background: #F8FAFC; }
     </nav>
     <div class="sb-footer">
       <button class="btn-logout" id="btn-logout">Terminar sessão</button>
-      <div style="text-align:center;font-size:10px;color:rgba(255,255,255,.2);margin-top:8px">v2026.10.30.3</div>
+      <div style="text-align:center;font-size:10px;color:rgba(255,255,255,.2);margin-top:8px">v2026.10.30.4</div>
     </div>
   </aside>
 
@@ -1057,6 +1057,7 @@ async function verTenant(id) {
   document.getElementById('modal-tenant').hidden = false;
   try {
     const t = await api(`/api/superadmin/tenants/${id}`);
+    const licKey = (t.licencas && t.licencas[0] && t.licencas[0].license_key) ? t.licencas[0].license_key : null;
     document.getElementById('modal-tenant-title').textContent = t.nome;
     const dias = daysLeft(t.licenca_fim);
     body.innerHTML = `
@@ -1070,7 +1071,7 @@ async function verTenant(id) {
         <div class="detail-item"><div class="di-label">EMAIL</div><div class="di-val">${t.email || '—'}</div></div>
         <div class="detail-item"><div class="di-label">NIF</div><div class="di-val">${t.nif || '—'}</div></div>
         <div class="detail-item"><div class="di-label">LICENÇA EXPIRA</div><div class="di-val ${dias!==null&&dias<=7?'exp-warn':''}">${fmt(t.licenca_fim)}</div></div>
-        ${t.license_key ? `<div class="detail-item full"><div class="di-label">CHAVE DE LICENÇA</div><div class="key-box"><code>${t.license_key}</code><button class="copy-btn" title="Copiar" onclick="copyText('${t.license_key}')">📋</button></div></div>` : ''}
+        ${licKey ? `<div class="detail-item full"><div class="di-label">CHAVE DE LICENÇA</div><div class="key-box"><code>${licKey}</code><button class="copy-btn" title="Copiar" onclick="copyText('${licKey}')">📋</button></div></div>` : ''}
         ${t.notas ? `<div class="detail-item full"><div class="di-label">NOTAS</div><div class="di-val" style="color:var(--muted);font-size:13px">${t.notas}</div></div>` : ''}
       </div>`;
     footer.innerHTML = `
@@ -1078,7 +1079,7 @@ async function verTenant(id) {
       ${t.estado==='ACTIVA'   ? `<button class="btn btn-danger btn-sm"  onclick="alterarEstado('${t.id}','SUSPENSA','${t.nome}')">Suspender</button>`  : ''}
       ${t.estado==='SUSPENSA' ? `<button class="btn btn-success btn-sm" onclick="alterarEstado('${t.id}','ACTIVA','${t.nome}')">Reactivar</button>` : ''}
       <button class="btn btn-blue btn-sm" onclick="renovarLicenca('${t.id}','${t.nome}')">Renovar licença</button>
-      ${t.license_key ? `<button class="btn btn-ghost btn-sm" onclick="reenviarWA('${t.license_key}','${t.nome}')">📲 Reenviar link</button>` : ''}`;
+      ${licKey ? `<button class="btn btn-ghost btn-sm" onclick="reenviarWA('${licKey}','${t.nome}')">📲 Reenviar link</button>` : ''}`;
   } catch (e) { body.innerHTML = `<div class="alert alert-err">${e.message}</div>`; }
 }
 
@@ -1230,8 +1231,9 @@ async function loadExpiracoes() {
 async function reenviarWAById(id, nome) {
   try {
     const t = await api(`/api/superadmin/tenants/${id}`);
-    if (!t.license_key) { toast('Sem chave de licença', 'err'); return; }
-    await reenviarWA(t.license_key, nome);
+    const licKey = (t.licencas && t.licencas[0] && t.licencas[0].license_key) ? t.licencas[0].license_key : null;
+    if (!licKey) { toast('Sem chave de licença', 'err'); return; }
+    await reenviarWA(licKey, nome);
   } catch (e) { toast(e.message, 'err'); }
 }
 

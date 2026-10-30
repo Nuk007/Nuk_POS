@@ -76,10 +76,6 @@ app.use(cors({
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// Render e outros proxies definem X-Forwarded-For; sem isto o rate-limiter
-// não consegue identificar o IP real e lança ValidationError
-app.set('trust proxy', 1);
-
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 200,
@@ -1653,7 +1649,8 @@ app.get('/api/cliente/perfil', clienteLimiter, resolverTenantPublico, async (req
 });
 
 // ── POST /api/cliente/nukcoin/carregar — carregar crédito Nuk-Coin ──
-app.post('/api/cliente/nukcoin/carregar', clienteLimiter, resolverTenantPublico, async (req, res) => {
+// Requer autenticação de operador (JWT) — endpoint protegido
+app.post('/api/cliente/nukcoin/carregar', clienteLimiter, authMiddleware, async (req, res) => {
   const VALORES_VALIDOS = [5000, 10000, 15000, 20000, 25000, 50000];
   const { cliente_id, valor } = req.body;
   if (!cliente_id) return res.status(400).json({ erro: 'cliente_id obrigatório' });
