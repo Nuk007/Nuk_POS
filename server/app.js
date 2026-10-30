@@ -107,11 +107,11 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // ── Helpers JWT ──────────────────────────────────────────────
 const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET && process.env.NODE_ENV === 'production') {
-  console.error('❌ FATAL: JWT_SECRET não definido em produção. Definir a variável de ambiente.');
+if (!JWT_SECRET) {
+  console.error('❌ FATAL: JWT_SECRET não definido. Definir a variável de ambiente JWT_SECRET antes de iniciar.');
   process.exit(1);
 }
-const JWT_SECRET_EFFECTIVE = JWT_SECRET || 'nukpos_dev_secret_APENAS_DESENVOLVIMENTO';
+const JWT_SECRET_EFFECTIVE = JWT_SECRET;
 const JWT_EXPIRY = '8h';
 
 function gerarToken(payload) {
@@ -450,6 +450,9 @@ app.put('/api/produtos/:id', authMiddleware, validarUUID('id'), requerNivel(['AD
 app.get('/api/pedidos', authMiddleware, async (req, res) => {
   const { status, mesa_id, data_inicio, data_fim } = req.query;
   const tenantId = req.tenantId;
+  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const limit = Math.min(200, Math.max(1, parseInt(req.query.limit) || 100));
+  const offset = (page - 1) * limit;
   let q = `
     SELECT p.*, m.numero as mesa_numero, m.zona as mesa_zona,
            f.nome as funcionario_nome,
@@ -470,10 +473,11 @@ app.get('/api/pedidos', authMiddleware, async (req, res) => {
   if (mesa_id) { q += ` AND p.mesa_id = $${vals.length + 1}`; vals.push(mesa_id); }
   if (data_inicio) { q += ` AND p.criado_em >= $${vals.length + 1}`; vals.push(data_inicio); }
   if (data_fim) { q += ` AND p.criado_em <= $${vals.length + 1}`; vals.push(data_fim); }
-  q += ` GROUP BY p.id, m.numero, m.zona, f.nome ORDER BY p.criado_em DESC`;
+  q += ` GROUP BY p.id, m.numero, m.zona, f.nome ORDER BY p.criado_em DESC LIMIT $${vals.length + 1} OFFSET $${vals.length + 2}`;
+  vals.push(limit, offset);
   try {
     const r = await pool.query(q, vals);
-    res.json(r.rows);
+    res.json({ data: r.rows, page, limit, total: r.rows.length });
   } catch (e) {
     console.error('GET /api/pedidos:', e.message);
     res.status(500).json({ erro: 'Erro interno do servidor' });
@@ -830,6 +834,9 @@ app.patch('/api/solicitacoes-hospedagem/:id/status', authMiddleware, validarUUID
 // ── Stock ────────────────────────────────────────────────────
 app.get('/api/stock', authMiddleware, async (req, res) => {
   const tenantId = req.tenantId;
+  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const limit = Math.min(500, Math.max(1, parseInt(req.query.limit) || 200));
+  const offset = (page - 1) * limit;
   try {
     const r = await pool.query(`
       SELECT s.*,
@@ -837,8 +844,9 @@ app.get('/api/stock', authMiddleware, async (req, res) => {
       FROM stock_items s
       WHERE s.ativo = true AND ($1::uuid IS NULL OR s.tenant_id = $1)
       ORDER BY s.categoria, s.nome
-    `, [tenantId || null]);
-    res.json(r.rows);
+      LIMIT $2 OFFSET $3
+    `, [tenantId || null, limit, offset]);
+    res.json({ data: r.rows, page, limit, total: r.rows.length });
   } catch (e) {
     res.status(500).json({ erro: 'Erro interno do servidor' });
   }
@@ -884,7 +892,11 @@ app.post('/api/stock/:id/movimento', authMiddleware, validarUUID('id'), async (r
     else if (tipo === 'VENDA' || tipo === 'DESPERDICIO') delta = -Math.abs(quantidade);
     else delta = parseFloat(quantidade); // AJUSTE: positivo ou negativo conforme enviado
     const depois = antes + delta;
-    if (depois < 0) throw new Error('Stock insuficiente');
+    if (depois < 0) {
+      await client.query('ROLLBACK');
+      client.release();
+      return res.status(409).json({ erro: 'Stock insuficiente', disponivel: antes });
+    }
 
     await client.query(`UPDATE stock_items SET stock_atual=$1, atualizado_em=NOW() WHERE id=$2`, [depois, req.params.id]);
     const r = await client.query(
@@ -1018,7 +1030,7 @@ app.post('/api/financeiro/faturas', authMiddleware, async (req, res) => {
     const taxa_iva = 14;
     const total_sem_iva = total / (1 + taxa_iva / 100);
     const iva = total - total_sem_iva;
-    const hash = require('crypto').createHash('sha256').update(`${numero_fatura}${total}${Date.now()}`).digest('hex');
+    const hash = require('crypto').createHash('sha256').update(`${numero_fatura}${total}${require('crypto').randomBytes(4).toString('hex')}`).digest('hex');
 
     const r = await pool.query(`
       INSERT INTO faturas (tenant_id, pedido_id, reserva_id, cliente_id, serie, ano, sequencial, numero_fatura,
@@ -1037,14 +1049,18 @@ app.post('/api/financeiro/faturas', authMiddleware, async (req, res) => {
 app.get('/api/clientes', authMiddleware, async (req, res) => {
   const { q } = req.query;
   const tenantId = req.tenantId;
+  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const limit = Math.min(500, Math.max(1, parseInt(req.query.limit) || 100));
+  const offset = (page - 1) * limit;
   try {
     let query = `SELECT id, nome, telefone, email, nivel_fidelizacao, saldo_carteira, criado_em
                  FROM clientes WHERE ativo=true AND ($1::uuid IS NULL OR tenant_id = $1)`;
     const vals = [tenantId || null];
     if (q) { query += ` AND (nome ILIKE $2 OR telefone ILIKE $2 OR email ILIKE $2)`; vals.push(`%${q}%`); }
-    query += ` ORDER BY nome`;
+    query += ` ORDER BY nome LIMIT $${vals.length + 1} OFFSET $${vals.length + 2}`;
+    vals.push(limit, offset);
     const r = await pool.query(query, vals);
-    res.json(r.rows);
+    res.json({ data: r.rows, page, limit, total: r.rows.length });
   } catch (e) {
     console.error('GET /api/clientes:', e.message);
     res.status(500).json({ erro: 'Erro interno do servidor' });
@@ -1532,7 +1548,7 @@ app.post('/api/cliente/pedido-restaurante', clienteLimiter, resolverTenantPublic
 
     // Criar pedido
     const pedidoId = uuidv4();
-    const codigo = 'P' + Date.now().toString().slice(-4);
+    const codigo = 'P' + require('crypto').randomBytes(3).toString('hex').toUpperCase();
     await pool.query(
       `INSERT INTO pedidos (id, tenant_id, mesa_id, cliente_id, status, total, observacoes, criado_em, atualizado_em)
        VALUES ($1, $2, $3, $4, 'ABERTO', $5, $6, NOW(), NOW())`,
