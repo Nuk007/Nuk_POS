@@ -33,6 +33,18 @@ jest.mock('../server/websocket', () => ({
   initWebSocket: jest.fn(),
 }));
 
+// Mock do módulo saas — verificarLicencaTenant e resolverTenant passam sempre
+jest.mock('../server/saas', () => {
+  const express = require('express');
+  const passThrough = (req, res, next) => next();
+  return {
+    router: express.Router(),
+    verificarLicencaTenant: passThrough,
+    resolverTenant: passThrough,
+    resolverTenantPublico: passThrough,
+  };
+});
+
 // Expõe o mockPool e mockClient globalmente para uso nos testes
 global.mockPool = mockPool;
 global.mockClient = mockClient;
