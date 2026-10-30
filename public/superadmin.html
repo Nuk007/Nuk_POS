@@ -754,7 +754,7 @@ tbody tr:hover td { background: #F8FAFC; }
             <option value="SUSPENSA">Suspensa</option>
             <option value="EXPIRADA">Expirada</option>
           </select>
-          <button class="btn btn-primary btn-sm" onclick="navigate('novo-tenant')">+ Novo tenant</button>
+          <button class="btn btn-primary btn-sm" data-action="navigate" data-view="novo-tenant">+ Novo tenant</button>
         </div>
         <div style="overflow-x:auto">
           <table>
@@ -851,7 +851,7 @@ tbody tr:hover td { background: #F8FAFC; }
   <div class="modal">
     <div class="modal-header">
       <h2 id="modal-tenant-title">Detalhes</h2>
-      <button class="modal-close" onclick="closeModal('modal-tenant')">✕</button>
+      <button class="modal-close" data-action="close-modal" data-modal="modal-tenant">✕</button>
     </div>
     <div class="modal-body" id="modal-tenant-body"></div>
     <div class="modal-footer" id="modal-tenant-footer"></div>
@@ -983,7 +983,7 @@ async function loadDashboard() {
           <div style="text-align:right">
             <div class="exp-days">${dias <= 0 ? 'Expirada' : `${dias} dia${dias===1?'':'s'}`}</div>
             <div class="exp-date">${fmt(t.fim)}</div>
-            <button class="btn btn-sm btn-ghost" style="margin-top:6px" onclick="renovarLicenca('${t.id}','${t.nome}')">Renovar</button>
+            <button class="btn btn-sm btn-ghost" style="margin-top:6px" data-action="renovar-licenca" data-id="${t.id}" data-nome="${t.nome}">Renovar</button>
           </div>
         </div>`;
       }).join('');
@@ -1032,8 +1032,8 @@ async function loadTenants() {
     document.getElementById('tenants-pagination').innerHTML = `
       <span>${total} tenant${total!==1?'s':''}</span>
       <div class="pag-btns">
-        <button onclick="changePage(-1)" ${tPage<=1?'disabled':''}>← Anterior</button>
-        <button onclick="changePage(1)"  ${tPage>=pages?'disabled':''}>Seguinte →</button>
+        <button data-action="change-page" data-dir="-1" ${tPage<=1?'disabled':''}>← Anterior</button>
+        <button data-action="change-page" data-dir="1"  ${tPage>=pages?'disabled':''}>Seguinte →</button>
       </div>`;
   } catch (e) {
     tbody.innerHTML = `<tr><td colspan="6"><div class="alert alert-err" style="margin:16px">${e.message}</div></td></tr>`;
@@ -1186,7 +1186,7 @@ async function criarTenant() {
     result.innerHTML = `<strong>${nome}</strong> registado com sucesso.<br>
       Slug: <code>/${r.slug}</code><br>
       ${r.whatsapp_enviado ? '📲 Link de activação enviado via WhatsApp.' : `⚠️ WhatsApp não enviado — link de activação:<br><code style="word-break:break-all;font-size:12px">${r.activation_link}</code>`}
-      <div class="key-box" style="margin-top:10px"><code>${r.license_key}</code><button class="copy-btn" onclick="copyText('${r.license_key}')">📋</button></div>`;
+      <div class="key-box" style="margin-top:10px"><code>${r.license_key}</code><button class="copy-btn" data-action="copy" data-key="${r.license_key}">📋</button></div>`;
     ['nt-nome','nt-nif','nt-tel','nt-email','nt-notas'].forEach(i => document.getElementById(i).value='');
     document.getElementById('nt-dias').value = '30';
     loadDashboard();
@@ -1259,11 +1259,13 @@ document.addEventListener('click', e => {
   if (!btn) return;
   e.stopPropagation();
   const action = btn.dataset.action;
-  if (action === 'copy')                 copyText(btn.dataset.key);
-  else if (action === 'close-modal')     closeModal(btn.dataset.modal);
-  else if (action === 'alterar-estado')  alterarEstado(btn.dataset.id, btn.dataset.estado, btn.dataset.nome);
-  else if (action === 'renovar-licenca') renovarLicenca(btn.dataset.id, btn.dataset.nome);
-  else if (action === 'reenviar-wa')     reenviarWA(btn.dataset.key, btn.dataset.nome);
+  if      (action === 'copy')              copyText(btn.dataset.key);
+  else if (action === 'close-modal')       closeModal(btn.dataset.modal);
+  else if (action === 'alterar-estado')    alterarEstado(btn.dataset.id, btn.dataset.estado, btn.dataset.nome);
+  else if (action === 'renovar-licenca')   renovarLicenca(btn.dataset.id, btn.dataset.nome);
+  else if (action === 'reenviar-wa')       reenviarWA(btn.dataset.key, btn.dataset.nome);
   else if (action === 'reenviar-wa-by-id') reenviarWAById(btn.dataset.id, btn.dataset.nome);
+  else if (action === 'navigate')          navigate(btn.dataset.view);
+  else if (action === 'change-page')       changePage(parseInt(btn.dataset.dir));
 });
 </script>
