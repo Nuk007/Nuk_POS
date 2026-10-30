@@ -1,10 +1,10 @@
 // Nuk_POS — Servidor Principal (refactored)
 // Stack: Node.js + Express + PostgreSQL + Socket.io
 // SaaS multi-tenant: cada empresa tem tenant_id em todas as operações
-// v2026.10.30.8-modular
+// v2026.10.30.9-csp-fix
 
 require('dotenv').config();
-console.log('[NukPOS] server/app.js v2026.10.30.8-modular a arrancar');
+console.log('[NukPOS] server/app.js v2026.10.30.9-csp-fix a arrancar');
 
 const express = require('express');
 const http = require('http');
@@ -60,7 +60,8 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.socket.io"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrcAttr: ["'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       styleSrcElem: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       connectSrc: ["'self'", "ws:", "wss:"],
       imgSrc: ["'self'", "data:"],
