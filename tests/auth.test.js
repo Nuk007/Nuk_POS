@@ -6,7 +6,7 @@
  */
 
 const request = require('supertest');
-const bcrypt = require('bcryptjs');
+const bcrypt  = require('bcryptjs');
 const { app } = require('../server/app');
 
 // UUID válido do tenant demo
@@ -19,20 +19,23 @@ beforeAll(async () => {
   ADMIN_HASH = await bcrypt.hash('Admin@NukPOS25!', 12);
 });
 
-// Linha de funcionário completa retornada pela DB
+/**
+ * Linha de funcionário completa retornada pela DB.
+ * Nota: a rota verifica tenant_estado !== 'ACTIVA', não tenant_ativo.
+ */
 function adminRow(overrides = {}) {
   return {
-    id:            ADMIN_ID,
-    nome:          'Administrador',
-    email:         'admin@nukpos.ao',
-    password_hash: ADMIN_HASH,
-    nivel_acesso:  'ADMIN',
-    cargo:         'Administrador',
-    ativo:         true,
-    tenant_id:     TENANT_ID,
-    tenant_slug:   'demo',
-    tenant_nome:   'Nuk_POS Demo',
-    tenant_ativo:  true,
+    id:             ADMIN_ID,
+    nome:           'Administrador',
+    email:          'admin@nukpos.ao',
+    password_hash:  ADMIN_HASH,
+    nivel_acesso:   'ADMIN',
+    cargo:          'Administrador',
+    ativo:          true,
+    tenant_id:      TENANT_ID,
+    tenant_slug:    'demo',
+    tenant_nome:    'Nuk_POS Demo',
+    tenant_estado:  'ACTIVA',   // campo real usado em routes/auth.js:35
     ...overrides,
   };
 }
@@ -78,8 +81,10 @@ describe('POST /api/auth/login', () => {
     expect(res.body).toHaveProperty('erro', 'Credenciais inválidas');
   });
 
-  it('retorna 403 quando o tenant está suspenso', async () => {
-    mockPool.query.mockResolvedValueOnce({ rows: [adminRow({ tenant_ativo: false })] });
+  it('retorna 403 quando o tenant está suspenso (estado != ACTIVA)', async () => {
+    mockPool.query.mockResolvedValueOnce({
+      rows: [adminRow({ tenant_estado: 'SUSPENSA' })],
+    });
 
     const res = await request(app)
       .post('/api/auth/login')
@@ -112,7 +117,6 @@ describe('POST /api/auth/login', () => {
 // ─── GET /api/auth/me ────────────────────────────────────────────────────────
 
 describe('GET /api/auth/me', () => {
-  // Gera um token válido para usar nos testes
   let token;
   beforeAll(() => {
     const jwt = require('jsonwebtoken');
@@ -126,13 +130,13 @@ describe('GET /api/auth/me', () => {
   it('retorna dados do utilizador com token válido', async () => {
     mockPool.query.mockResolvedValueOnce({
       rows: [{
-        id:          ADMIN_ID,
-        nome:        'Administrador',
-        email:       'admin@nukpos.ao',
-        nivel_acesso:'ADMIN',
-        tenant_id:   TENANT_ID,
-        tenant_slug: 'demo',
-        tenant_nome: 'Nuk_POS Demo',
+        id:           ADMIN_ID,
+        nome:         'Administrador',
+        email:        'admin@nukpos.ao',
+        nivel_acesso: 'ADMIN',
+        tenant_id:    TENANT_ID,
+        tenant_slug:  'demo',
+        tenant_nome:  'Nuk_POS Demo',
       }],
     });
 

@@ -47,7 +47,9 @@ function pedidoRow(overrides = {}) {
 
 describe('GET /api/pedidos', () => {
   it('retorna lista paginada de pedidos', async () => {
-    mockPool.query.mockResolvedValueOnce({ rows: [pedidoRow(), pedidoRow({ id: 'outro-id' })] });
+    mockPool.query
+      .mockResolvedValueOnce({ rows: [pedidoRow(), pedidoRow({ id: 'outro-id' })] })
+      .mockResolvedValueOnce({ rows: [{ count: '2' }] });
 
     const res = await request(app)
       .get('/api/pedidos')
@@ -64,7 +66,9 @@ describe('GET /api/pedidos', () => {
   });
 
   it('filtra por status na query string', async () => {
-    mockPool.query.mockResolvedValueOnce({ rows: [pedidoRow({ status: 'EM_PREPARO' })] });
+    mockPool.query
+      .mockResolvedValueOnce({ rows: [pedidoRow({ status: 'EM_PREPARO' })] })
+      .mockResolvedValueOnce({ rows: [{ count: '1' }] });
 
     const res = await request(app)
       .get('/api/pedidos?status=EM_PREPARO')

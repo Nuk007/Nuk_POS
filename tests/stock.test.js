@@ -50,7 +50,9 @@ function stockRow(overrides = {}) {
 
 describe('GET /api/stock', () => {
   it('retorna lista de itens para utilizador autenticado', async () => {
-    mockPool.query.mockResolvedValueOnce({ rows: [stockRow(), stockRow({ nome: 'Carvão', categoria: 'CARVAO' })] });
+    mockPool.query
+      .mockResolvedValueOnce({ rows: [stockRow(), stockRow({ nome: 'Carvão', categoria: 'CARVAO' })] })
+      .mockResolvedValueOnce({ rows: [{ count: '2' }] });
 
     const res = await request(app)
       .get('/api/stock')

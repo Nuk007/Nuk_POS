@@ -5,7 +5,7 @@
  */
 
 const request = require('supertest');
-const jwt = require('jsonwebtoken');
+const jwt     = require('jsonwebtoken');
 const { app } = require('../server/app');
 
 const TENANT_ID = 'bbc44510-a49a-4e1e-88a1-cae77c7c8f02';
@@ -46,7 +46,7 @@ function faturaRow(overrides = {}) {
 // ─── GET /api/financeiro/resumo ──────────────────────────────────────────────
 
 describe('GET /api/financeiro/resumo', () => {
-  const mockResumoRows = () => {
+  const setupResumoMocks = () => {
     // Promise.all dispara 4 queries em paralelo
     mockPool.query
       .mockResolvedValueOnce({ rows: [{ total_pedidos: '5', receita_total: '16000.00', pedidos_fechados: '3' }] })
@@ -56,7 +56,7 @@ describe('GET /api/financeiro/resumo', () => {
   };
 
   it('retorna resumo do dia com autenticação', async () => {
-    mockResumoRows();
+    setupResumoMocks();
 
     const res = await request(app)
       .get('/api/financeiro/resumo')
@@ -70,7 +70,7 @@ describe('GET /api/financeiro/resumo', () => {
   });
 
   it('aceita parâmetro de data válida', async () => {
-    mockResumoRows();
+    setupResumoMocks();
 
     const res = await request(app)
       .get('/api/financeiro/resumo?data=2026-10-15')
@@ -81,14 +81,13 @@ describe('GET /api/financeiro/resumo', () => {
   });
 
   it('ignora data inválida e usa hoje', async () => {
-    mockResumoRows();
+    setupResumoMocks();
 
     const res = await request(app)
       .get('/api/financeiro/resumo?data=nao-e-data')
       .set('Authorization', `Bearer ${adminToken}`);
 
     expect(res.status).toBe(200);
-    // A data deve ser YYYY-MM-DD de hoje
     expect(res.body.data).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
@@ -122,12 +121,20 @@ describe('GET /api/financeiro/faturas', () => {
 // ─── POST /api/financeiro/faturas ────────────────────────────────────────────
 
 describe('POST /api/financeiro/faturas', () => {
+  /**
+   * Sequência de queries em POST /faturas:
+   *   1. SELECT MAX(sequencial) → prox
+   *   2. SELECT iva_padrao FROM configuracoes  (M-07 fix)
+   *   3. SELECT total FROM pedidos (quando pedido_id fornecido)
+   *   4. INSERT INTO faturas
+   */
+
   it('emite fatura a partir de pedido_id', async () => {
-    // 1: SELECT MAX sequencial, 2: SELECT pedido total, 3: INSERT fatura
     mockPool.query
-      .mockResolvedValueOnce({ rows: [{ prox: 1 }] })
-      .mockResolvedValueOnce({ rows: [{ total: '3200.00' }] })
-      .mockResolvedValueOnce({ rows: [faturaRow()] });
+      .mockResolvedValueOnce({ rows: [{ prox: 1 }] })                    // seq
+      .mockResolvedValueOnce({ rows: [{ valor: '14' }] })                 // iva_padrao config
+      .mockResolvedValueOnce({ rows: [{ total: '3200.00' }] })            // pedido
+      .mockResolvedValueOnce({ rows: [faturaRow()] });                    // INSERT fatura
 
     const res = await request(app)
       .post('/api/financeiro/faturas')
@@ -141,8 +148,9 @@ describe('POST /api/financeiro/faturas', () => {
 
   it('emite fatura com total_manual', async () => {
     mockPool.query
-      .mockResolvedValueOnce({ rows: [{ prox: 2 }] })
-      .mockResolvedValueOnce({ rows: [faturaRow({ sequencial: 2, total: '5000.00' })] });
+      .mockResolvedValueOnce({ rows: [{ prox: 2 }] })                    // seq
+      .mockResolvedValueOnce({ rows: [{ valor: '14' }] })                 // iva_padrao
+      .mockResolvedValueOnce({ rows: [faturaRow({ sequencial: 2, total: '5000.00' })] }); // INSERT
 
     const res = await request(app)
       .post('/api/financeiro/faturas')
@@ -153,7 +161,9 @@ describe('POST /api/financeiro/faturas', () => {
   });
 
   it('retorna 400 sem pedido_id, reserva_id ou total_manual', async () => {
-    mockPool.query.mockResolvedValueOnce({ rows: [{ prox: 1 }] }); // seq
+    mockPool.query
+      .mockResolvedValueOnce({ rows: [{ prox: 1 }] })      // seq
+      .mockResolvedValueOnce({ rows: [{ valor: '14' }] }); // iva
 
     const res = await request(app)
       .post('/api/financeiro/faturas')
@@ -165,7 +175,9 @@ describe('POST /api/financeiro/faturas', () => {
   });
 
   it('retorna 400 com total_manual negativo ou zero', async () => {
-    mockPool.query.mockResolvedValueOnce({ rows: [{ prox: 1 }] });
+    mockPool.query
+      .mockResolvedValueOnce({ rows: [{ prox: 1 }] })
+      .mockResolvedValueOnce({ rows: [{ valor: '14' }] });
 
     const res = await request(app)
       .post('/api/financeiro/faturas')
@@ -187,8 +199,9 @@ describe('POST /api/financeiro/faturas', () => {
 
   it('retorna 404 quando pedido não existe', async () => {
     mockPool.query
-      .mockResolvedValueOnce({ rows: [{ prox: 1 }] })  // seq
-      .mockResolvedValueOnce({ rows: [] });              // pedido não encontrado
+      .mockResolvedValueOnce({ rows: [{ prox: 1 }] })       // seq
+      .mockResolvedValueOnce({ rows: [{ valor: '14' }] })   // iva
+      .mockResolvedValueOnce({ rows: [] });                  // pedido não encontrado
 
     const res = await request(app)
       .post('/api/financeiro/faturas')

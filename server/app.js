@@ -1,10 +1,10 @@
 // Nuk_POS — Servidor Principal (refactored)
 // Stack: Node.js + Express + PostgreSQL + Socket.io
 // SaaS multi-tenant: cada empresa tem tenant_id em todas as operações
-// v2026.10.30.14-security-hardening-complete
+// v2026.10.30.15-monitoring-migrations-tests
 
 require('dotenv').config();
-console.log('[NukPOS] server/app.js v2026.10.30.14-security-hardening-complete a arrancar');
+console.log('[NukPOS] server/app.js v2026.10.30.15-monitoring-migrations-tests a arrancar');
 
 const express = require('express');
 const http = require('http');
@@ -18,14 +18,19 @@ const { pool, initDB } = require('./db');
 const { router: saasRouter, verificarLicencaTenant, resolverTenant } = require('./saas');
 const broadcast = require('./middleware/broadcast');
 const { initWebSocket } = require('./websocket');
+const { logger, initSentry, sentryErrorHandler } = require('./monitoring');
 
 // ── Protecção global ─────────────────────────────────────────
 process.on('unhandledRejection', (reason) => {
-  console.error('⚠️  UnhandledRejection (ignorado para não crashar):', reason?.message || reason);
+  logger.warn({ reason: reason?.message || String(reason) }, '⚠️  UnhandledRejection (ignorado para não crashar)');
 });
 
 // ── Express + HTTP server ────────────────────────────────────
 const app = express();
+
+// Sentry DEVE ser inicializado antes de qualquer middleware
+initSentry(app);
+
 const server = http.createServer(app);
 
 // ── WebSocket ────────────────────────────────────────────────
@@ -133,6 +138,31 @@ app.use('/api/qrcode',         resolverTenant, verificarLicencaTenant, require('
 const { router: portalClienteRouter } = require('./routes/portal-cliente');
 app.use('/api/cliente', portalClienteRouter);
 
+// ── Health check (uptime monitoring) ─────────────────────────
+app.get('/api/health', async (req, res) => {
+  const start = Date.now();
+  try {
+    await pool.query('SELECT 1');
+    res.json({
+      status: 'ok',
+      version: process.env.npm_package_version || '1.0.0',
+      env: process.env.NODE_ENV || 'development',
+      db: 'ok',
+      uptime: Math.floor(process.uptime()),
+      latency_ms: Date.now() - start,
+      ts: new Date().toISOString(),
+    });
+  } catch (err) {
+    logger.error({ err }, 'Health check: DB offline');
+    res.status(503).json({
+      status: 'degraded',
+      db: 'offline',
+      error: err.message,
+      ts: new Date().toISOString(),
+    });
+  }
+});
+
 // ── SPA fallback ─────────────────────────────────────────────
 app.get('*', (req, res) => {
   if (req.path.startsWith('/api/')) return res.status(404).json({ erro: 'Rota não encontrada' });
@@ -142,9 +172,12 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 
+// ── Sentry error handler (deve ser ANTES do error handler custom) ─────────
+app.use(sentryErrorHandler);
+
 // ── Error handler global ──────────────────────────────────────
 app.use((err, req, res, next) => {
-  console.error('❌ Erro global:', err.message, err.detail || '', err.code || '');
+  logger.error({ err, code: err.code, detail: err.detail }, '❌ Erro global');
   if (res.headersSent) return;
   if (err.code === '23505') return res.status(409).json({ erro: 'Registo duplicado' });
   if (err.code === '23514') return res.status(400).json({ erro: 'Valor inválido (constraint violada)' });
@@ -159,17 +192,14 @@ if (require.main === module) {
   const PORT = process.env.PORT || 3000;
 
   server.listen(PORT, () => {
-    console.log(`🚀 Nuk_POS v1.0 a correr na porta ${PORT}`);
-    console.log(`🌍 Ambiente: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`🗄️  A inicializar base de dados...`);
+    logger.info({ port: PORT, env: process.env.NODE_ENV || 'development' }, '🚀 Nuk_POS v1.0 a correr');
 
     initDB()
       .then(() => {
-        console.log('✅ Base de dados pronta');
+        logger.info('✅ Base de dados pronta');
       })
       .catch((err) => {
-        console.error('❌ Falha ao inicializar base de dados:', err.message);
-        console.error('⚠️  O servidor continua a correr — verifique DATABASE_URL nas variáveis de ambiente');
+        logger.error({ err }, '❌ Falha ao inicializar base de dados — verifique DATABASE_URL');
       });
   });
 }

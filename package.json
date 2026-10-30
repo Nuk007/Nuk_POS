@@ -8,16 +8,24 @@
     "dev": "nodemon server/app.js",
     "test": "jest --forceExit",
     "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage --forceExit"
+    "test:coverage": "jest --coverage --forceExit",
+    "migrate": "node-pg-migrate up --migrations-dir migrations",
+    "migrate:down": "node-pg-migrate down --migrations-dir migrations",
+    "migrate:create": "node-pg-migrate create --migrations-dir migrations"
   },
   "jest": {
     "testEnvironment": "node",
-    "setupFilesAfterEnv": ["<rootDir>/tests/setup.js"],
-    "testMatch": ["**/tests/**/*.test.js"],
+    "setupFilesAfterEnv": [
+      "<rootDir>/tests/setup.js"
+    ],
+    "testMatch": [
+      "**/tests/**/*.test.js"
+    ],
     "testTimeout": 10000,
     "verbose": true
   },
   "dependencies": {
+    "@sentry/node": "^11.10.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^18.0.9",
@@ -25,7 +33,10 @@
     "express-rate-limit": "^7.1.5",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
+    "node-pg-migrate": "^9.0.0",
     "pg": "^8.11.3",
+    "pino": "^10.4.0",
+    "pino-http": "^11.0.0",
     "qrcode": "^1.5.4",
     "socket.io": "^4.6.2",
     "twilio": "^6.2.0",
