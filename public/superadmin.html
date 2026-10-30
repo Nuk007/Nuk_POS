@@ -701,7 +701,7 @@ tbody tr:hover td { background: #F8FAFC; }
     </nav>
     <div class="sb-footer">
       <button class="btn-logout" id="btn-logout">Terminar sessão</button>
-      <div style="text-align:center;font-size:10px;color:rgba(255,255,255,.2);margin-top:8px">v2026.10.30.4</div>
+      <div style="text-align:center;font-size:10px;color:rgba(255,255,255,.2);margin-top:8px">v2026.10.30.5</div>
     </div>
   </aside>
 
@@ -1121,8 +1121,10 @@ function miniConfirm(msg, onOk) {
     </div>
   </div>`;
   document.body.appendChild(ov);
-  ov.querySelector('#mc-cancel').onclick = () => document.body.removeChild(ov);
-  ov.querySelector('#mc-ok').onclick = () => { document.body.removeChild(ov); onOk(); };
+  // Impedir que clicks no overlay do miniConfirm propaguem para modais pai
+  ov.addEventListener('click', e => e.stopPropagation());
+  ov.querySelector('#mc-cancel').onclick = e => { e.stopPropagation(); document.body.removeChild(ov); };
+  ov.querySelector('#mc-ok').onclick = e => { e.stopPropagation(); document.body.removeChild(ov); onOk(); };
 }
 
 function miniPrompt(msg, defaultVal, onOk) {
@@ -1243,6 +1245,11 @@ document.querySelectorAll('.modal-overlay').forEach(m =>
   m.addEventListener('click', e => { if (e.target===m) closeModal(m.id); })
 );
 document.addEventListener('keydown', e => {
-  if (e.key==='Escape') document.querySelectorAll('.modal-overlay:not([hidden])').forEach(m => m.hidden=true);
+  if (e.key !== 'Escape') return;
+  // Fechar primeiro qualquer miniConfirm/miniPrompt dinâmico (sem id estático)
+  const dinamico = document.querySelector('.modal-overlay:not([id])');
+  if (dinamico) { document.body.removeChild(dinamico); return; }
+  // Só então fechar modais estáticos
+  document.querySelectorAll('.modal-overlay:not([hidden])').forEach(m => m.hidden = true);
 });
 </script>
