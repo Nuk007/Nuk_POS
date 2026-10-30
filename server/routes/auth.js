@@ -20,7 +20,7 @@ router.post('/login', loginLimiter, async (req, res) => {
   }
   try {
     const r = await pool.query(
-      `SELECT f.*, t.slug as tenant_slug, t.nome as tenant_nome, t.ativo as tenant_ativo
+      `SELECT f.*, t.slug as tenant_slug, t.nome as tenant_nome, t.estado as tenant_estado
        FROM funcionarios f
        LEFT JOIN tenants t ON f.tenant_id = t.id
        WHERE LOWER(f.email) = LOWER($1) AND f.ativo = true`,
@@ -32,7 +32,7 @@ router.post('/login', loginLimiter, async (req, res) => {
     const funcionario = r.rows[0];
 
     // Verificar se o tenant está activo (excepto superadmin que não tem tenant)
-    if (funcionario.tenant_id && !funcionario.tenant_ativo) {
+    if (funcionario.tenant_id && funcionario.tenant_estado !== 'ACTIVA') {
       return res.status(403).json({ erro: 'Conta suspensa. Contacte o administrador.' });
     }
 
