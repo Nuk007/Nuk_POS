@@ -6,7 +6,7 @@
 // ── Estado global ─────────────────────────────────────────────
 const NUK = {
   token: localStorage.getItem('nukpos_token') || null,
-  utilizador: JSON.parse(localStorage.getItem('nukpos_user') || 'null'),
+  utilizador: (() => { try { return JSON.parse(localStorage.getItem('nukpos_user')); } catch(e) { localStorage.removeItem('nukpos_user'); return null; } })(),
   socket: null,
   moduloActual: null,
 };
