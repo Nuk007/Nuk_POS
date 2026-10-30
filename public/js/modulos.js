@@ -78,7 +78,8 @@ async function modulo_dashboard(el) {
 // ════════════════════════════════════════════════════════════
 async function modulo_pedidos(el) {
   try {
-    const pedidos = await api('GET', '/pedidos') || [];
+    const _pedidosResp = await api('GET', '/pedidos') || [];
+    const pedidos = Array.isArray(_pedidosResp) ? _pedidosResp : (_pedidosResp.data || []);
     const abertos = pedidos.filter(p => ['ABERTO','EM_PREPARO','PRONTO'].includes(p.status));
     const fechados = pedidos.filter(p => p.status === 'FECHADO').slice(0, 20);
 
@@ -606,7 +607,8 @@ async function toggleDisponibilidade(id, atual) {
 // ════════════════════════════════════════════════════════════
 async function modulo_stock(el) {
   try {
-    const items = await api('GET', '/stock') || [];
+    const _stockResp = await api('GET', '/stock') || [];
+    const items = Array.isArray(_stockResp) ? _stockResp : (_stockResp.data || []);
     const isAdmin = ['ADMIN','GERENTE'].includes(NUK.utilizador.nivel_acesso);
     const alertas = items.filter(i => i.alerta_stock);
     if (alertas.length) {
@@ -818,7 +820,8 @@ async function emitirFatura() {
 // ════════════════════════════════════════════════════════════
 async function modulo_clientes(el) {
   try {
-    const clientes = await api('GET', '/clientes') || [];
+    const _clientesResp = await api('GET', '/clientes') || [];
+    const clientes = Array.isArray(_clientesResp) ? _clientesResp : (_clientesResp.data || []);
 
     el.innerHTML = `
       <div class="toolbar">
@@ -852,7 +855,8 @@ async function modulo_clientes(el) {
 async function pesquisarClientes(q) {
   if (q.length < 2) return;
   try {
-    const clientes = await api('GET', `/clientes?q=${encodeURIComponent(q)}`) || [];
+    const _cResp = await api('GET', `/clientes?q=${encodeURIComponent(q)}`) || [];
+    const clientes = Array.isArray(_cResp) ? _cResp : (_cResp.data || []);
     const tbody = document.querySelector('#tab-clientes tbody');
     if (tbody) tbody.innerHTML = clientes.map(c => `
       <tr>
