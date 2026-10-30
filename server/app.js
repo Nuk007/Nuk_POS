@@ -903,9 +903,14 @@ app.post('/api/stock/:id/movimento', authMiddleware, validarUUID('id'), async (r
 // ── Financeiro ───────────────────────────────────────────────
 app.get('/api/financeiro/resumo', authMiddleware, async (req, res) => {
   const { data } = req.query;
-  // Validar formato de data para prevenir injecção
-  const dataValida = data && /^\d{4}-\d{2}-\d{2}$/.test(data) ? data : null;
-  const dataFiltro = dataValida || new Date().toISOString().split('T')[0];
+  // Validar formato e validade da data para prevenir injecção e erros de BD
+  let dataFiltro = new Date().toISOString().split('T')[0];
+  if (data && /^\d{4}-\d{2}-\d{2}$/.test(data)) {
+    const d = new Date(data + 'T00:00:00Z');
+    if (!isNaN(d.getTime()) && d.toISOString().startsWith(data)) {
+      dataFiltro = data;
+    }
+  }
   const tenantId = req.tenantId;
   try {
   const [vendas, porCategoria, porStatus, quartos] = await Promise.all([
