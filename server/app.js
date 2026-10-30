@@ -94,6 +94,15 @@ const loginLimiter = rateLimit({
 app.use('/api/', limiter);
 
 // ── Frontend estático ────────────────────────────────────────
+// HTML sem cache para garantir que o browser carrega sempre a versão mais recente
+app.use((req, res, next) => {
+  if (req.path.endsWith('.html') || req.path === '/') {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+  }
+  next();
+});
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // ── Helpers JWT ──────────────────────────────────────────────
