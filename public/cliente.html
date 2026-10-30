@@ -324,7 +324,7 @@
         <option>Bengo</option>
       </select>
     </div>
-    <button class="btn btn-primary" onclick="submitAcesso()">Entrar →</button>
+    <button class="btn btn-primary" data-action="submit-acesso">Entrar →</button>
     <p style="font-size:.68rem;color:var(--muted);text-align:center;margin-top:12px">
       Ao continuar, aceita os nossos Termos de Utilização
     </p>
@@ -356,11 +356,11 @@
     </div>
 
     <div class="btn-grid">
-      <button class="btn btn-info" onclick="go('s-convidado')">👤 Convidado</button>
-      <button class="btn btn-ok"   onclick="go('s-cliente-menu')">🎯 Cliente</button>
+      <button class="btn btn-info" data-action="go" data-screen="s-convidado">👤 Convidado</button>
+      <button class="btn btn-ok"   data-action="go" data-screen="s-cliente-menu">🎯 Cliente</button>
     </div>
-    <button class="btn btn-primary" style="margin-top:8px" onclick="go('s-cadastrar')">📋 Cadastrar</button>
-    <button class="btn btn-ghost"   style="margin-top:8px" onclick="sair()">✕ Sair</button>
+    <button class="btn btn-primary" style="margin-top:8px" data-action="go" data-screen="s-cadastrar">📋 Cadastrar</button>
+    <button class="btn btn-ghost"   style="margin-top:8px" data-action="sair">✕ Sair</button>
 
     <div class="divider"><span>Programa de Fidelização</span></div>
     <div class="info-box gold" style="font-size:.72rem">
@@ -376,14 +376,14 @@
 <div class="screen" id="s-convidado">
   <div class="card">
     <div class="back-row">
-      <button class="back-btn" onclick="go('s-auth')">← Voltar</button>
+      <button class="back-btn" data-action="go" data-screen="s-auth">← Voltar</button>
       <span class="pill pill-accent">Convidado</span>
     </div>
     <h3>O que deseja?</h3>
-    <button class="btn btn-primary"   onclick="go('s-restaurante')">🍽️ Restaurante</button>
-    <button class="btn btn-info"      onclick="go('s-servicos')">🛎️ Serviços</button>
-    <button class="btn btn-warn"      onclick="go('s-eventos')">🎉 Eventos</button>
-    <button class="btn btn-ghost"     onclick="go('s-auth')">← Voltar</button>
+    <button class="btn btn-primary"   data-action="go" data-screen="s-restaurante">🍽️ Restaurante</button>
+    <button class="btn btn-info"      data-action="go" data-screen="s-servicos">🛎️ Serviços</button>
+    <button class="btn btn-warn"      data-action="go" data-screen="s-eventos">🎉 Eventos</button>
+    <button class="btn btn-ghost"     data-action="go" data-screen="s-auth">← Voltar</button>
   </div>
 </div>
 
@@ -393,7 +393,7 @@
 <div class="screen" id="s-cliente-menu">
   <div class="card">
     <div class="back-row">
-      <button class="back-btn" onclick="go('s-auth')">← Voltar</button>
+      <button class="back-btn" data-action="go" data-screen="s-auth">← Voltar</button>
       <span class="pill pill-ok">Cliente</span>
     </div>
     <!-- Perfil do cliente -->
@@ -409,11 +409,11 @@
       </div>
     </div>
     <h3>Escolha uma opção</h3>
-    <button class="btn btn-coin"   onclick="go('s-nukcoin')">💜 Nuk-Coin</button>
-    <button class="btn btn-primary" onclick="go('s-restaurante')">🍽️ Restaurante</button>
-    <button class="btn btn-info"   onclick="go('s-servicos')">🛎️ Serviços</button>
-    <button class="btn btn-warn"   onclick="go('s-eventos')">🎉 Eventos</button>
-    <button class="btn btn-ghost"  onclick="go('s-auth')">← Voltar</button>
+    <button class="btn btn-coin"   data-action="go" data-screen="s-nukcoin">💜 Nuk-Coin</button>
+    <button class="btn btn-primary" data-action="go" data-screen="s-restaurante">🍽️ Restaurante</button>
+    <button class="btn btn-info"   data-action="go" data-screen="s-servicos">🛎️ Serviços</button>
+    <button class="btn btn-warn"   data-action="go" data-screen="s-eventos">🎉 Eventos</button>
+    <button class="btn btn-ghost"  data-action="go" data-screen="s-auth">← Voltar</button>
   </div>
 </div>
 
@@ -423,7 +423,7 @@
 <div class="screen" id="s-nukcoin">
   <div class="card">
     <div class="back-row">
-      <button class="back-btn" onclick="go('s-cliente-menu')">← Voltar</button>
+      <button class="back-btn" data-action="go" data-screen="s-cliente-menu">← Voltar</button>
       <span class="pill pill-coin">Nuk-Coin</span>
     </div>
     <h3>Carteira Nuk-Coin</h3>
@@ -438,18 +438,18 @@
     <div class="divider"><span>Carregar crédito</span></div>
     <p style="font-size:.78rem;color:var(--muted);margin-bottom:12px">Escolha o valor a carregar:</p>
     <div class="credit-grid" id="credit-grid">
-      <div class="credit-opt" onclick="selectCredit(this,5000)"><div class="credit-val">5.000 <span>Kz</span></div></div>
-      <div class="credit-opt" onclick="selectCredit(this,10000)"><div class="credit-val">10.000 <span>Kz</span></div></div>
-      <div class="credit-opt" onclick="selectCredit(this,15000)"><div class="credit-val">15.000 <span>Kz</span></div></div>
-      <div class="credit-opt" onclick="selectCredit(this,20000)"><div class="credit-val">20.000 <span>Kz</span></div></div>
-      <div class="credit-opt" onclick="selectCredit(this,25000)"><div class="credit-val">25.000 <span>Kz</span></div></div>
-      <div class="credit-opt" onclick="selectCredit(this,50000)"><div class="credit-val">50.000 <span>Kz</span></div></div>
+      <div class="credit-opt" data-action="select-credit" data-value="5000"><div class="credit-val">5.000 <span>Kz</span></div></div>
+      <div class="credit-opt" data-action="select-credit" data-value="10000"><div class="credit-val">10.000 <span>Kz</span></div></div>
+      <div class="credit-opt" data-action="select-credit" data-value="15000"><div class="credit-val">15.000 <span>Kz</span></div></div>
+      <div class="credit-opt" data-action="select-credit" data-value="20000"><div class="credit-val">20.000 <span>Kz</span></div></div>
+      <div class="credit-opt" data-action="select-credit" data-value="25000"><div class="credit-val">25.000 <span>Kz</span></div></div>
+      <div class="credit-opt" data-action="select-credit" data-value="50000"><div class="credit-val">50.000 <span>Kz</span></div></div>
     </div>
     <div id="credit-confirm" style="display:none">
       <div class="info-box ok" id="credit-chosen">—</div>
-      <button class="btn btn-primary" onclick="confirmarCredito()">✓ Confirmar pagamento</button>
+      <button class="btn btn-primary" data-action="confirmar-credito">✓ Confirmar pagamento</button>
     </div>
-    <button class="btn btn-ghost" onclick="go('s-cliente-menu')" style="margin-top:8px">← Voltar</button>
+    <button class="btn btn-ghost" data-action="go" data-screen="s-cliente-menu" style="margin-top:8px">← Voltar</button>
 
     <!-- Histórico de movimentos -->
     <div class="divider" style="margin-top:16px"><span>Movimentos</span></div>
@@ -465,9 +465,9 @@
 <div class="screen" id="s-restaurante">
   <div class="card">
     <div class="back-row">
-      <button class="back-btn" id="rest-back-btn" onclick="voltarDeRestaurante()">← Voltar</button>
+      <button class="back-btn" id="rest-back-btn" data-action="voltar-de-restaurante">← Voltar</button>
       <span class="pill pill-accent">Restaurante</span>
-      <button onclick="go('s-carrinho')" style="background:none;border:none;cursor:pointer;color:var(--fg);font-size:.8rem;font-weight:700;display:flex;align-items:center;gap:5px">
+      <button data-action="go" data-screen="s-carrinho" style="background:none;border:none;cursor:pointer;color:var(--fg);font-size:.8rem;font-weight:700;display:flex;align-items:center;gap:5px">
         🛒 <span class="cart-count" id="cart-badge">0</span>
       </button>
     </div>
@@ -494,7 +494,7 @@
       <div class="menu-grid" id="grid-outros"></div>
     </div>
 
-    <button class="btn btn-primary" onclick="go('s-carrinho')" style="margin-top:4px">
+    <button class="btn btn-primary" data-action="go" data-screen="s-carrinho" style="margin-top:4px">
       🛒 Ver carrinho (<span id="cart-badge-btn">0</span> itens)
     </button>
   </div>
@@ -506,7 +506,7 @@
 <div class="screen" id="s-carrinho">
   <div class="card">
     <div class="back-row">
-      <button class="back-btn" onclick="go('s-restaurante')">← Menu</button>
+      <button class="back-btn" data-action="go" data-screen="s-restaurante">← Menu</button>
       <span class="pill pill-accent">Carrinho</span>
     </div>
     <div class="cart-header">
@@ -527,31 +527,31 @@
     <!-- Forma de pagamento -->
     <p style="font-size:.78rem;font-weight:700;margin-bottom:8px">Como vai pagar?</p>
     <div class="pay-grid">
-      <div class="pay-opt" onclick="selectPay(this,'coin')">
+      <div class="pay-opt" data-action="select-pay" data-method="coin">
         <span class="pay-icon">💜</span><div class="pay-name">Nuk-Coin</div>
         <div class="pay-sub" id="pay-coin-sub">Saldo: 0 Kz</div>
       </div>
-      <div class="pay-opt" onclick="selectPay(this,'cash')">
+      <div class="pay-opt" data-action="select-pay" data-method="cash">
         <span class="pay-icon">💵</span><div class="pay-name">CASH</div>
         <div class="pay-sub">Dinheiro</div>
       </div>
-      <div class="pay-opt" onclick="selectPay(this,'tpa')">
+      <div class="pay-opt" data-action="select-pay" data-method="tpa">
         <span class="pay-icon">💳</span><div class="pay-name">TPA</div>
         <div class="pay-sub">Terminal</div>
       </div>
-      <div class="pay-opt" onclick="selectPay(this,'express')">
+      <div class="pay-opt" data-action="select-pay" data-method="express">
         <span class="pay-icon">⚡</span><div class="pay-name">Express</div>
         <div class="pay-sub">Pagamento rápido</div>
       </div>
     </div>
-    <div class="pay-opt" style="margin-bottom:14px" onclick="selectPay(this,'transfer')">
+    <div class="pay-opt" style="margin-bottom:14px" data-action="select-pay" data-method="transfer">
       <span class="pay-icon">🏦</span><div class="pay-name">Transferência Bancária</div>
     </div>
     <div class="info-box coin" id="coin-pay-info" style="display:none">
       💜 O desconto Nuk-Coin do dia será aplicado automaticamente ao confirmar.
     </div>
-    <button class="btn btn-primary" onclick="confirmarPedido()">✓ Confirmar pedido</button>
-    <button class="btn btn-ghost"   onclick="go('s-restaurante')" style="margin-top:8px">← Continuar a comprar</button>
+    <button class="btn btn-primary" data-action="confirmar-pedido">✓ Confirmar pedido</button>
+    <button class="btn btn-ghost"   data-action="go" data-screen="s-restaurante" style="margin-top:8px">← Continuar a comprar</button>
   </div>
 </div>
 
@@ -569,8 +569,8 @@
     <div class="info-box gold" id="disc-earned" style="display:none">
       🎁 Desconto de 20% aplicado! Continue a acumular estrelas.
     </div>
-    <button class="btn btn-primary" style="margin-top:16px" onclick="voltarInicio()">← Início</button>
-    <button class="btn btn-info"    onclick="go('s-restaurante')" style="margin-top:8px">+ Novo pedido</button>
+    <button class="btn btn-primary" style="margin-top:16px" data-action="voltar-inicio">← Início</button>
+    <button class="btn btn-info"    data-action="go" data-screen="s-restaurante" style="margin-top:8px">+ Novo pedido</button>
   </div>
 </div>
 
@@ -580,29 +580,29 @@
 <div class="screen" id="s-servicos">
   <div class="card">
     <div class="back-row">
-      <button class="back-btn" id="serv-back-btn" onclick="voltarDeServicos()">← Voltar</button>
+      <button class="back-btn" id="serv-back-btn" data-action="voltar-de-servicos">← Voltar</button>
       <span class="pill pill-info">Serviços</span>
     </div>
     <h3>Serviços disponíveis</h3>
     <div class="menu-section">
       <div class="menu-section-title">🛏️ Hospedagem</div>
       <div class="menu-grid">
-        <div class="menu-item" onclick="solicitarServico('2 Horas','8.000 Kz')">
+        <div class="menu-item" data-action="solicitar-servico" data-tipo="2 Horas" data-preco="8.000 Kz">
           <span class="menu-item-emoji">⏱️</span>
           <div class="menu-item-name">2 Horas</div>
           <div class="menu-item-price">8.000 Kz</div>
         </div>
-        <div class="menu-item" onclick="solicitarServico('Pernoite','15.000 Kz')">
+        <div class="menu-item" data-action="solicitar-servico" data-tipo="Pernoite" data-preco="15.000 Kz">
           <span class="menu-item-emoji">🌙</span>
           <div class="menu-item-name">Pernoite</div>
           <div class="menu-item-price">15.000 Kz</div>
         </div>
-        <div class="menu-item" onclick="solicitarServico('Diária Completa','25.000 Kz')">
+        <div class="menu-item" data-action="solicitar-servico" data-tipo="Diária Completa" data-preco="25.000 Kz">
           <span class="menu-item-emoji">📅</span>
           <div class="menu-item-name">Diária</div>
           <div class="menu-item-price">25.000 Kz</div>
         </div>
-        <div class="menu-item" onclick="solicitarServico('Semana (7 dias)','120.000 Kz')">
+        <div class="menu-item" data-action="solicitar-servico" data-tipo="Semana (7 dias)" data-preco="120.000 Kz">
           <span class="menu-item-emoji">🗓️</span>
           <div class="menu-item-name">Semana</div>
           <div class="menu-item-price">120.000 Kz</div>
@@ -612,39 +612,39 @@
     <div class="menu-section">
       <div class="menu-section-title">🏊 Lazer & Extras</div>
       <div class="menu-grid">
-        <div class="menu-item" onclick="solicitarServico('Piscina','5.000 Kz')">
+        <div class="menu-item" data-action="solicitar-servico" data-tipo="Piscina" data-preco="5.000 Kz">
           <span class="menu-item-emoji">🏊</span>
           <div class="menu-item-name">Piscina</div>
           <div class="menu-item-price">5.000 Kz</div>
         </div>
-        <div class="menu-item" onclick="solicitarServico('Sauna','8.000 Kz')">
+        <div class="menu-item" data-action="solicitar-servico" data-tipo="Sauna" data-preco="8.000 Kz">
           <span class="menu-item-emoji">🧖</span>
           <div class="menu-item-name">Sauna</div>
           <div class="menu-item-price">8.000 Kz</div>
         </div>
-        <div class="menu-item" onclick="solicitarServico('Estacionamento VIP','3.000 Kz')">
+        <div class="menu-item" data-action="solicitar-servico" data-tipo="Estacionamento VIP" data-preco="3.000 Kz">
           <span class="menu-item-emoji">🅿️</span>
           <div class="menu-item-name">Estac. VIP</div>
           <div class="menu-item-price">3.000 Kz</div>
         </div>
-        <div class="menu-item" onclick="solicitarServico('Lavandaria','4.500 Kz')">
+        <div class="menu-item" data-action="solicitar-servico" data-tipo="Lavandaria" data-preco="4.500 Kz">
           <span class="menu-item-emoji">👕</span>
           <div class="menu-item-name">Lavandaria</div>
           <div class="menu-item-price">4.500 Kz</div>
         </div>
-        <div class="menu-item" onclick="solicitarServico('Transfer Aeroporto','12.000 Kz')">
+        <div class="menu-item" data-action="solicitar-servico" data-tipo="Transfer Aeroporto" data-preco="12.000 Kz">
           <span class="menu-item-emoji">✈️</span>
           <div class="menu-item-name">Transfer</div>
           <div class="menu-item-price">12.000 Kz</div>
         </div>
-        <div class="menu-item" onclick="solicitarServico('Room Service','Sob pedido')">
+        <div class="menu-item" data-action="solicitar-servico" data-tipo="Room Service" data-preco="Sob pedido">
           <span class="menu-item-emoji">🍽️</span>
           <div class="menu-item-name">Room Service</div>
           <div class="menu-item-price">Sob pedido</div>
         </div>
       </div>
     </div>
-    <button class="btn btn-ghost" onclick="voltarDeServicos()">← Voltar</button>
+    <button class="btn btn-ghost" data-action="voltar-de-servicos">← Voltar</button>
   </div>
 </div>
 
@@ -654,29 +654,29 @@
 <div class="screen" id="s-eventos">
   <div class="card">
     <div class="back-row">
-      <button class="back-btn" id="ev-back-btn" onclick="voltarDeEventos()">← Voltar</button>
+      <button class="back-btn" id="ev-back-btn" data-action="voltar-de-eventos">← Voltar</button>
       <span class="pill pill-warn">Eventos</span>
     </div>
     <h3>Eventos & Reservas</h3>
     <div class="menu-section">
       <div class="menu-section-title">🎉 Eventos sociais</div>
       <div class="menu-grid">
-        <div class="menu-item" onclick="solicitarEvento('Casamento')">
+        <div class="menu-item" data-action="solicitar-evento" data-tipo="Casamento">
           <span class="menu-item-emoji">💍</span>
           <div class="menu-item-name">Casamento</div>
           <div class="menu-item-price">Orçamento</div>
         </div>
-        <div class="menu-item" onclick="solicitarEvento('Aniversário')">
+        <div class="menu-item" data-action="solicitar-evento" data-tipo="Aniversário">
           <span class="menu-item-emoji">🎂</span>
           <div class="menu-item-name">Aniversário</div>
           <div class="menu-item-price">Orçamento</div>
         </div>
-        <div class="menu-item" onclick="solicitarEvento('Baptizado')">
+        <div class="menu-item" data-action="solicitar-evento" data-tipo="Baptizado">
           <span class="menu-item-emoji">👶</span>
           <div class="menu-item-name">Baptizado</div>
           <div class="menu-item-price">Orçamento</div>
         </div>
-        <div class="menu-item" onclick="solicitarEvento('Formatura')">
+        <div class="menu-item" data-action="solicitar-evento" data-tipo="Formatura">
           <span class="menu-item-emoji">🎓</span>
           <div class="menu-item-name">Formatura</div>
           <div class="menu-item-price">Orçamento</div>
@@ -686,22 +686,22 @@
     <div class="menu-section">
       <div class="menu-section-title">💼 Eventos corporativos</div>
       <div class="menu-grid">
-        <div class="menu-item" onclick="solicitarEvento('Conferência')">
+        <div class="menu-item" data-action="solicitar-evento" data-tipo="Conferência">
           <span class="menu-item-emoji">🎤</span>
           <div class="menu-item-name">Conferência</div>
           <div class="menu-item-price">Orçamento</div>
         </div>
-        <div class="menu-item" onclick="solicitarEvento('Reunião Executiva')">
+        <div class="menu-item" data-action="solicitar-evento" data-tipo="Reunião Executiva">
           <span class="menu-item-emoji">🤝</span>
           <div class="menu-item-name">Reunião</div>
           <div class="menu-item-price">Orçamento</div>
         </div>
-        <div class="menu-item" onclick="solicitarEvento('Gala / Jantar')">
+        <div class="menu-item" data-action="solicitar-evento" data-tipo="Gala / Jantar">
           <span class="menu-item-emoji">🥂</span>
           <div class="menu-item-name">Gala / Jantar</div>
           <div class="menu-item-price">Orçamento</div>
         </div>
-        <div class="menu-item" onclick="solicitarEvento('Workshop')">
+        <div class="menu-item" data-action="solicitar-evento" data-tipo="Workshop">
           <span class="menu-item-emoji">📝</span>
           <div class="menu-item-name">Workshop</div>
           <div class="menu-item-price">Orçamento</div>
@@ -711,29 +711,29 @@
     <div class="menu-section">
       <div class="menu-section-title">🎵 Entretenimento</div>
       <div class="menu-grid">
-        <div class="menu-item" onclick="solicitarEvento('Noite de Música ao Vivo')">
+        <div class="menu-item" data-action="solicitar-evento" data-tipo="Noite de Música ao Vivo">
           <span class="menu-item-emoji">🎵</span>
           <div class="menu-item-name">Música ao Vivo</div>
           <div class="menu-item-price">Programação</div>
         </div>
-        <div class="menu-item" onclick="solicitarEvento('DJ / Festa')">
+        <div class="menu-item" data-action="solicitar-evento" data-tipo="DJ / Festa">
           <span class="menu-item-emoji">🎧</span>
           <div class="menu-item-name">DJ / Festa</div>
           <div class="menu-item-price">Orçamento</div>
         </div>
-        <div class="menu-item" onclick="solicitarEvento('Stand-up Comedy')">
+        <div class="menu-item" data-action="solicitar-evento" data-tipo="Stand-up Comedy">
           <span class="menu-item-emoji">🎭</span>
           <div class="menu-item-name">Stand-up</div>
           <div class="menu-item-price">Programação</div>
         </div>
-        <div class="menu-item" onclick="solicitarEvento('Happy Hour')">
+        <div class="menu-item" data-action="solicitar-evento" data-tipo="Happy Hour">
           <span class="menu-item-emoji">🍹</span>
           <div class="menu-item-name">Happy Hour</div>
           <div class="menu-item-price">Todos os dias</div>
         </div>
       </div>
     </div>
-    <button class="btn btn-ghost" onclick="voltarDeEventos()">← Voltar</button>
+    <button class="btn btn-ghost" data-action="voltar-de-eventos">← Voltar</button>
   </div>
 </div>
 
@@ -743,7 +743,7 @@
 <div class="screen" id="s-cadastrar">
   <div class="card">
     <div class="back-row">
-      <button class="back-btn" onclick="go('s-auth')">← Voltar</button>
+      <button class="back-btn" data-action="go" data-screen="s-auth">← Voltar</button>
       <span class="pill pill-ok">Cadastrar</span>
     </div>
     <h3>Criar conta</h3>
@@ -775,8 +775,8 @@
       <label>Telemóvel de quem indicou (opcional)</label>
       <input type="tel" id="cad-ref" placeholder="9XXXXXXXX — amigo que o referenciou" maxlength="9" inputmode="numeric">
     </div>
-    <button class="btn btn-primary" onclick="cadastrar()">✓ Criar conta</button>
-    <button class="btn btn-ghost" onclick="go('s-auth')" style="margin-top:8px">← Voltar</button>
+    <button class="btn btn-primary" data-action="cadastrar">✓ Criar conta</button>
+    <button class="btn btn-ghost" data-action="go" data-screen="s-auth" style="margin-top:8px">← Voltar</button>
   </div>
 </div>
 
@@ -788,8 +788,8 @@
     <div style="font-size:3rem;margin-bottom:12px" id="sol-emoji">✅</div>
     <h2 id="sol-titulo">Solicitação enviada!</h2>
     <p class="sub" id="sol-msg">A nossa equipa entrará em contacto brevemente.</p>
-    <button class="btn btn-primary" style="margin-top:16px" onclick="voltarInicio()">← Início</button>
-    <button class="btn btn-ghost" onclick="go('s-cliente-menu')" style="margin-top:8px" id="sol-btn-menu">Mais opções</button>
+    <button class="btn btn-primary" style="margin-top:16px" data-action="voltar-inicio">← Início</button>
+    <button class="btn btn-ghost" data-action="go" data-screen="s-cliente-menu" style="margin-top:8px" id="sol-btn-menu">Mais opções</button>
   </div>
 </div>
 
@@ -1074,7 +1074,16 @@ function loadCarrinho(){
       const price=session.cart[name+'_price']||0;
       total+=price*qty;
       const li=document.createElement('li'); li.className='cart-item';
-      li.innerHTML='<span class="cart-item-name">'+name+'</span><span class="cart-item-qty"><button class="qty-btn" onclick="changeQty(\''+name+'\',-1)">−</button><span>'+qty+'</span><button class="qty-btn" onclick="changeQty(\''+name+'\',1)">+</button></span><span class="cart-item-price">'+fmt(price*qty)+'</span>';
+      const nameSpan=document.createElement('span'); nameSpan.className='cart-item-name'; nameSpan.textContent=name;
+      const qtySpan=document.createElement('span'); qtySpan.className='cart-item-qty';
+      const btnMinus=document.createElement('button'); btnMinus.className='qty-btn'; btnMinus.textContent='−';
+      btnMinus.addEventListener('click',()=>changeQty(name,-1));
+      const qtyNum=document.createElement('span'); qtyNum.textContent=qty;
+      const btnPlus=document.createElement('button'); btnPlus.className='qty-btn'; btnPlus.textContent='+';
+      btnPlus.addEventListener('click',()=>changeQty(name,1));
+      qtySpan.appendChild(btnMinus); qtySpan.appendChild(qtyNum); qtySpan.appendChild(btnPlus);
+      const priceSpan=document.createElement('span'); priceSpan.className='cart-item-price'; priceSpan.textContent=fmt(price*qty);
+      li.appendChild(nameSpan); li.appendChild(qtySpan); li.appendChild(priceSpan);
       ul.appendChild(li);
     });
   }
@@ -1267,13 +1276,38 @@ document.querySelectorAll('#s-convidado .btn-primary, #s-cliente-menu .btn-prima
 });
 
 // Ver carrinho
-document.querySelector('#s-restaurante button[onclick="go(\'s-carrinho\')"]').onclick=loadCarrinho;
-document.querySelector('#s-restaurante .btn-primary[onclick]').onclick=loadCarrinho;
+const btnVerCarrinho=document.querySelector('#s-restaurante button[data-action="go"][data-screen="s-carrinho"]');
+if(btnVerCarrinho) btnVerCarrinho.addEventListener('click',loadCarrinho);
+const btnCarrinhoPrimary=document.querySelector('#s-restaurante .btn-primary[data-action="go"]');
+if(btnCarrinhoPrimary) btnCarrinhoPrimary.addEventListener('click',loadCarrinho);
 
 // ═══════════════════════════════════════════════
 //  HELPERS
 // ═══════════════════════════════════════════════
 function voltarInicio(){ session.isCliente?loadClienteMenu():go('s-auth'); }
+
+// ═══════════════════════════════════════════════
+//  EVENT DELEGATION — substitui onclick= inline (bloqueados pela CSP)
+// ═══════════════════════════════════════════════
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-action]');
+  if (!el) return;
+  const action = el.dataset.action;
+  if      (action === 'go')                 go(el.dataset.screen);
+  else if (action === 'submit-acesso')      submitAcesso();
+  else if (action === 'sair')               sair();
+  else if (action === 'select-credit')      selectCredit(el, parseFloat(el.dataset.value));
+  else if (action === 'confirmar-credito')  confirmarCredito();
+  else if (action === 'voltar-de-restaurante') voltarDeRestaurante();
+  else if (action === 'select-pay')         selectPay(el, el.dataset.method);
+  else if (action === 'confirmar-pedido')   confirmarPedido();
+  else if (action === 'voltar-inicio')      voltarInicio();
+  else if (action === 'voltar-de-servicos') voltarDeServicos();
+  else if (action === 'solicitar-servico')  solicitarServico(el.dataset.tipo, el.dataset.preco);
+  else if (action === 'voltar-de-eventos')  voltarDeEventos();
+  else if (action === 'solicitar-evento')   solicitarEvento(el.dataset.tipo);
+  else if (action === 'cadastrar')          cadastrar();
+});
 </script>
 </body>
 </html>

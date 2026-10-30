@@ -258,3 +258,31 @@ window.addEventListener('DOMContentLoaded', () => {
     iniciarApp();
   }
 });
+
+// ── Event delegation — substitui onclick= inline (bloqueados pela CSP) ────────
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-action]');
+  if (!el) return;
+  const action = el.dataset.action;
+  // Sidebar
+  if (action === 'toggle-sidebar') { e.stopPropagation(); toggleSidebar(); }
+  // Logout
+  else if (action === 'logout') logout();
+  // Modal fechar (click no fundo ou no botão X) — só fechar se não for o modal-box em si
+  else if (action === 'fechar-modal') {
+    if (e.target === el) fecharModal(); // fundo: só se clicar directamente no overlay
+    else fecharModal();
+  }
+  // Módulos de navegação (nav-items)
+  else if (action === 'carregar-modulo') carregarModulo(el.dataset.modulo);
+});
+
+// nav-items: já têm data-modulo mas o onclick foi removido — usar delegação no sidebar
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.nav-item[data-modulo]').forEach(btn => {
+    btn.addEventListener('click', () => carregarModulo(btn.dataset.modulo));
+  });
+  // modal-box stopPropagation (foi removido o onclick inline)
+  const modalBox = document.getElementById('modal-box');
+  if (modalBox) modalBox.addEventListener('click', e => e.stopPropagation());
+});
