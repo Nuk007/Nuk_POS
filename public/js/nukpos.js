@@ -184,7 +184,8 @@ function carregarModulo(modulo) {
 
 async function actualizarBadgePedidos() {
   try {
-    const pedidos = await api('GET', '/pedidos?status=ABERTO') || [];
+    const _resp = await api('GET', '/pedidos?status=ABERTO') || [];
+    const pedidos = Array.isArray(_resp) ? _resp : (_resp.data || []);
     const badge = document.getElementById('badge-pedidos');
     badge.textContent = pedidos.length;
     badge.style.display = pedidos.length > 0 ? 'inline-block' : 'none';
