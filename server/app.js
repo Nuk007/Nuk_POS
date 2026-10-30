@@ -1,10 +1,10 @@
 // Nuk_POS — Servidor Principal
 // Stack: Node.js + Express + PostgreSQL + Socket.io
 // SaaS multi-tenant: cada empresa tem tenant_id em todas as operações
-// v2026.10.30.6
+// v2026.10.30.7
 
 require('dotenv').config();
-console.log('[NukPOS] server/app.js v2026.10.30.6 a arrancar');
+console.log('[NukPOS] server/app.js v2026.10.30.7 a arrancar');
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -54,7 +54,7 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.socket.io"],
-      scriptSrcAttr: ["'unsafe-inline'"],
+      // scriptSrcAttr removido — event delegation implementado em todos os HTML (26 Out 2026)
       styleSrc: ["'self'", "'unsafe-inline'"],
       styleSrcElem: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       connectSrc: ["'self'", "ws:", "wss:"],
@@ -612,7 +612,8 @@ app.patch('/api/pedidos/:id/status', authMiddleware, validarUUID('id'), async (r
 
 app.patch('/api/pedidos/:pedidoId/itens/:itemId/status', authMiddleware, validarUUID('pedidoId'), validarUUID('itemId'), async (req, res) => {
   const { status_cozinha } = req.body;
-  const STATUSES_COZINHA = ['PENDENTE', 'EM_PREPARO', 'PRONTO', 'ENTREGUE', 'CANCELADO'];
+  // IMPORTANTE: valores alinhados com o CHECK constraint da BD (db.js:237)
+  const STATUSES_COZINHA = ['AGUARDANDO', 'PREPARANDO', 'PRONTO', 'ENTREGUE'];
   if (status_cozinha && !STATUSES_COZINHA.includes(status_cozinha)) {
     return res.status(400).json({ erro: 'status_cozinha inválido' });
   }
@@ -1455,53 +1456,67 @@ app.post('/api/cliente/pedido-restaurante', clienteLimiter, resolverTenantPublic
     let estrelaGanha = false;
     let novoSaldoNukcoin = null;
 
-    // Processar Nuk-Coin
+    // Processar Nuk-Coin — SELECT FOR UPDATE garante atomicidade (sem race condition)
     if (metodo === 'NUKCOIN' && cliente_id) {
-      const clienteR = await pool.query(
-        `SELECT nukcoin_saldo, estrelas FROM clientes WHERE id = $1 AND ativo = true
-         AND ($2::uuid IS NULL OR tenant_id = $2)`,
-        [cliente_id, tenantId || null]
-      );
-      if (!clienteR.rows[0]) {
-        return res.status(400).json({ erro: 'Cliente não encontrado para pagamento Nuk-Coin' });
+      const nukClient = await pool.connect();
+      try {
+        await nukClient.query('BEGIN');
+        const clienteR = await nukClient.query(
+          `SELECT nukcoin_saldo, estrelas FROM clientes WHERE id = $1 AND ativo = true
+           AND ($2::uuid IS NULL OR tenant_id = $2) FOR UPDATE`,
+          [cliente_id, tenantId || null]
+        );
+        if (!clienteR.rows[0]) {
+          await nukClient.query('ROLLBACK');
+          nukClient.release();
+          return res.status(400).json({ erro: 'Cliente não encontrado para pagamento Nuk-Coin' });
+        }
+        const saldoAtual = parseFloat(clienteR.rows[0].nukcoin_saldo);
+
+        // Aplicar desconto de estrelas se elegível
+        const estrelasCliente = clienteR.rows[0].estrelas;
+        const limite = cfg.desconto_estrelas_limite || 25000;
+        if (estrelasCliente >= (cfg.estrelas_para_desconto || 5) && total <= limite) {
+          const pct = cfg.desconto_estrelas_pct || 20;
+          descontoAplicado = total * (pct / 100);
+          totalFinal = total - descontoAplicado;
+        } else {
+          // Desconto padrão Nuk-Coin
+          const pct = cfg.nukcoin_desconto_pct || 10;
+          descontoAplicado = total * (pct / 100);
+          totalFinal = total - descontoAplicado;
+        }
+
+        if (saldoAtual < totalFinal) {
+          await nukClient.query('ROLLBACK');
+          nukClient.release();
+          return res.status(400).json({
+            erro: 'Saldo Nuk-Coin insuficiente',
+            saldo_atual: saldoAtual,
+            total_necessario: totalFinal,
+          });
+        }
+
+        // Debitar saldo atomicamente
+        const novoSaldo = saldoAtual - totalFinal;
+        await nukClient.query(
+          `UPDATE clientes SET nukcoin_saldo = $1 WHERE id = $2`, [novoSaldo, cliente_id]
+        );
+        novoSaldoNukcoin = novoSaldo;
+
+        // Registar movimento na mesma transacção
+        await nukClient.query(
+          `INSERT INTO movimentos_nukcoin (id, cliente_id, tipo, valor, saldo_antes, saldo_depois, descricao, criado_em)
+           VALUES ($1, $2, 'CONSUMO', $3, $4, $5, 'Pagamento pedido restaurante', NOW())`,
+          [uuidv4(), cliente_id, totalFinal, saldoAtual, novoSaldo]
+        );
+        await nukClient.query('COMMIT');
+      } catch (nukErr) {
+        await nukClient.query('ROLLBACK');
+        nukClient.release();
+        throw nukErr;
       }
-      const saldoAtual = parseFloat(clienteR.rows[0].nukcoin_saldo);
-
-      // Aplicar desconto de estrelas se elegível
-      const estrelasCliente = clienteR.rows[0].estrelas;
-      const limite = cfg.desconto_estrelas_limite || 25000;
-      if (estrelasCliente >= (cfg.estrelas_para_desconto || 5) && total <= limite) {
-        const pct = cfg.desconto_estrelas_pct || 20;
-        descontoAplicado = total * (pct / 100);
-        totalFinal = total - descontoAplicado;
-      } else {
-        // Desconto padrão Nuk-Coin
-        const pct = cfg.nukcoin_desconto_pct || 10;
-        descontoAplicado = total * (pct / 100);
-        totalFinal = total - descontoAplicado;
-      }
-
-      if (saldoAtual < totalFinal) {
-        return res.status(400).json({
-          erro: 'Saldo Nuk-Coin insuficiente',
-          saldo_atual: saldoAtual,
-          total_necessario: totalFinal,
-        });
-      }
-
-      // Debitar saldo
-      const novoSaldo = saldoAtual - totalFinal;
-      await pool.query(
-        `UPDATE clientes SET nukcoin_saldo = $1 WHERE id = $2`, [novoSaldo, cliente_id]
-      );
-      novoSaldoNukcoin = novoSaldo;
-
-      // Registar movimento
-      await pool.query(
-        `INSERT INTO movimentos_nukcoin (id, cliente_id, tipo, valor, saldo_antes, saldo_depois, descricao, criado_em)
-         VALUES ($1, $2, 'CONSUMO', $3, $4, $5, 'Pagamento pedido restaurante', NOW())`,
-        [uuidv4(), cliente_id, totalFinal, saldoAtual, novoSaldo]
-      );
+      nukClient.release();
     }
 
     // Determinar mesa_id (do tenant)
