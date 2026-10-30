@@ -5,7 +5,17 @@
   "main": "server/app.js",
   "scripts": {
     "start": "node server/app.js",
-    "dev": "nodemon server/app.js"
+    "dev": "nodemon server/app.js",
+    "test": "jest --forceExit",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage --forceExit"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "setupFilesAfterEnv": ["<rootDir>/tests/setup.js"],
+    "testMatch": ["**/tests/**/*.test.js"],
+    "testTimeout": 10000,
+    "verbose": true
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -22,7 +32,9 @@
     "uuid": "^9.0.1"
   },
   "devDependencies": {
-    "nodemon": "^3.0.3"
+    "jest": "^30.5.2",
+    "nodemon": "^3.0.3",
+    "supertest": "^7.3.1"
   },
   "engines": {
     "node": ">=18.0.0"

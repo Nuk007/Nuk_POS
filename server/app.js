@@ -150,22 +150,24 @@ app.use((err, req, res, next) => {
   res.status(500).json({ erro: 'Erro interno do servidor' });
 });
 
-// ── Arranque ──────────────────────────────────────────────────
-const PORT = process.env.PORT || 3000;
+// ── Arranque (só quando este ficheiro é executado directamente) ──
+if (require.main === module) {
+  const PORT = process.env.PORT || 3000;
 
-server.listen(PORT, () => {
-  console.log(`🚀 Nuk_POS v1.0 a correr na porta ${PORT}`);
-  console.log(`🌍 Ambiente: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🗄️  A inicializar base de dados...`);
+  server.listen(PORT, () => {
+    console.log(`🚀 Nuk_POS v1.0 a correr na porta ${PORT}`);
+    console.log(`🌍 Ambiente: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`🗄️  A inicializar base de dados...`);
 
-  initDB()
-    .then(() => {
-      console.log('✅ Base de dados pronta');
-    })
-    .catch((err) => {
-      console.error('❌ Falha ao inicializar base de dados:', err.message);
-      console.error('⚠️  O servidor continua a correr — verifique DATABASE_URL nas variáveis de ambiente');
-    });
-});
+    initDB()
+      .then(() => {
+        console.log('✅ Base de dados pronta');
+      })
+      .catch((err) => {
+        console.error('❌ Falha ao inicializar base de dados:', err.message);
+        console.error('⚠️  O servidor continua a correr — verifique DATABASE_URL nas variáveis de ambiente');
+      });
+  });
+}
 
 module.exports = { app, server };
