@@ -38,6 +38,12 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 - Pedidos: máquina de estados em `actualizarStatusPedido`; financeiro conta receita só de FECHADO; facturas numeradas sob `pg_advisory_xact_lock`.
 - Tempo real: o POS escuta `novo_pedido`, `novo_pedido_cliente`, `cliente_novo`, `nukcoin_carregado`.
 
+## Stock abatido pelas vendas
+- Cada produto tem uma receita em `produto_ingredientes` (item de stock + quantidade por unidade vendida; `GET/PUT /api/produtos/:id/ingredientes`, PUT só ADMIN/GERENTE; botão «Stock» na lista de produtos). Produto sem receita não mexe no stock.
+- `stock.service.baixarStockPedido` corre DENTRO da transacção do pedido (operador e portal), com `FOR UPDATE` por ordem de id: sem stock → 409 «Stock insuficiente de X» e nada é gravado nem cobrado (nem Nuk-Coin). Movimento `VENDA` com `pedido_id`.
+- Cancelar o pedido devolve o stock uma só vez (movimento `ESTORNO`); fechar não mexe. Alerta `alerta_stock` após o COMMIT quando fica no mínimo.
+- Migração 1748900000000 (espelhada em db.js).
+
 ## Documentos (talão e factura em PDF)
 - `services/documentos.service.js` (pdfkit): talão 80 mm em `GET /api/pedidos/:id/talao.pdf` e factura A4 em `GET /api/financeiro/faturas/:id/pdf`. Logótipo `public/img/logo-nukpos.png` sobre placa azul-escura.
 - Enquanto o Nuk_POS não estiver certificado pela AGT, todos os documentos dizem «Documento sem validade fiscal». Quando houver certificação, definir `AGT_CERTIFICADO=true` (não basta: a assinatura/hash AGT e o SAF-T ainda têm de ser implementados).
@@ -66,7 +72,6 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 
 ## Dívida conhecida (próximos passos)
 - Se o admin demo `admin@nukpos.ao` já existir numa BD de produção antiga, apagá-lo/desactivá-lo (o seed deixou de o criar em produção; ver «Reset»).
-- Stock não é abatido pelas vendas (sem ligação produto→stock; o tipo VENDA não é usado).
 - Força bruta ao PIN do portal só limitada pelo clienteLimiter (60/10min por IP).
 - @openapi parcial no portal (faltam hospedagem, perfil, eventos).
 - Testar a UI em navegador real (Playwright) ainda não faz parte do CI.

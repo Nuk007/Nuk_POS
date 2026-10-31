@@ -189,7 +189,9 @@ describe('PATCH /api/pedidos/:id/status', () => {
       .mockResolvedValueOnce({ rows: [{ nukcoin_saldo: '1000.00' }] })                            // saldo (FOR UPDATE)
       .mockResolvedValueOnce({ rows: [] })                                                        // UPDATE saldo
       .mockResolvedValueOnce({ rows: [] })                                                        // INSERT ESTORNO
-      .mockResolvedValueOnce({ rows: [] });                                                       // nukcoin_pago = 0
+      .mockResolvedValueOnce({ rows: [] })                                                        // nukcoin_pago = 0
+      .mockResolvedValueOnce({ rows: [] })                                                        // stock: já estornado?
+      .mockResolvedValueOnce({ rows: [] });                                                       // stock: nada vendido a devolver
     const res = await request(app).patch(`/api/pedidos/${PEDIDO_ID}/status`)
       .set('Authorization', `Bearer ${adminToken}`).send({ status: 'CANCELADO' });
     expect(res.status).toBe(200);

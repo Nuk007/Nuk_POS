@@ -7,6 +7,7 @@
 const { pool } = require('../db');
 const { broadcast } = require('../middleware/broadcast');
 const { buildWhere, withTx } = require('./shared');
+const stock = require('./stock.service');
 
 /**
  * Lista pedidos paginados com filtros opcionais.
@@ -96,6 +97,7 @@ async function criarPedido({ tenantId, userId, mesa_id, cliente_id, itens, obser
   }
 
   const client = await pool.connect();
+  let alertasStock = [];
   try {
     await client.query('BEGIN');
 
@@ -138,7 +140,11 @@ async function criarPedido({ tenantId, userId, mesa_id, cliente_id, itens, obser
       );
     }
 
+    // Abate o stock na mesma transacção: sem stock, o pedido não existe
+    alertasStock = await stock.baixarStockPedido(client, { tenantId, pedidoId: pedido.id, linhas: itensDetalhes, userId });
+
     await client.query('COMMIT');
+    stock.avisarStockBaixo(alertasStock);
 
     const pedidoCompleto = await pool.query(`
       SELECT p.*, m.numero AS mesa_numero,
@@ -171,7 +177,7 @@ async function criarPedido({ tenantId, userId, mesa_id, cliente_id, itens, obser
  *  - CANCELADO estorna o que foi pago em Nuk-Coin (livro-razão: movimento ESTORNO) — uma só vez.
  *  - A mesa é libertada quando o último pedido activo fecha ou é cancelado.
  */
-async function actualizarStatusPedido({ tenantId, pedidoId, status }) {
+async function actualizarStatusPedido({ tenantId, pedidoId, status, userId }) {
   const STATUSES_VALIDOS = ['ABERTO', 'EM_PREPARO', 'PRONTO', 'FECHADO', 'CANCELADO'];
   if (!STATUSES_VALIDOS.includes(status)) {
     const err = new Error('Status inválido'); err.statusCode = 400; throw err;
@@ -210,6 +216,8 @@ async function actualizarStatusPedido({ tenantId, pedidoId, status }) {
       r.rows[0].nukcoin_pago = 0;
       r.rows[0].nukcoin_estornado = valor;
     }
+
+    if (status === 'CANCELADO') await stock.devolverStockPedido(db, { pedidoId, userId });
 
     if ((status === 'FECHADO' || status === 'CANCELADO') && p.mesa_id) {
       const outros = await db.query(

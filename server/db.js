@@ -368,6 +368,27 @@ async function initDB() {
 
     await client.query(`CREATE INDEX IF NOT EXISTS idx_mov_stock_item ON movimentos_stock(stock_item_id)`);
 
+    // Vendas abatem o stock (espelho idempotente da migração 1748900000000)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS produto_ingredientes (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        produto_id UUID NOT NULL REFERENCES produtos(id) ON DELETE CASCADE,
+        stock_item_id UUID NOT NULL REFERENCES stock_items(id) ON DELETE RESTRICT,
+        quantidade NUMERIC(10,3) NOT NULL CHECK (quantidade > 0),
+        UNIQUE (produto_id, stock_item_id)
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_prod_ingr_stock ON produto_ingredientes(stock_item_id)`);
+    await client.query(`ALTER TABLE movimentos_stock ADD COLUMN IF NOT EXISTS pedido_id UUID REFERENCES pedidos(id) ON DELETE SET NULL`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_mov_stock_pedido ON movimentos_stock(pedido_id) WHERE pedido_id IS NOT NULL`);
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE movimentos_stock DROP CONSTRAINT IF EXISTS movimentos_stock_tipo_check;
+        ALTER TABLE movimentos_stock ADD CONSTRAINT movimentos_stock_tipo_check
+          CHECK (tipo IN ('VENDA','COMPRA','AJUSTE','DESPERDICIO','INVENTARIO','ESTORNO'));
+      EXCEPTION WHEN OTHERS THEN NULL; END $$
+    `);
+
     // Faturas
     await client.query(`
       CREATE TABLE IF NOT EXISTS faturas (

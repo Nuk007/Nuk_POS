@@ -517,6 +517,7 @@ async function modulo_produtos(el) {
                       <td>${p.disponivel ? '<span class="status-badge status-LIVRE">Disponível</span>' : '<span class="status-badge status-FECHADO">Indisponível</span>'}</td>
                       ${isAdmin ? `<td><div class="row-acoes">
                         <button class="btn-secundario" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="modalEditarProduto('${p.id}','${p.nome.replace(/'/g,"\\'")}',${p.preco},'${p.categoria}',${p.disponivel})">Editar</button>
+                        <button class="btn-secundario" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="modalIngredientes('${p.id}')">Stock</button>
                         <button class="btn-${p.disponivel ? 'perigo' : 'sucesso'}" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="toggleDisponibilidade('${p.id}',${p.disponivel})">${p.disponivel ? 'Ocultar' : 'Mostrar'}</button>
                       </div></td>` : ''}
                     </tr>`).join('')}
@@ -537,6 +538,49 @@ function filtrarProdutosTabela(q) {
   document.querySelectorAll('tbody tr').forEach(tr => {
     tr.style.display = tr.textContent.toLowerCase().includes(termo) ? '' : 'none';
   });
+}
+
+// ── Receita do produto: o que cada venda abate do stock ──
+let _ingrSeq = 0;
+function _linhaIngrediente(itens, sel, qtd) {
+  const id = 'ing-' + (++_ingrSeq);
+  return `<div class="row-acoes campo" id="${id}" style="margin-bottom:.4rem;gap:.4rem;align-items:center">
+    <select class="ingr-item" style="flex:1;width:auto">${itens.map(i => `<option value="${esc(i.id)}" ${i.id === sel ? 'selected' : ''}>${esc(i.nome)} (${esc(i.unidade || '')})</option>`).join('')}</select>
+    <input type="number" class="ingr-qtd" min="0" step="0.001" value="${esc(qtd)}" placeholder="Qtd por unidade" style="width:8rem">
+    <button class="btn-perigo" style="padding:.3rem .6rem" data-on-click="removerLinhaIngrediente('${id}')">✕</button>
+  </div>`;
+}
+async function modalIngredientes(produtoId) {
+  try {
+    const [stockResp, receita] = await Promise.all([api('GET', '/stock'), api('GET', `/produtos/${produtoId}/ingredientes`)]);
+    const itens = Array.isArray(stockResp) ? stockResp : (stockResp.data || []);
+    if (!itens.length) { toast('Crie primeiro os itens no módulo Stock.', 'aviso'); return; }
+    window._ingrItens = itens;
+    abrirModal('Stock consumido por venda', `
+      <p class="muted texto-pequeno" style="margin-bottom:.6rem">O que sai do stock cada vez que se vende 1 unidade deste produto. Sem linhas, a venda não mexe no stock.</p>
+      <div id="ingr-linhas">${(receita || []).map(r => _linhaIngrediente(itens, r.stock_item_id, r.quantidade)).join('')}</div>
+      <button class="btn-secundario" data-on-click="adicionarLinhaIngrediente()">+ Ingrediente</button>
+      <div class="modal-acoes" style="margin-top:1rem">
+        <button class="btn-secundario" data-on-click="fecharModal()">Cancelar</button>
+        <button class="btn-primario" data-on-click="guardarIngredientes('${esc(produtoId)}')">Guardar</button>
+      </div>`);
+  } catch (e) { toast(e.message, 'erro'); }
+}
+function adicionarLinhaIngrediente() {
+  const itens = window._ingrItens || [];
+  document.getElementById('ingr-linhas').insertAdjacentHTML('beforeend', _linhaIngrediente(itens, itens[0] && itens[0].id, ''));
+}
+function removerLinhaIngrediente(id) { const el = document.getElementById(id); if (el) el.remove(); }
+async function guardarIngredientes(produtoId) {
+  const ingredientes = [...document.querySelectorAll('#ingr-linhas > div')].map(d => ({
+    stock_item_id: d.querySelector('.ingr-item').value,
+    quantidade: parseFloat(d.querySelector('.ingr-qtd').value),
+  }));
+  if (ingredientes.some(i => !(i.quantidade > 0))) { toast('Indique a quantidade de cada ingrediente (maior que zero).', 'erro'); return; }
+  try {
+    await api('PUT', `/produtos/${produtoId}/ingredientes`, { ingredientes });
+    fecharModal(); toast('Stock do produto guardado', 'sucesso');
+  } catch (e) { toast(e.message, 'erro'); }
 }
 
 function modalNovoProduto() {

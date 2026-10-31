@@ -76,4 +76,33 @@ router.put('/:id', authMiddleware, requerNivel(['ADMIN', 'GERENTE']), async (req
   }
 });
 
+/**
+ * @openapi
+ * /api/produtos/{id}/ingredientes:
+ *   get:
+ *     summary: Receita do produto — o que cada venda consome do stock
+ *     tags: [Produtos]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ in: path, name: id, required: true, schema: { type: string, format: uuid } }]
+ *     responses: { 200: { description: Lista de { stock_item_id, nome, unidade, quantidade } }, 404: { description: Produto não encontrado } }
+ *   put:
+ *     summary: Define a receita do produto (lista vazia = não abate stock). ADMIN/GERENTE
+ *     tags: [Produtos]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody: { content: { application/json: { schema: { type: object, required: [ingredientes], properties: { ingredientes: { type: array, items: { type: object, properties: { stock_item_id: { type: string, format: uuid }, quantidade: { type: number } } } } } } } } }
+ *     responses: { 200: { description: Receita actualizada }, 400: { description: Dados inválidos }, 404: { description: Produto ou item não encontrado } }
+ */
+const stockSvc = require('../services/stock.service');
+const comErros = fn => async (req, res, next) => {
+  try { res.json(await fn(req)); } catch (e) { if (e.statusCode) return res.status(e.statusCode).json({ erro: e.message }); next(e); }
+};
+router.get('/:id/ingredientes', authMiddleware, (req, res, next) => {
+  if (!isUUID(req.params.id)) return res.status(400).json({ erro: 'id inválido' });
+  comErros(r => stockSvc.obterIngredientes({ tenantId: r.tenantId, produtoId: r.params.id }))(req, res, next);
+});
+router.put('/:id/ingredientes', authMiddleware, requerNivel(['ADMIN', 'GERENTE']), (req, res, next) => {
+  if (!isUUID(req.params.id)) return res.status(400).json({ erro: 'id inválido' });
+  comErros(r => stockSvc.definirIngredientes({ tenantId: r.tenantId, produtoId: r.params.id, ingredientes: r.body.ingredientes }))(req, res, next);
+});
+
 module.exports = router;

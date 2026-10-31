@@ -14,6 +14,7 @@ const bcrypt = require('bcryptjs');
 const { pool } = require('../db');
 const { broadcast } = require('../middleware/broadcast');
 const { withTx, erro } = require('./shared');
+const stock = require('./stock.service');
 
 const TEL_RE = /^9[0-9]{8}$/;
 const PIN_RE = /^\d{4}$/;
@@ -149,6 +150,7 @@ async function criarPedidoRestaurante({ tenantId, itens, mesa_ref, observacoes, 
   }
   if (metodo === 'NUKCOIN' && !cliente_id) throw erro(400, 'Pagamento Nuk-Coin exige um cliente registado');
 
+  let alertasStock = [];
   const pedido = await withTx(async db => {
     // 1) preços sempre do servidor; qualquer produto inválido rejeita o pedido (não se cobra "só o que existe")
     let total = 0; const linhas = [];
@@ -199,6 +201,8 @@ async function criarPedidoRestaurante({ tenantId, itens, mesa_ref, observacoes, 
     for (const l of linhas) {
       await db.query(`INSERT INTO itens_pedido (id, pedido_id, produto_id, quantidade, preco_unitario) VALUES ($1,$2,$3,$4,$5)`, [uuidv4(), pedidoId, l.produto_id, l.quantidade, l.preco_unitario]);
     }
+    // Abate o stock na mesma transacção: sem stock, o pedido (e o débito Nuk-Coin) não existem
+    alertasStock = await stock.baixarStockPedido(db, { tenantId, pedidoId, linhas });
     if (metodo === 'NUKCOIN') {
       await db.query(`UPDATE clientes SET nukcoin_saldo = $1 WHERE id = $2`, [saldoNovo, cliente_id]);
       await db.query(
@@ -213,6 +217,7 @@ async function criarPedidoRestaurante({ tenantId, itens, mesa_ref, observacoes, 
     return { pedidoId, total, totalFinal, desconto, saldoNovo, estrelaGanha, estrelasGastas, linhas };
   });
 
+  stock.avisarStockBaixo(alertasStock);
   const codigo = 'P' + crypto.randomBytes(3).toString('hex').toUpperCase();
   broadcast('novo_pedido_cliente', {
     pedido_id: pedido.pedidoId, codigo, mesa_ref: mesa_ref || null,

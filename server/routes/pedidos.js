@@ -179,6 +179,7 @@ router.patch('/:id/status', authMiddleware, validarUUID('id'), async (req, res, 
       tenantId: req.tenantId,
       pedidoId: req.params.id,
       status:   req.body.status,
+      userId:   req.user && req.user.id,
     });
     res.json(pedido);
   } catch (e) {
