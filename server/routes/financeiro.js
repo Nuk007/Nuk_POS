@@ -76,6 +76,18 @@ router.get('/faturas', authMiddleware, async (req, res) => {
   }
 });
 
+// GET /api/financeiro/faturas/:id/pdf — factura em A4
+router.get('/faturas/:id/pdf', authMiddleware, async (req, res) => {
+  if (!isUUID(req.params.id)) return res.status(400).json({ erro: 'id inválido' });
+  try {
+    const pdf = await require('../services/documentos.service').facturaPdf({ tenantId: req.tenantId, faturaId: req.params.id });
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="factura-${req.params.id.slice(0, 8)}.pdf"`, 'Cache-Control': 'no-store' }).send(pdf);
+  } catch (e) {
+    if (e.statusCode) return res.status(e.statusCode).json({ erro: e.message });
+    res.status(500).json({ erro: 'Erro interno do servidor' });
+  }
+});
+
 // POST /api/financeiro/faturas
 router.post('/faturas', authMiddleware, async (req, res) => {
   const { pedido_id, reserva_id, cliente_id, nif_cliente, nome_cliente } = req.body;

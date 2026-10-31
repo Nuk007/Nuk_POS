@@ -12,6 +12,19 @@ const NUK = {
 };
 
 // ── API helper ────────────────────────────────────────────────
+// Descarrega um PDF gerado pela API (talão, factura). Usa o token do operador; sem janelas/handlers inline (CSP).
+async function descarregarPdf(caminho, nomeFicheiro) {
+  try {
+    const r = await fetch(`/api${caminho}`, { headers: { Authorization: `Bearer ${NUK.token}` } });
+    if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.erro || `Erro ${r.status}`); }
+    const url = URL.createObjectURL(await r.blob());
+    const a = document.createElement('a');
+    a.href = url; a.download = nomeFicheiro || 'documento.pdf';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  } catch (e) { toast(e.message, 'erro'); }
+}
+
 async function api(metodo, path, dados) {
   const opts = {
     method: metodo,

@@ -132,7 +132,9 @@ function renderPedidoCard(p) {
         <span class="pedido-total">${formatarMoeda(p.total)}</span>
         <span class="pedido-hora">${tempoDesde(p.criado_em)}</span>
       </div>
-      ${acoes ? `<div class="pedido-acoes">${acoes}</div>` : ''}
+      <div class="pedido-acoes">${acoes}
+        <button class="btn-secundario" style="padding:.35rem .7rem;font-size:.8rem" data-on-click="descarregarPdf('/pedidos/${p.id}/talao.pdf','talao-${String(p.id).slice(0, 8)}.pdf')">🖨 Talão</button>
+      </div>
     </div>`;
 }
 
@@ -770,7 +772,7 @@ async function modulo_financeiro(el) {
         </div>
         <div class="tabela-wrapper">
           <table>
-            <thead><tr><th>Nº Factura</th><th>Cliente</th><th>IVA</th><th>Total</th><th>Data</th></tr></thead>
+            <thead><tr><th>Nº Factura</th><th>Cliente</th><th>IVA</th><th>Total</th><th>Data</th><th></th></tr></thead>
             <tbody>
               ${(faturas||[]).slice(0,20).map(f => `
                 <tr>
@@ -779,8 +781,9 @@ async function modulo_financeiro(el) {
                   <td class="muted">${formatarMoeda(f.iva)}</td>
                   <td class="texto-primario negrito">${formatarMoeda(f.total)}</td>
                   <td class="muted">${formatarData(f.emitida_em)}</td>
+                  <td><button class="btn-secundario" style="padding:.25rem .6rem;font-size:.75rem" data-on-click="descarregarPdf('/financeiro/faturas/${f.id}/pdf','factura-${String(f.numero_fatura).replace(/[^0-9]/g, '')}.pdf')">PDF</button></td>
                 </tr>`).join('')}
-              ${!faturas?.length ? '<tr><td colspan="5" class="muted" style="text-align:center;padding:1rem">Sem facturas</td></tr>' : ''}
+              ${!faturas?.length ? '<tr><td colspan="6" class="muted" style="text-align:center;padding:1rem">Sem facturas</td></tr>' : ''}
             </tbody>
           </table>
         </div>

@@ -7,6 +7,7 @@ const express = require('express');
 const router  = express.Router();
 const { authMiddleware, validarUUID } = require('../middleware/auth');
 const svc = require('../services/pedidos.service');
+const docs = require('../services/documentos.service');
 
 // ── GET /api/pedidos ─────────────────────────────────────────────────────────
 /**
@@ -237,5 +238,26 @@ router.patch(
     }
   }
 );
+
+// ── GET /api/pedidos/:id/talao.pdf ───────────────────────────────────────────
+/**
+ * @openapi
+ * /api/pedidos/{id}/talao.pdf:
+ *   get:
+ *     summary: Talão do pedido em PDF (80 mm, impressora térmica)
+ *     tags: [Pedidos]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ in: path, name: id, required: true, schema: { type: string, format: uuid } }]
+ *     responses: { 200: { description: PDF, content: { application/pdf: {} } }, 404: { description: Pedido não encontrado } }
+ */
+router.get('/:id/talao.pdf', authMiddleware, validarUUID('id'), async (req, res, next) => {
+  try {
+    const pdf = await docs.talaoPedido({ tenantId: req.tenantId, pedidoId: req.params.id });
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="talao-${req.params.id.slice(0, 8)}.pdf"`, 'Cache-Control': 'no-store' }).send(pdf);
+  } catch (e) {
+    if (e.statusCode) return res.status(e.statusCode).json({ erro: e.message });
+    next(e);
+  }
+});
 
 module.exports = router;

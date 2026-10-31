@@ -38,6 +38,11 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 - Pedidos: máquina de estados em `actualizarStatusPedido`; financeiro conta receita só de FECHADO; facturas numeradas sob `pg_advisory_xact_lock`.
 - Tempo real: o POS escuta `novo_pedido`, `novo_pedido_cliente`, `cliente_novo`, `nukcoin_carregado`.
 
+## Documentos (talão e factura em PDF)
+- `services/documentos.service.js` (pdfkit): talão 80 mm em `GET /api/pedidos/:id/talao.pdf` e factura A4 em `GET /api/financeiro/faturas/:id/pdf`. Logótipo `public/img/logo-nukpos.png` sobre placa azul-escura.
+- Enquanto o Nuk_POS não estiver certificado pela AGT, todos os documentos dizem «Documento sem validade fiscal». Quando houver certificação, definir `AGT_CERTIFICADO=true` (não basta: a assinatura/hash AGT e o SAF-T ainda têm de ser implementados).
+- Produto GESTNUK (filial da Technuk, Lda). O frontend descarrega os PDFs com `descarregarPdf()` (nukpos.js), sem abrir janelas (CSP).
+
 ## Seed e reset
 - Em produção o seed cria só os planos; o tenant/admin demo só existe fora de produção ou com `SEED_DEMO=true`. O 1.º tenant cria-se pelo fluxo SUPERADMIN (`SUPERADMIN_KEY`).
 - Recomeçar do zero: `CONFIRMAR_RESET=APAGAR-TUDO node scripts/reset-db.js` (apaga o esquema `public`; reiniciar o serviço depois). Destrutivo: nunca correr sem decisão do dono.
@@ -68,5 +73,5 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 - 13 das 16 rotas ainda sem camada de serviço nem testes dedicados (financeiro e reservas prioritárias).
 - Cobertura unitária ~59% → meta 75%+.
 - Rate limiters em memória → Redis se houver multi-instância.
-- Certificação AGT do módulo de facturação antes de clientes pagantes.
+- Certificação AGT (assinatura/hash, SAF-T, série certificada) antes de produção definitiva — processo a cargo do dono; os PDFs actuais não têm validade fiscal.
 - Frontend (public/, ~4.800 linhas vanilla JS) sem testes.
