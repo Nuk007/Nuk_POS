@@ -1,0 +1,19 @@
+/* Marca Nuk_POS — logótipo com luz laranja por detrás (usar em todas as páginas) */
+.marca { position: relative; display: inline-flex; align-items: center; justify-content: center; isolation: isolate; }
+.marca::before {
+  content: ""; position: absolute; inset: -22% -14%; z-index: -1; border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(255,122,24,.78) 0%, rgba(232,101,10,.40) 42%, transparent 70%);
+  filter: blur(14px); animation: marca-pulso 3.4s ease-in-out infinite;
+}
+.marca img {
+  display: block; height: auto; width: var(--marca-w, 200px); max-width: 100%; margin: 0; object-fit: contain;
+  filter: drop-shadow(0 0 12px rgba(255,122,24,.55)) drop-shadow(0 3px 10px rgba(0,0,0,.45));
+}
+.marca--xl { --marca-w: 260px; }
+.marca--lg { --marca-w: 200px; }
+.marca--md { --marca-w: 150px; }
+.marca--sm { --marca-w: 132px; }
+@keyframes marca-pulso { 0%,100% { opacity: .72; transform: scale(1); } 50% { opacity: 1; transform: scale(1.06); } }
+@media (prefers-reduced-motion: reduce) { .marca::before { animation: none; } }
+/* Placa escura para páginas de fundo claro (o texto prateado do logótipo precisa de contraste) */
+.marca-placa { display: inline-flex; padding: 28px 40px; border-radius: 28px; background: linear-gradient(160deg, #14213d, #0b1426); box-shadow: 0 10px 30px rgba(11,20,38,.25); }
