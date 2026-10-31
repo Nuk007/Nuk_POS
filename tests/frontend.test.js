@@ -19,6 +19,12 @@ test('nenhum ficheiro do frontend usa handlers inline (bloqueados pela CSP)', ()
   expect(achados).toEqual([]);
 });
 
+test('nenhuma página HTML tem <script> inline (script-src sem unsafe-inline)', () => {
+  const re = /<script(?![^>]*\ssrc=)[^>]*>\s*\S/i;
+  const achados = ficheiros.filter(f => f.endsWith('.html') && re.test(ler(f)));
+  expect(achados).toEqual([]);
+});
+
 test('o login do frontend lê a chave "funcionario" que a API devolve', () => {
   const src = ler('js/nukpos.js');
   expect(src).toMatch(/NUK\.utilizador\s*=\s*res\.funcionario/);

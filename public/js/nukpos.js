@@ -121,6 +121,18 @@ function iniciarWebSocket() {
     if (NUK.moduloActual === 'pedidos' || NUK.moduloActual === 'dashboard') carregarModulo(NUK.moduloActual);
   });
 
+  // Pedido feito pelo cliente no portal (QR code)
+  NUK.socket.on('novo_pedido_cliente', (p) => {
+    toast(`🆕 Pedido do portal ${p.codigo || ''} — ${formatarMoeda(p.total)}`, 'aviso');
+    actualizarBadgePedidos();
+    if (['pedidos', 'dashboard', 'financeiro'].includes(NUK.moduloActual)) carregarModulo(NUK.moduloActual);
+  });
+
+  // Clientes novos e saldos Nuk-Coin alterados refrescam a lista de clientes
+  ['cliente_novo', 'nukcoin_carregado'].forEach(ev => NUK.socket.on(ev, () => {
+    if (NUK.moduloActual === 'clientes') carregarModulo('clientes');
+  }));
+
   NUK.socket.on('pedido_atualizado', () => {
     if (NUK.moduloActual === 'pedidos') carregarModulo('pedidos');
   });
@@ -201,6 +213,11 @@ function abrirModal(titulo, htmlCorpo) {
 
 function fecharModal() {
   document.getElementById('modal-overlay').style.display = 'none';
+}
+
+// Escapa texto vindo de utilizadores (nomes, observações…) antes de o inserir em HTML
+function esc(v) {
+  return String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
 // ── Toast ──────────────────────────────────────────────────────

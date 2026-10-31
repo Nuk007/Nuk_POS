@@ -28,6 +28,20 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 - Contrato do login: `POST /api/auth/login` devolve `{ token, funcionario }`; o frontend lê `res.funcionario`.
 - Logs via Pino (`server/monitoring.js`) com redacção de campos sensíveis; erros 5xx vão ao Sentry.
 
+## Portal do cliente e Nuk-Coin (regras de dinheiro)
+- O portal vive em `/cliente?r=<slug>` (o QR leva o slug; as rotas públicas usam o cabeçalho `X-Tenant-Slug`). Todo o JS está em `public/js/*.js`: **nenhuma página pode ter `<script>` inline** (CSP; `tests/frontend.test.js` verifica).
+- Lógica em `services/portal.service.js`. Qualquer alteração de saldo: transacção + `SELECT … FOR UPDATE` + linha em `movimentos_nukcoin` (CARREGAMENTO, CONSUMO, ESTORNO, BONUS); saldo = Σ movimentos.
+- Carregamentos só no balcão por operador (JWT), valores 5000/10000/15000/20000/25000/50000.
+- Pagar com Nuk-Coin exige `cliente_id` + PIN (4 dígitos, bcrypt); débito e pedido na mesma transacção. Cancelar um pedido pago com Nuk-Coin estorna uma única vez.
+- `definir-pin` só funciona enquanto o cliente não tem PIN; reposição por ADMIN/GERENTE em `/api/cliente/reset-pin`. `perfil` e `historico` exigem PIN.
+- Estrelas: 5 estrelas = 20% (limite 25 000 Kz), consome as estrelas; pedidos ≥ 25 000 Kz dão 1 estrela.
+- Pedidos: máquina de estados em `actualizarStatusPedido`; financeiro conta receita só de FECHADO; facturas numeradas sob `pg_advisory_xact_lock`.
+- Tempo real: o POS escuta `novo_pedido`, `novo_pedido_cliente`, `cliente_novo`, `nukcoin_carregado`.
+
+## Seed e reset
+- Em produção o seed cria só os planos; o tenant/admin demo só existe fora de produção ou com `SEED_DEMO=true`. O 1.º tenant cria-se pelo fluxo SUPERADMIN (`SUPERADMIN_KEY`).
+- Recomeçar do zero: `CONFIRMAR_RESET=APAGAR-TUDO node scripts/reset-db.js` (apaga o esquema `public`; reiniciar o serviço depois). Destrutivo: nunca correr sem decisão do dono.
+
 ## Documentação da API
 - Anotações `@openapi` (JSDoc) em cada rota; schemas/respostas reutilizáveis em `server/swagger.js`. UI em `/api/docs`, spec em `/api/docs.json`. Rota nova = anotação nova.
 
@@ -46,7 +60,10 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 - Mensagens em pt-PT, corpo explica o porquê; agrupar por área (Arquitectura/Segurança/Testes…).
 
 ## Dívida conhecida (próximos passos)
-- O seed cria sempre o admin demo `admin@nukpos.ao` com palavra-passe fixa no código (também em produção) — desactivar fora de desenvolvimento e desactivar a conta existente em produção.
+- Se o admin demo `admin@nukpos.ao` já existir numa BD de produção antiga, apagá-lo/desactivá-lo (o seed deixou de o criar em produção; ver «Reset»).
+- Stock não é abatido pelas vendas (sem ligação produto→stock; o tipo VENDA não é usado).
+- Força bruta ao PIN do portal só limitada pelo clienteLimiter (60/10min por IP).
+- @openapi parcial no portal (faltam hospedagem, perfil, eventos).
 - Testar a UI em navegador real (Playwright) ainda não faz parte do CI.
 - 13 das 16 rotas ainda sem camada de serviço nem testes dedicados (financeiro e reservas prioritárias).
 - Cobertura unitária ~59% → meta 75%+.

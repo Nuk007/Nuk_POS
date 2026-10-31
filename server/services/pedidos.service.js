@@ -6,7 +6,7 @@
  */
 const { pool } = require('../db');
 const { broadcast } = require('../middleware/broadcast');
-const { buildWhere } = require('./shared');
+const { buildWhere, withTx } = require('./shared');
 
 /**
  * Lista pedidos paginados com filtros opcionais.
@@ -166,7 +166,10 @@ async function criarPedido({ tenantId, userId, mesa_id, cliente_id, itens, obser
 }
 
 /**
- * Actualiza o status de um pedido e liberta a mesa se fechado.
+ * Actualiza o status de um pedido.
+ *  - FECHADO e CANCELADO são estados finais (não se reabre um pedido já facturado/estornado).
+ *  - CANCELADO estorna o que foi pago em Nuk-Coin (livro-razão: movimento ESTORNO) — uma só vez.
+ *  - A mesa é libertada quando o último pedido activo fecha ou é cancelado.
  */
 async function actualizarStatusPedido({ tenantId, pedidoId, status }) {
   const STATUSES_VALIDOS = ['ABERTO', 'EM_PREPARO', 'PRONTO', 'FECHADO', 'CANCELADO'];
@@ -174,28 +177,53 @@ async function actualizarStatusPedido({ tenantId, pedidoId, status }) {
     const err = new Error('Status inválido'); err.statusCode = 400; throw err;
   }
 
-  const r = await pool.query(
-    `UPDATE pedidos SET status = $1, atualizado_em = NOW()
-     WHERE id = $2 AND ($3::uuid IS NULL OR tenant_id = $3) RETURNING *`,
-    [status, pedidoId, tenantId || null]
-  );
-  if (!r.rows[0]) {
-    const err = new Error('Pedido não encontrado'); err.statusCode = 404; throw err;
-  }
-
-  if (status === 'FECHADO' && r.rows[0].mesa_id) {
-    const outros = await pool.query(
-      `SELECT id FROM pedidos
-       WHERE mesa_id = $1 AND status NOT IN ('FECHADO', 'CANCELADO') AND id != $2`,
-      [r.rows[0].mesa_id, pedidoId]
+  const pedido = await withTx(async db => {
+    const atual = await db.query(
+      `SELECT * FROM pedidos WHERE id = $1 AND ($2::uuid IS NULL OR tenant_id = $2) FOR UPDATE`,
+      [pedidoId, tenantId || null]
     );
-    if (!outros.rows.length) {
-      await pool.query(`UPDATE mesas SET status = 'LIVRE' WHERE id = $1`, [r.rows[0].mesa_id]);
+    const p = atual.rows[0];
+    if (!p) { const err = new Error('Pedido não encontrado'); err.statusCode = 404; throw err; }
+    if (p.status === status) return p; // idempotente
+    if (p.status === 'FECHADO' || p.status === 'CANCELADO') {
+      const err = new Error(`Pedido ${p.status === 'FECHADO' ? 'fechado' : 'cancelado'}: já não pode mudar de estado`);
+      err.statusCode = 409; throw err;
     }
-  }
+
+    const r = await db.query(
+      `UPDATE pedidos SET status = $1, atualizado_em = NOW() WHERE id = $2 RETURNING *`,
+      [status, pedidoId]
+    );
+
+    if (status === 'CANCELADO' && parseFloat(p.nukcoin_pago) > 0 && p.cliente_id) {
+      const c = await db.query(`SELECT nukcoin_saldo FROM clientes WHERE id = $1 FOR UPDATE`, [p.cliente_id]);
+      const antes = parseFloat(c.rows[0].nukcoin_saldo);
+      const valor = parseFloat(p.nukcoin_pago);
+      const depois = Math.round((antes + valor) * 100) / 100;
+      await db.query(`UPDATE clientes SET nukcoin_saldo = $1 WHERE id = $2`, [depois, p.cliente_id]);
+      await db.query(
+        `INSERT INTO movimentos_nukcoin (cliente_id, tipo, valor, saldo_antes, saldo_depois, descricao, pedido_id)
+         VALUES ($1,'ESTORNO',$2,$3,$4,'Estorno por cancelamento de pedido',$5)`,
+        [p.cliente_id, valor, antes, depois, pedidoId]
+      );
+      await db.query(`UPDATE pedidos SET nukcoin_pago = 0 WHERE id = $1`, [pedidoId]);
+      r.rows[0].nukcoin_pago = 0;
+      r.rows[0].nukcoin_estornado = valor;
+    }
+
+    if ((status === 'FECHADO' || status === 'CANCELADO') && p.mesa_id) {
+      const outros = await db.query(
+        `SELECT 1 FROM pedidos WHERE mesa_id = $1 AND status NOT IN ('FECHADO', 'CANCELADO') AND id != $2 LIMIT 1`,
+        [p.mesa_id, pedidoId]
+      );
+      if (!outros.rows.length) await db.query(`UPDATE mesas SET status = 'LIVRE' WHERE id = $1`, [p.mesa_id]);
+    }
+    return r.rows[0];
+  });
 
   broadcast('pedido_atualizado', { id: pedidoId, status }, tenantId);
-  return r.rows[0];
+  if (pedido.nukcoin_estornado) broadcast('nukcoin_carregado', { cliente_id: pedido.cliente_id }, tenantId);
+  return pedido;
 }
 
 /**

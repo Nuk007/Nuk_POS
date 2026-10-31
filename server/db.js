@@ -223,6 +223,8 @@ async function initDB() {
       )
     `);
     await client.query(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE`);
+    await client.query(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS metodo_pagamento VARCHAR(20) DEFAULT 'CASH'`);
+    await client.query(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS nukcoin_pago NUMERIC(15,2) NOT NULL DEFAULT 0`);
 
     await client.query(`CREATE INDEX IF NOT EXISTS idx_pedidos_status ON pedidos(status)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_pedidos_mesa ON pedidos(mesa_id)`);
@@ -481,6 +483,13 @@ async function seedDB(pool) {
   }
 
   // ───── TENANT DEMO (para desenvolvimento e testes) ─────
+  // Dados de demonstração (tenant demo + admin com palavra-passe pública no código) só fora de produção,
+  // ou quando SEED_DEMO=true. Em produção a base arranca só com os planos; o 1.º tenant cria-se pelo SUPERADMIN.
+  if (process.env.NODE_ENV === 'production' && process.env.SEED_DEMO !== 'true') {
+    console.log('ℹ️  Produção: seed de demonstração ignorado (SEED_DEMO != true)');
+    return;
+  }
+
   const planoPro = await pool.query(`SELECT id FROM planos_assinatura WHERE nome = 'PRO' LIMIT 1`);
   const planoId = planoPro.rows[0]?.id;
 

@@ -120,6 +120,9 @@ describe('GET /api/financeiro/faturas', () => {
 
 // ─── POST /api/financeiro/faturas ────────────────────────────────────────────
 
+const tx = (...rs) => { mockClient.query.mockResolvedValueOnce({ rows: [] }); /* BEGIN */ rs.forEach(r => mockClient.query.mockResolvedValueOnce(r)); };
+const lockSeqIva = (prox = 1) => [{ rows: [] }, { rows: [{ prox }] }, { rows: [{ valor: '14' }] }]; // advisory lock, sequencial, IVA
+
 describe('POST /api/financeiro/faturas', () => {
   /**
    * Sequência de queries em POST /faturas:
@@ -130,11 +133,10 @@ describe('POST /api/financeiro/faturas', () => {
    */
 
   it('emite fatura a partir de pedido_id', async () => {
-    mockPool.query
-      .mockResolvedValueOnce({ rows: [{ prox: 1 }] })                    // seq
-      .mockResolvedValueOnce({ rows: [{ valor: '14' }] })                 // iva_padrao config
-      .mockResolvedValueOnce({ rows: [{ total: '3200.00' }] })            // pedido
-      .mockResolvedValueOnce({ rows: [faturaRow()] });                    // INSERT fatura
+    tx(...lockSeqIva(1),
+      { rows: [{ total: '3200.00', status: 'FECHADO' }] },   // pedido
+      { rows: [] },                                          // ainda sem factura
+      { rows: [faturaRow()] });                              // INSERT fatura
 
     const res = await request(app)
       .post('/api/financeiro/faturas')
@@ -147,10 +149,7 @@ describe('POST /api/financeiro/faturas', () => {
   });
 
   it('emite fatura com total_manual', async () => {
-    mockPool.query
-      .mockResolvedValueOnce({ rows: [{ prox: 2 }] })                    // seq
-      .mockResolvedValueOnce({ rows: [{ valor: '14' }] })                 // iva_padrao
-      .mockResolvedValueOnce({ rows: [faturaRow({ sequencial: 2, total: '5000.00' })] }); // INSERT
+    tx(...lockSeqIva(2), { rows: [faturaRow({ sequencial: 2, total: '5000.00' })] }); // INSERT
 
     const res = await request(app)
       .post('/api/financeiro/faturas')
@@ -161,9 +160,7 @@ describe('POST /api/financeiro/faturas', () => {
   });
 
   it('retorna 400 sem pedido_id, reserva_id ou total_manual', async () => {
-    mockPool.query
-      .mockResolvedValueOnce({ rows: [{ prox: 1 }] })      // seq
-      .mockResolvedValueOnce({ rows: [{ valor: '14' }] }); // iva
+    tx(...lockSeqIva(1));
 
     const res = await request(app)
       .post('/api/financeiro/faturas')
@@ -175,9 +172,7 @@ describe('POST /api/financeiro/faturas', () => {
   });
 
   it('retorna 400 com total_manual negativo ou zero', async () => {
-    mockPool.query
-      .mockResolvedValueOnce({ rows: [{ prox: 1 }] })
-      .mockResolvedValueOnce({ rows: [{ valor: '14' }] });
+    tx(...lockSeqIva(1));
 
     const res = await request(app)
       .post('/api/financeiro/faturas')
@@ -197,11 +192,23 @@ describe('POST /api/financeiro/faturas', () => {
     expect(res.status).toBe(400);
   });
 
+  it('retorna 409 ao facturar um pedido que não está FECHADO', async () => {
+    tx(...lockSeqIva(1), { rows: [{ total: '3200.00', status: 'ABERTO' }] });
+    const res = await request(app).post('/api/financeiro/faturas')
+      .set('Authorization', `Bearer ${adminToken}`).send({ pedido_id: PEDIDO_ID });
+    expect(res.status).toBe(409);
+  });
+
+  it('retorna 409 quando o pedido já tem factura', async () => {
+    tx(...lockSeqIva(1), { rows: [{ total: '3200.00', status: 'FECHADO' }] }, { rows: [{ numero_fatura: 'FT 2026/000001' }] });
+    const res = await request(app).post('/api/financeiro/faturas')
+      .set('Authorization', `Bearer ${adminToken}`).send({ pedido_id: PEDIDO_ID });
+    expect(res.status).toBe(409);
+    expect(res.body.erro).toMatch(/já foi facturado/);
+  });
+
   it('retorna 404 quando pedido não existe', async () => {
-    mockPool.query
-      .mockResolvedValueOnce({ rows: [{ prox: 1 }] })       // seq
-      .mockResolvedValueOnce({ rows: [{ valor: '14' }] })   // iva
-      .mockResolvedValueOnce({ rows: [] });                  // pedido não encontrado
+    tx(...lockSeqIva(1), { rows: [] });                    // pedido não encontrado
 
     const res = await request(app)
       .post('/api/financeiro/faturas')

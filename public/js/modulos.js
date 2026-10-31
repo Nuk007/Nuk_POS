@@ -818,10 +818,29 @@ async function emitirFatura() {
 // ════════════════════════════════════════════════════════════
 // CLIENTES
 // ════════════════════════════════════════════════════════════
+const NUKCOIN_VALORES = [5000, 10000, 15000, 20000, 25000, 50000];
+
+function linhaCliente(c) {
+  return `
+    <tr>
+      <td class="negrito">${esc(c.nome)}</td>
+      <td>${esc(c.telefone) || '—'}</td>
+      <td><span class="fidelizacao-${esc(c.nivel_fidelizacao)}">★ ${esc(c.nivel_fidelizacao)}</span></td>
+      <td>⭐ ${Number(c.estrelas) || 0}</td>
+      <td class="texto-primario">💜 ${formatarMoeda(c.nukcoin_saldo || 0)}</td>
+      <td class="muted">${formatarData(c.criado_em).split(',')[0]}</td>
+      <td>
+        <button class="btn-secundario" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="modalCarregarNukcoin('${esc(c.id)}')">Carregar Nuk-Coin</button>
+        <button class="btn-secundario" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="reporPinCliente('${esc(c.id)}')">Repor PIN</button>
+      </td>
+    </tr>`;
+}
+
 async function modulo_clientes(el) {
   try {
     const _clientesResp = await api('GET', '/clientes') || [];
     const clientes = Array.isArray(_clientesResp) ? _clientesResp : (_clientesResp.data || []);
+    window._clientesCache = clientes;
 
     el.innerHTML = `
       <div class="toolbar">
@@ -831,25 +850,46 @@ async function modulo_clientes(el) {
       </div>
       <div class="card tabela-wrapper">
         <table id="tab-clientes">
-          <thead><tr><th>Nome</th><th>Telefone</th><th>Email</th><th>Nível</th><th>Saldo Carteira</th><th>Registado em</th></tr></thead>
+          <thead><tr><th>Nome</th><th>Telefone</th><th>Nível</th><th>Estrelas</th><th>Nuk-Coin</th><th>Registado em</th><th>Acções</th></tr></thead>
           <tbody>
-            ${clientes.map(c => `
-              <tr>
-                <td class="negrito">${c.nome}</td>
-                <td>${c.telefone || '—'}</td>
-                <td>${c.email || '—'}</td>
-                <td><span class="fidelizacao-${c.nivel_fidelizacao}">★ ${c.nivel_fidelizacao}</span></td>
-                <td class="texto-primario">${formatarMoeda(c.saldo_carteira)}</td>
-                <td class="muted">${formatarData(c.criado_em).split(',')[0]}</td>
-              </tr>`).join('')}
-            ${!clientes.length ? '<tr><td colspan="6" class="muted" style="text-align:center;padding:1rem">Sem clientes</td></tr>' : ''}
+            ${clientes.map(linhaCliente).join('')}
+            ${!clientes.length ? '<tr><td colspan="7" class="muted" style="text-align:center;padding:1rem">Sem clientes</td></tr>' : ''}
           </tbody>
         </table>
       </div>
     `;
   } catch (e) {
-    el.innerHTML = `<div class="erro-msg">Erro: ${e.message}</div>`;
+    el.innerHTML = `<div class="erro-msg">Erro: ${esc(e.message)}</div>`;
   }
+}
+
+function modalCarregarNukcoin(id) {
+  const c = (window._clientesCache || []).find(x => x.id === id);
+  if (!c) return;
+  abrirModal('Carregar Nuk-Coin', `
+    <p style="margin-bottom:.8rem"><strong>${esc(c.nome)}</strong> — saldo actual: 💜 ${formatarMoeda(c.nukcoin_saldo || 0)}</p>
+    <p class="muted" style="margin-bottom:.6rem">Receba o dinheiro no balcão e escolha o valor a creditar:</p>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem">
+      ${NUKCOIN_VALORES.map(v => `<button class="btn-primario" data-on-click="carregarNukcoin('${esc(id)}',${v})">${formatarMoeda(v)}</button>`).join('')}
+    </div>
+  `);
+}
+
+async function carregarNukcoin(id, valor) {
+  try {
+    const r = await api('POST', '/cliente/nukcoin/carregar', { cliente_id: id, valor });
+    toast(r.mensagem || 'Carregado!', 'sucesso');
+    fecharModal();
+    carregarModulo('clientes');
+  } catch (e) { toast(e.message, 'erro'); }
+}
+
+async function reporPinCliente(id) {
+  if (!confirm('Repor o PIN deste cliente? Ele define um novo PIN no próximo acesso.')) return;
+  try {
+    const r = await api('POST', '/cliente/reset-pin', { cliente_id: id });
+    toast(r.mensagem || 'PIN reposto', 'sucesso');
+  } catch (e) { toast(e.message, 'erro'); }
 }
 
 async function pesquisarClientes(q) {
@@ -858,15 +898,8 @@ async function pesquisarClientes(q) {
     const _cResp = await api('GET', `/clientes?q=${encodeURIComponent(q)}`) || [];
     const clientes = Array.isArray(_cResp) ? _cResp : (_cResp.data || []);
     const tbody = document.querySelector('#tab-clientes tbody');
-    if (tbody) tbody.innerHTML = clientes.map(c => `
-      <tr>
-        <td class="negrito">${c.nome}</td>
-        <td>${c.telefone || '—'}</td>
-        <td>${c.email || '—'}</td>
-        <td><span class="fidelizacao-${c.nivel_fidelizacao}">★ ${c.nivel_fidelizacao}</span></td>
-        <td class="texto-primario">${formatarMoeda(c.saldo_carteira)}</td>
-        <td class="muted">${formatarData(c.criado_em).split(',')[0]}</td>
-      </tr>`).join('') || '<tr><td colspan="6" class="muted" style="text-align:center">Sem resultados</td></tr>';
+    window._clientesCache = clientes;
+    if (tbody) tbody.innerHTML = clientes.map(linhaCliente).join('') || '<tr><td colspan="7" class="muted" style="text-align:center">Sem resultados</td></tr>';
   } catch {}
 }
 

@@ -157,9 +157,11 @@ describe('POST /api/pedidos', () => {
 
 describe('PATCH /api/pedidos/:id/status', () => {
   it('actualiza status do pedido para EM_PREPARO', async () => {
-    mockPool.query.mockResolvedValueOnce({
-      rows: [pedidoRow({ status: 'EM_PREPARO' })],
-    });
+    // transacção: BEGIN, SELECT … FOR UPDATE, UPDATE
+    mockClient.query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [pedidoRow({ status: 'ABERTO', nukcoin_pago: '0' })] })
+      .mockResolvedValueOnce({ rows: [pedidoRow({ status: 'EM_PREPARO' })] });
 
     const res = await request(app)
       .patch(`/api/pedidos/${PEDIDO_ID}/status`)
@@ -168,6 +170,34 @@ describe('PATCH /api/pedidos/:id/status', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('EM_PREPARO');
+  });
+
+  it('retorna 409 ao reabrir um pedido FECHADO', async () => {
+    mockClient.query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [pedidoRow({ status: 'FECHADO' })] });
+    const res = await request(app).patch(`/api/pedidos/${PEDIDO_ID}/status`)
+      .set('Authorization', `Bearer ${adminToken}`).send({ status: 'ABERTO' });
+    expect(res.status).toBe(409);
+  });
+
+  it('cancelar um pedido pago com Nuk-Coin estorna o valor ao cliente', async () => {
+    mockClient.query
+      .mockResolvedValueOnce({ rows: [] })                                                        // BEGIN
+      .mockResolvedValueOnce({ rows: [pedidoRow({ status: 'ABERTO', cliente_id: 'c1', nukcoin_pago: '1080.00', mesa_id: null })] })
+      .mockResolvedValueOnce({ rows: [pedidoRow({ status: 'CANCELADO', cliente_id: 'c1', mesa_id: null })] }) // UPDATE status
+      .mockResolvedValueOnce({ rows: [{ nukcoin_saldo: '1000.00' }] })                            // saldo (FOR UPDATE)
+      .mockResolvedValueOnce({ rows: [] })                                                        // UPDATE saldo
+      .mockResolvedValueOnce({ rows: [] })                                                        // INSERT ESTORNO
+      .mockResolvedValueOnce({ rows: [] });                                                       // nukcoin_pago = 0
+    const res = await request(app).patch(`/api/pedidos/${PEDIDO_ID}/status`)
+      .set('Authorization', `Bearer ${adminToken}`).send({ status: 'CANCELADO' });
+    expect(res.status).toBe(200);
+    const sqls = mockClient.query.mock.calls.map(c => String(c[0]));
+    expect(sqls.some(q => /UPDATE clientes SET nukcoin_saldo/.test(q))).toBe(true);
+    const estorno = mockClient.query.mock.calls.find(c => /ESTORNO/.test(String(c[0])));
+    expect(estorno[1][1]).toBe(1080);                          // valor estornado
+    expect(estorno[1][3]).toBe(2080);                          // saldo depois = 1000 + 1080
   });
 
   it('retorna 400 com UUID inválido', async () => {

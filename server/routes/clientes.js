@@ -12,7 +12,7 @@ router.get('/', authMiddleware, async (req, res) => {
   const limit = Math.min(500, Math.max(1, parseInt(req.query.limit) || 100));
   const offset = (page - 1) * limit;
   try {
-    let query = `SELECT id, nome, telefone, email, nivel_fidelizacao, saldo_carteira, criado_em
+    let query = `SELECT id, nome, telefone, email, nivel_fidelizacao, saldo_carteira, nukcoin_saldo, estrelas, pontos, criado_em
                  FROM clientes WHERE ativo=true AND ($1::uuid IS NULL OR tenant_id = $1)`;
     const vals = [tenantId || null];
     if (q) { query += ` AND (nome ILIKE $2 OR telefone ILIKE $2 OR email ILIKE $2)`; vals.push(`%${q}%`); }
@@ -32,8 +32,11 @@ router.get('/', authMiddleware, async (req, res) => {
 
 // POST /api/clientes
 router.post('/', authMiddleware, async (req, res) => {
-  const { nome, telefone, email, nif } = req.body;
+  const { nome, email, nif } = req.body;
   if (!nome) return res.status(400).json({ erro: 'Nome é obrigatório' });
+  // telefone no formato do portal (9XXXXXXXX): aceita "+244 9xx xxx xxx" e guarda sem espaços nem indicativo
+  let telefone = req.body.telefone ? String(req.body.telefone).replace(/[\s-]/g, '').replace(/^(\+?244)/, '') : null;
+  if (telefone && !/^9[0-9]{8}$/.test(telefone)) return res.status(400).json({ erro: 'Telefone inválido (9XXXXXXXX)' });
   const tenantId = req.tenantId;
   try {
     const r = await pool.query(
