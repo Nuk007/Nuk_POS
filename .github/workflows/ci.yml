@@ -24,12 +24,50 @@ jobs:
       - name: Instalar dependências
         run: npm ci
 
-      - name: Correr testes
-        run: npm test
+      - name: Correr testes unitários
+        run: npm run test:unit
         env:
           NODE_ENV: test
           JWT_SECRET: test-secret-jwt-jest-nukpos
           DATABASE_URL: postgresql://test:test@localhost:5432/test
+
+  integration:
+    name: Testes de integração (PostgreSQL real)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: nukpos
+          POSTGRES_PASSWORD: nukpos
+          POSTGRES_DB: nukpos_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U nukpos"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Correr testes de integração
+        run: npm run test:integration
+        env:
+          NODE_ENV: test
+          JWT_SECRET: test-secret-jwt-jest-nukpos
+          TEST_DATABASE_URL: postgresql://nukpos:nukpos@localhost:5432/nukpos_test
 
   lint:
     name: Verificação de sintaxe

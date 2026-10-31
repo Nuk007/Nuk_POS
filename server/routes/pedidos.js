@@ -1,262 +1,239 @@
 'use strict';
+/**
+ * /api/pedidos — route handlers (thin layer).
+ * Lógica de negócio em server/services/pedidos.service.js
+ */
 const express = require('express');
 const router  = express.Router();
-const { pool }                        = require('../db');
 const { authMiddleware, validarUUID } = require('../middleware/auth');
-const { broadcast }                   = require('../middleware/broadcast');
+const svc = require('../services/pedidos.service');
 
+// ── GET /api/pedidos ─────────────────────────────────────────────────────────
 /**
- * buildWhere — constrói cláusula WHERE parametrizada para filtros dinâmicos.
- * Evita concatenação directa de strings com índices manuais.
- *
- * @param {Array}  base   Condições base (sempre presentes) como strings '$N'
- * @param {Array}  vals   Valores base correspondentes
- * @param {Object} filters  { campo: valor } — só adiciona se valor for truthy
- * @param {string} alias    Prefixo de tabela (ex: 'p')
- * @returns {{ where: string, vals: Array }}
+ * @openapi
+ * /api/pedidos:
+ *   get:
+ *     summary: Lista pedidos paginados com filtros opcionais
+ *     tags: [Pedidos]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: status
+ *         schema: { type: string, enum: [ABERTO, EM_PREPARO, PRONTO, FECHADO, CANCELADO] }
+ *       - in: query
+ *         name: mesa_id
+ *         schema: { type: string, format: uuid }
+ *       - in: query
+ *         name: data_inicio
+ *         schema: { type: string, format: date-time }
+ *       - in: query
+ *         name: data_fim
+ *         schema: { type: string, format: date-time }
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, default: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 100 }
+ *     responses:
+ *       200:
+ *         description: Lista paginada de pedidos
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data: { type: array, items: { $ref: '#/components/schemas/Pedido' } }
+ *                 page: { type: integer }
+ *                 limit: { type: integer }
+ *                 total: { type: integer }
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
  */
-function buildWhere(base, vals, filters = {}, alias = 'p') {
-  const conditions = [...base];
-  const values     = [...vals];
-
-  for (const [col, val] of Object.entries(filters)) {
-    if (val !== undefined && val !== null && val !== '') {
-      values.push(val);
-      conditions.push(`${alias}.${col} = $${values.length}`);
-    }
-  }
-
-  return {
-    where: conditions.length ? `WHERE ${conditions.join(' AND ')}` : '',
-    vals:  values,
-  };
-}
-
-// GET /api/pedidos
-router.get('/', authMiddleware, async (req, res) => {
-  const { status, mesa_id, data_inicio, data_fim } = req.query;
-  const tenantId = req.tenantId;
-  const page   = Math.max(1, parseInt(req.query.page)  || 1);
-  const limit  = Math.min(200, Math.max(1, parseInt(req.query.limit) || 100));
-  const offset = (page - 1) * limit;
-
-  // Condições base (tenant isolation) — comuns a query de dados e de contagem
-  const baseConditions = ['($1::uuid IS NULL OR p.tenant_id = $1)'];
-  const baseVals       = [tenantId || null];
-
-  // Filtros opcionais — aplicados a ambas as queries
-  const dynamicFilters = {};
-  if (status)      dynamicFilters.status  = status;
-  if (mesa_id)     dynamicFilters.mesa_id = mesa_id;
-  // Filtros de data — usam operadores de comparação, não igualdade exacta;
-  // tratados separadamente para usar >= e <=
-  const extraConditions = [];
-  const extraVals       = [];
-  if (data_inicio) { extraConditions.push(`p.criado_em >= $IDX`); extraVals.push(data_inicio); }
-  if (data_fim)    { extraConditions.push(`p.criado_em <= $IDX`); extraVals.push(data_fim); }
-
-  // Combinar: base + dinâmicos + data
-  let { where: filterWhere, vals: filterVals } = buildWhere(baseConditions, baseVals, dynamicFilters);
-  // Adicionar condições de data com índices correctos
-  for (const cond of extraConditions) {
-    filterVals.push(extraVals[extraConditions.indexOf(cond)]);
-    filterWhere += (filterWhere ? ' AND ' : 'WHERE ') + cond.replace('$IDX', `$${filterVals.length}`);
-  }
-
-  const dataQ = `
-    SELECT p.*, m.numero AS mesa_numero, m.zona AS mesa_zona,
-           f.nome AS funcionario_nome,
-           json_agg(json_build_object(
-             'id', ip.id, 'produto_id', ip.produto_id, 'produto_nome', pr.nome,
-             'quantidade', ip.quantidade, 'preco_unitario', ip.preco_unitario,
-             'status_cozinha', ip.status_cozinha, 'observacoes', ip.observacoes
-           )) FILTER (WHERE ip.id IS NOT NULL) AS itens
-    FROM pedidos p
-    LEFT JOIN mesas m         ON p.mesa_id = m.id
-    LEFT JOIN funcionarios f  ON p.funcionario_id = f.id
-    LEFT JOIN itens_pedido ip ON p.id = ip.pedido_id
-    LEFT JOIN produtos pr     ON ip.produto_id = pr.id
-    ${filterWhere}
-    GROUP BY p.id, m.numero, m.zona, f.nome
-    ORDER BY p.criado_em DESC
-    LIMIT $${filterVals.length + 1} OFFSET $${filterVals.length + 2}
-  `;
-  const dataVals  = [...filterVals, limit, offset];
-
-  const countQ    = `SELECT COUNT(*) FROM pedidos p ${filterWhere}`;
-  const countVals = filterVals;
-
+router.get('/', authMiddleware, async (req, res, next) => {
   try {
-    const [r, countR] = await Promise.all([
-      pool.query(dataQ,  dataVals),
-      pool.query(countQ, countVals),
-    ]);
-    res.json({ data: r.rows, page, limit, total: parseInt(countR.rows[0].count) });
+    const result = await svc.listarPedidos({
+      tenantId:    req.tenantId,
+      status:      req.query.status,
+      mesa_id:     req.query.mesa_id,
+      data_inicio: req.query.data_inicio,
+      data_fim:    req.query.data_fim,
+      page:        parseInt(req.query.page)  || 1,
+      limit:       parseInt(req.query.limit) || 100,
+    });
+    res.json(result);
+  } catch (e) { next(e); }
+});
+
+// ── GET /api/pedidos/hoje ────────────────────────────────────────────────────
+/**
+ * @openapi
+ * /api/pedidos/hoje:
+ *   get:
+ *     summary: Lista pedidos criados hoje (fuso Africa/Luanda)
+ *     tags: [Pedidos]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: Array de pedidos do dia
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ */
+router.get('/hoje', authMiddleware, async (req, res, next) => {
+  try {
+    const rows = await svc.listarPedidosHoje({ tenantId: req.tenantId });
+    res.json(rows);
+  } catch (e) { next(e); }
+});
+
+// ── POST /api/pedidos ────────────────────────────────────────────────────────
+/**
+ * @openapi
+ * /api/pedidos:
+ *   post:
+ *     summary: Cria um novo pedido
+ *     tags: [Pedidos]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [itens]
+ *             properties:
+ *               mesa_id:    { type: string, format: uuid }
+ *               cliente_id: { type: string, format: uuid }
+ *               observacoes: { type: string }
+ *               itens:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required: [produto_id, quantidade]
+ *                   properties:
+ *                     produto_id: { type: string, format: uuid }
+ *                     quantidade: { type: number }
+ *                     observacoes: { type: string }
+ *     responses:
+ *       201:
+ *         description: Pedido criado
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Pedido' }
+ *       400:
+ *         $ref: '#/components/responses/BadRequest'
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ */
+router.post('/', authMiddleware, async (req, res, next) => {
+  try {
+    const pedido = await svc.criarPedido({
+      tenantId:    req.tenantId,
+      userId:      req.user.id,
+      mesa_id:     req.body.mesa_id,
+      cliente_id:  req.body.cliente_id,
+      itens:       req.body.itens,
+      observacoes: req.body.observacoes,
+    });
+    res.status(201).json(pedido);
   } catch (e) {
-    console.error('GET /api/pedidos:', e.message);
-    res.status(500).json({ erro: 'Erro interno do servidor' });
+    if (e.statusCode) return res.status(e.statusCode).json({ erro: e.message });
+    next(e);
   }
 });
 
-// GET /api/pedidos/hoje
-router.get('/hoje', authMiddleware, async (req, res) => {
-  const tenantId = req.tenantId;
+// ── PATCH /api/pedidos/:id/status ────────────────────────────────────────────
+/**
+ * @openapi
+ * /api/pedidos/{id}/status:
+ *   patch:
+ *     summary: Actualiza o status de um pedido
+ *     tags: [Pedidos]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [status]
+ *             properties:
+ *               status: { type: string, enum: [ABERTO, EM_PREPARO, PRONTO, FECHADO, CANCELADO] }
+ *     responses:
+ *       200:
+ *         description: Pedido actualizado
+ *       400:
+ *         $ref: '#/components/responses/BadRequest'
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
+ */
+router.patch('/:id/status', authMiddleware, validarUUID('id'), async (req, res, next) => {
   try {
-    const r = await pool.query(`
-      SELECT p.*, m.numero AS mesa_numero,
-             json_agg(json_build_object(
-               'produto_nome', pr.nome, 'quantidade', ip.quantidade,
-               'preco_unitario', ip.preco_unitario, 'status_cozinha', ip.status_cozinha
-             )) FILTER (WHERE ip.id IS NOT NULL) AS itens
-      FROM pedidos p
-      LEFT JOIN mesas m         ON p.mesa_id = m.id
-      LEFT JOIN itens_pedido ip ON p.id = ip.pedido_id
-      LEFT JOIN produtos pr     ON ip.produto_id = pr.id
-      WHERE p.criado_em >= CURRENT_DATE AT TIME ZONE 'Africa/Luanda'
-        AND ($1::uuid IS NULL OR p.tenant_id = $1)
-      GROUP BY p.id, m.numero
-      ORDER BY p.criado_em DESC
-    `, [tenantId || null]);
-    res.json(r.rows);
+    const pedido = await svc.actualizarStatusPedido({
+      tenantId: req.tenantId,
+      pedidoId: req.params.id,
+      status:   req.body.status,
+    });
+    res.json(pedido);
   } catch (e) {
-    console.error('GET /api/pedidos/hoje:', e.message);
-    res.status(500).json({ erro: 'Erro interno do servidor' });
+    if (e.statusCode) return res.status(e.statusCode).json({ erro: e.message });
+    next(e);
   }
 });
 
-// POST /api/pedidos
-router.post('/', authMiddleware, async (req, res) => {
-  const { mesa_id, cliente_id, itens, observacoes } = req.body;
-  if (!itens || !itens.length) return res.status(400).json({ erro: 'Pedido sem itens' });
-  const tenantId = req.tenantId;
-
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-
-    let total = 0;
-    const itensDetalhes = [];
-    for (const item of itens) {
-      const pr = await client.query(
-        `SELECT preco FROM produtos
-         WHERE id = $1 AND disponivel = true AND ativo = true
-           AND ($2::uuid IS NULL OR tenant_id = $2)`,
-        [item.produto_id, tenantId || null]
-      );
-      if (!pr.rows[0]) throw new Error(`Produto ${item.produto_id} não disponível`);
-      const subtotal = pr.rows[0].preco * item.quantidade;
-      total += subtotal;
-      itensDetalhes.push({ ...item, preco_unitario: pr.rows[0].preco });
-    }
-
-    const pedidoR = await client.query(
-      `INSERT INTO pedidos (tenant_id, mesa_id, cliente_id, funcionario_id, total, observacoes)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [tenantId || null, mesa_id || null, cliente_id || null, req.user.id, total, observacoes || null]
-    );
-    const pedido = pedidoR.rows[0];
-
-    for (const item of itensDetalhes) {
-      await client.query(
-        `INSERT INTO itens_pedido (pedido_id, produto_id, quantidade, preco_unitario, observacoes)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [pedido.id, item.produto_id, item.quantidade, item.preco_unitario, item.observacoes || null]
-      );
-    }
-
-    if (mesa_id) {
-      await client.query(
-        `UPDATE mesas SET status = 'OCUPADA', ultima_atividade = NOW() WHERE id = $1`,
-        [mesa_id]
-      );
-    }
-
-    await client.query('COMMIT');
-
-    const pedidoCompleto = await pool.query(`
-      SELECT p.*, m.numero AS mesa_numero,
-             json_agg(json_build_object(
-               'id', ip.id, 'produto_id', ip.produto_id, 'produto_nome', pr.nome,
-               'quantidade', ip.quantidade, 'preco_unitario', ip.preco_unitario,
-               'status_cozinha', ip.status_cozinha
-             )) AS itens
-      FROM pedidos p
-      LEFT JOIN mesas m         ON p.mesa_id = m.id
-      LEFT JOIN itens_pedido ip ON p.id = ip.pedido_id
-      LEFT JOIN produtos pr     ON ip.produto_id = pr.id
-      WHERE p.id = $1
-      GROUP BY p.id, m.numero
-    `, [pedido.id]);
-
-    broadcast('novo_pedido', pedidoCompleto.rows[0], tenantId || null);
-    res.status(201).json(pedidoCompleto.rows[0]);
-  } catch (e) {
-    await client.query('ROLLBACK');
-    res.status(400).json({ erro: e.message });
-  } finally {
-    client.release();
-  }
-});
-
-// PATCH /api/pedidos/:id/status
-router.patch('/:id/status', authMiddleware, validarUUID('id'), async (req, res) => {
-  const STATUSES_VALIDOS = ['ABERTO', 'EM_PREPARO', 'PRONTO', 'FECHADO', 'CANCELADO'];
-  const { status } = req.body;
-  if (!STATUSES_VALIDOS.includes(status)) return res.status(400).json({ erro: 'Status inválido' });
-  const tenantId = req.tenantId;
-  try {
-    const r = await pool.query(
-      `UPDATE pedidos SET status = $1, atualizado_em = NOW()
-       WHERE id = $2 AND ($3::uuid IS NULL OR tenant_id = $3) RETURNING *`,
-      [status, req.params.id, tenantId || null]
-    );
-    if (!r.rows[0]) return res.status(404).json({ erro: 'Pedido não encontrado' });
-
-    if (status === 'FECHADO' && r.rows[0].mesa_id) {
-      const outrosPedidos = await pool.query(
-        `SELECT id FROM pedidos
-         WHERE mesa_id = $1 AND status NOT IN ('FECHADO', 'CANCELADO') AND id != $2`,
-        [r.rows[0].mesa_id, req.params.id]
-      );
-      if (!outrosPedidos.rows.length) {
-        await pool.query(`UPDATE mesas SET status = 'LIVRE' WHERE id = $1`, [r.rows[0].mesa_id]);
-      }
-    }
-
-    broadcast('pedido_atualizado', { id: req.params.id, status }, tenantId);
-    res.json(r.rows[0]);
-  } catch (e) {
-    console.error('PATCH /api/pedidos/:id/status:', e.message);
-    res.status(500).json({ erro: 'Erro interno do servidor' });
-  }
-});
-
-// PATCH /api/pedidos/:pedidoId/itens/:itemId/status
+// ── PATCH /api/pedidos/:pedidoId/itens/:itemId/status ───────────────────────
+/**
+ * @openapi
+ * /api/pedidos/{pedidoId}/itens/{itemId}/status:
+ *   patch:
+ *     summary: Actualiza o status de cozinha de um item do pedido
+ *     tags: [Pedidos]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: pedidoId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - in: path
+ *         name: itemId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               status_cozinha: { type: string, enum: [AGUARDANDO, PREPARANDO, PRONTO, ENTREGUE] }
+ *     responses:
+ *       200:
+ *         description: Item actualizado
+ *       400:
+ *         $ref: '#/components/responses/BadRequest'
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
+ */
 router.patch(
   '/:pedidoId/itens/:itemId/status',
   authMiddleware, validarUUID('pedidoId'), validarUUID('itemId'),
-  async (req, res) => {
-    const { status_cozinha } = req.body;
-    const STATUSES_COZINHA = ['AGUARDANDO', 'PREPARANDO', 'PRONTO', 'ENTREGUE'];
-    if (status_cozinha && !STATUSES_COZINHA.includes(status_cozinha)) {
-      return res.status(400).json({ erro: 'status_cozinha inválido' });
-    }
-    const tenantId = req.tenantId;
+  async (req, res, next) => {
     try {
-      const r = await pool.query(
-        `UPDATE itens_pedido ip SET status_cozinha = $1
-         FROM pedidos p
-         WHERE ip.id = $2 AND ip.pedido_id = $3 AND p.id = ip.pedido_id
-           AND ($4::uuid IS NULL OR p.tenant_id = $4)
-         RETURNING ip.*`,
-        [status_cozinha, req.params.itemId, req.params.pedidoId, tenantId || null]
-      );
-      if (!r.rows[0]) return res.status(404).json({ erro: 'Item não encontrado' });
-      broadcast('item_atualizado', r.rows[0], tenantId);
-      res.json(r.rows[0]);
+      const item = await svc.actualizarStatusItem({
+        tenantId:       req.tenantId,
+        pedidoId:       req.params.pedidoId,
+        itemId:         req.params.itemId,
+        status_cozinha: req.body.status_cozinha,
+      });
+      res.json(item);
     } catch (e) {
-      console.error('PATCH itens status:', e.message);
-      res.status(500).json({ erro: 'Erro interno do servidor' });
+      if (e.statusCode) return res.status(e.statusCode).json({ erro: e.message });
+      next(e);
     }
   }
 );

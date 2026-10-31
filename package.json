@@ -6,23 +6,43 @@
   "scripts": {
     "start": "node server/app.js",
     "dev": "nodemon server/app.js",
-    "test": "jest --forceExit",
+    "test": "jest --selectProjects unit --forceExit",
     "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage --forceExit",
+    "test:coverage": "jest --selectProjects unit --coverage --forceExit",
     "migrate": "node-pg-migrate up --migrations-dir migrations",
     "migrate:down": "node-pg-migrate down --migrations-dir migrations",
-    "migrate:create": "node-pg-migrate create --migrations-dir migrations"
+    "migrate:create": "node-pg-migrate create --migrations-dir migrations",
+    "test:unit": "jest --selectProjects unit --forceExit",
+    "test:integration": "jest --selectProjects integration --runInBand --forceExit",
+    "test:all": "jest --runInBand --forceExit"
   },
   "jest": {
-    "testEnvironment": "node",
-    "setupFilesAfterEnv": [
-      "<rootDir>/tests/setup.js"
-    ],
-    "testMatch": [
-      "**/tests/**/*.test.js"
-    ],
-    "testTimeout": 10000,
-    "verbose": true
+    "testTimeout": 15000,
+    "verbose": true,
+    "projects": [
+      {
+        "displayName": "unit",
+        "testEnvironment": "node",
+        "setupFilesAfterEnv": [
+          "<rootDir>/tests/setup.js"
+        ],
+        "testMatch": [
+          "<rootDir>/tests/*.test.js"
+        ]
+      },
+      {
+        "displayName": "integration",
+        "testEnvironment": "node",
+        "globalSetup": "<rootDir>/tests/integration/globalSetup.js",
+        "globalTeardown": "<rootDir>/tests/integration/globalTeardown.js",
+        "setupFilesAfterEnv": [
+          "<rootDir>/tests/integration/setup.js"
+        ],
+        "testMatch": [
+          "<rootDir>/tests/integration/*.int.test.js"
+        ]
+      }
+    ]
   },
   "dependencies": {
     "@sentry/node": "^11.10.0",
@@ -39,6 +59,8 @@
     "pino-http": "^11.0.0",
     "qrcode": "^1.5.4",
     "socket.io": "^4.6.2",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1",
     "twilio": "^6.2.0",
     "uuid": "^9.0.1"
   },

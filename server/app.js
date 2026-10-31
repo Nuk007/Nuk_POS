@@ -1,17 +1,16 @@
 // Nuk_POS — Servidor Principal (refactored)
 // Stack: Node.js + Express + PostgreSQL + Socket.io
 // SaaS multi-tenant: cada empresa tem tenant_id em todas as operações
-// v2026.10.30.15-monitoring-migrations-tests
+// v2026.10.31.1-services-swagger-ratelimit-integration
 
 require('dotenv').config();
-console.log('[NukPOS] server/app.js v2026.10.30.15-monitoring-migrations-tests a arrancar');
+console.log('[NukPOS] server/app.js v2026.10.31.1-services-swagger-ratelimit-integration a arrancar');
 
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
 const path = require('path');
 
 const { pool, initDB } = require('./db');
@@ -19,6 +18,7 @@ const { router: saasRouter, verificarLicencaTenant, resolverTenant } = require('
 const broadcast = require('./middleware/broadcast');
 const { initWebSocket } = require('./websocket');
 const { logger, initSentry, sentryErrorHandler } = require('./monitoring');
+const { globalLimiter, saasLimiter, apiWriteLimiter } = require('./middleware/rateLimiters');
 
 // ── Protecção global ─────────────────────────────────────────
 process.on('unhandledRejection', (reason) => {
@@ -91,14 +91,9 @@ app.use(cors({
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// Rate limiter global para todas as rotas /api/
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 200,
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-app.use('/api/', limiter);
+// Rate limiters (ver middleware/rateLimiters.js)
+app.use('/api/', globalLimiter);
+app.use('/api/', apiWriteLimiter);
 
 // ── Estático: HTML sem cache ─────────────────────────────────
 app.use((req, res, next) => {
@@ -111,8 +106,26 @@ app.use((req, res, next) => {
 });
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
+// ── Documentação da API (Swagger UI) ─────────────────────────
+// O Swagger UI usa scripts/estilos inline; relaxa-se o CSP apenas nesta rota.
+const swaggerUi   = require('swagger-ui-express');
+const swaggerSpec = require('./swagger');
+app.get('/api/docs.json', (req, res) => res.json(swaggerSpec));
+app.use('/api/docs',
+  helmet.contentSecurityPolicy({
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc:  ["'self'", "'unsafe-inline'"],
+      styleSrc:   ["'self'", "'unsafe-inline'"],
+      imgSrc:     ["'self'", "data:"],
+    },
+  }),
+  swaggerUi.serve,
+  swaggerUi.setup(swaggerSpec, { customSiteTitle: 'Nuk_POS API Docs' })
+);
+
 // ── Rotas SaaS (superadmin + activação de tenants) ───────────
-app.use('/api/saas', saasRouter);
+app.use('/api/saas', saasLimiter, saasRouter);
 
 // ── Rotas autenticadas ───────────────────────────────────────
 // C-01 fix: resolverTenant corre PRIMEIRO para popular req.tenantId a partir do JWT,

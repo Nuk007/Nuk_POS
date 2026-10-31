@@ -265,11 +265,6 @@ async function initDB() {
     await client.query(`CREATE INDEX IF NOT EXISTS idx_quartos_tenant ON quartos(tenant_id)`);
     await client.query(`ALTER TABLE quartos ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE`);
 
-    // Migração: stock_items passa a ser isolado por tenant
-    await client.query(`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE`);
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_stock_tenant ON stock_items(tenant_id)`);
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_stock_tenant_ativo ON stock_items(tenant_id, ativo)`);
-
     // Reservas
     await client.query(`
       CREATE TABLE IF NOT EXISTS reservas (
@@ -334,6 +329,10 @@ async function initDB() {
         atualizado_em TIMESTAMPTZ DEFAULT NOW()
       )
     `);
+    // Migração: stock_items passa a ser isolado por tenant (tem de vir DEPOIS do CREATE TABLE)
+    await client.query(`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_stock_tenant ON stock_items(tenant_id)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_stock_tenant_ativo ON stock_items(tenant_id, ativo)`);
 
     // Movimentos de Nuk-Coin
     await client.query(`

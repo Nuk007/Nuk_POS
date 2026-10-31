@@ -1,89 +1,84 @@
 'use strict';
+/**
+ * /api/auth — route handlers (thin layer).
+ * Lógica de negócio em server/services/auth.service.js
+ */
 const express = require('express');
-const bcrypt = require('bcryptjs');
-const rateLimit = require('express-rate-limit');
 const router = express.Router();
-const { pool } = require('../db');
-const { gerarToken, authMiddleware } = require('../middleware/auth');
+const { authMiddleware } = require('../middleware/auth');
+const { loginLimiter } = require('../middleware/rateLimiters');
+const svc = require('../services/auth.service');
 
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
-  message: { erro: 'Demasiadas tentativas. Aguarde 15 minutos.' },
-});
-
-// POST /api/auth/login
-router.post('/login', loginLimiter, async (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password) {
-    return res.status(400).json({ erro: 'Email e password são obrigatórios' });
-  }
+// ── POST /api/auth/login ──────────────────────────────────────────────────────
+/**
+ * @openapi
+ * /api/auth/login:
+ *   post:
+ *     summary: Autentica um funcionário e devolve um JWT
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email:    { type: string, format: email }
+ *               password: { type: string }
+ *     responses:
+ *       200:
+ *         description: Login bem-sucedido
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 token: { type: string }
+ *                 funcionario: { $ref: '#/components/schemas/Funcionario' }
+ *       400:
+ *         $ref: '#/components/responses/BadRequest'
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         $ref: '#/components/responses/Forbidden'
+ */
+router.post('/login', loginLimiter, async (req, res, next) => {
   try {
-    const r = await pool.query(
-      `SELECT f.*, t.slug as tenant_slug, t.nome as tenant_nome, t.estado as tenant_estado
-       FROM funcionarios f
-       LEFT JOIN tenants t ON f.tenant_id = t.id
-       WHERE LOWER(f.email) = LOWER($1) AND f.ativo = true`,
-      [email.trim()]
-    );
-    if (!r.rows[0]) {
-      return res.status(401).json({ erro: 'Credenciais inválidas' });
-    }
-    const funcionario = r.rows[0];
-
-    // Verificar se o tenant está activo (excepto superadmin que não tem tenant)
-    if (funcionario.tenant_id && funcionario.tenant_estado !== 'ACTIVA') {
-      return res.status(403).json({ erro: 'Conta suspensa. Contacte o administrador.' });
-    }
-
-    const ok = await bcrypt.compare(password, funcionario.password_hash);
-    if (!ok) {
-      return res.status(401).json({ erro: 'Credenciais inválidas' });
-    }
-
-    const payload = {
-      id: funcionario.id,
-      email: funcionario.email,
-      nome: funcionario.nome,
-      nivel_acesso: funcionario.nivel_acesso,
-      tenantId: funcionario.tenant_id,
-      tenantSlug: funcionario.tenant_slug,
-      tenantNome: funcionario.tenant_nome,
-    };
-
-    const token = gerarToken(payload);
-    res.json({
-      token,
-      funcionario: {
-        id: funcionario.id,
-        nome: funcionario.nome,
-        email: funcionario.email,
-        nivel_acesso: funcionario.nivel_acesso,
-        tenant_slug: funcionario.tenant_slug,
-        tenant_nome: funcionario.tenant_nome,
-      },
-    });
+    const result = await svc.login({ email: req.body.email, password: req.body.password });
+    res.json(result);
   } catch (e) {
-    console.error('POST /api/auth/login:', e.message);
-    res.status(500).json({ erro: 'Erro interno do servidor' });
+    if (e.statusCode) return res.status(e.statusCode).json({ erro: e.message });
+    next(e);
   }
 });
 
-// GET /api/auth/me
-router.get('/me', authMiddleware, async (req, res) => {
+// ── GET /api/auth/me ──────────────────────────────────────────────────────────
+/**
+ * @openapi
+ * /api/auth/me:
+ *   get:
+ *     summary: Devolve o perfil do utilizador autenticado
+ *     tags: [Auth]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: Perfil do utilizador
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Funcionario' }
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
+ */
+router.get('/me', authMiddleware, async (req, res, next) => {
   try {
-    const r = await pool.query(
-      `SELECT f.id, f.nome, f.email, f.nivel_acesso, f.tenant_id,
-              t.slug as tenant_slug, t.nome as tenant_nome
-       FROM funcionarios f
-       LEFT JOIN tenants t ON f.tenant_id = t.id
-       WHERE f.id = $1 AND f.ativo = true`,
-      [req.user.id]
-    );
-    if (!r.rows[0]) return res.status(404).json({ erro: 'Funcionário não encontrado' });
-    res.json(r.rows[0]);
+    const perfil = await svc.obterPerfil({ userId: req.user.id });
+    res.json(perfil);
   } catch (e) {
-    res.status(500).json({ erro: 'Erro interno do servidor' });
+    if (e.statusCode) return res.status(e.statusCode).json({ erro: e.message });
+    next(e);
   }
 });
 
