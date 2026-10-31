@@ -200,8 +200,10 @@ app.use((err, req, res, next) => {
   res.status(500).json({ erro: 'Erro interno do servidor' });
 });
 
-// ── Arranque (só quando este ficheiro é executado directamente) ──
-if (require.main === module) {
+// ── Arranque (directo, ou via scripts/start.js que aplica migrações antes) ──
+const executadoDirectamente = require.main === module;
+const executadoPeloStart    = require.main && /scripts[\\/]start\.js$/.test(require.main.filename || '');
+if (executadoDirectamente || executadoPeloStart) {
   const PORT = process.env.PORT || 3000;
 
   server.listen(PORT, () => {

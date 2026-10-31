@@ -13,4 +13,4 @@ COPY . .
 EXPOSE 10000
 
 # Arranque
-CMD ["node", "server/app.js"]
+CMD ["node", "scripts/start.js"]

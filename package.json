@@ -4,7 +4,7 @@
   "description": "Nuk_POS — Sistema de Gestão Integrado",
   "main": "server/app.js",
   "scripts": {
-    "start": "node server/app.js",
+    "start": "node scripts/start.js",
     "dev": "nodemon server/app.js",
     "test": "jest --selectProjects unit --forceExit",
     "test:watch": "jest --watch",
@@ -14,7 +14,8 @@
     "migrate:create": "node-pg-migrate create --migrations-dir migrations",
     "test:unit": "jest --selectProjects unit --forceExit",
     "test:integration": "jest --selectProjects integration --runInBand --forceExit",
-    "test:all": "jest --runInBand --forceExit"
+    "test:all": "jest --runInBand --forceExit",
+    "start:nomigrate": "node server/app.js"
   },
   "jest": {
     "testTimeout": 15000,
