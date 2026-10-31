@@ -46,7 +46,7 @@ document.getElementById('form-login').addEventListener('submit', async (e) => {
   try {
     const res = await api('POST', '/auth/login', { email, password });
     NUK.token = res.token;
-    NUK.utilizador = res.utilizador;
+    NUK.utilizador = res.funcionario; // contrato da API: { token, funcionario }
     localStorage.setItem('nukpos_token', res.token);
     localStorage.setItem('nukpos_user', JSON.stringify(res.utilizador));
     iniciarApp();
@@ -271,8 +271,8 @@ document.addEventListener('click', e => {
   else if (action === 'logout') logout();
   // Modal fechar (click no fundo ou no botão X) — só fechar se não for o modal-box em si
   else if (action === 'fechar-modal') {
-    if (e.target === el) fecharModal(); // fundo: só se clicar directamente no overlay
-    else fecharModal();
+    // fecha só se o clique for no próprio fundo ou no botão X (não em conteúdo do modal)
+    if (e.target === el || el.tagName === 'BUTTON') fecharModal();
   }
   // Módulos de navegação (nav-items)
   else if (action === 'carregar-modulo') carregarModulo(el.dataset.modulo);
@@ -284,6 +284,56 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.addEventListener('click', () => carregarModulo(btn.dataset.modulo));
   });
   // modal-box stopPropagation (foi removido o onclick inline)
-  const modalBox = document.getElementById('modal-box');
-  if (modalBox) modalBox.addEventListener('click', e => e.stopPropagation());
+});
+
+
+// ── Delegação genérica para o HTML gerado dinamicamente (modulos.js) ──────────
+// Substitui onclick/onchange/oninput inline (bloqueados pela CSP). Sem eval: só chama funções
+// globais já existentes, com argumentos literais (texto, número, true/false/null) ou this.value.
+function _parseArgs(txt, el) {
+  const args = []; let i = 0;
+  const skip = () => { while (i < txt.length && /\s/.test(txt[i])) i++; };
+  while (true) {
+    skip(); if (i >= txt.length) break;
+    const c = txt[i];
+    if (c === "'" || c === '"') {
+      let v = ''; i++;
+      while (i < txt.length && txt[i] !== c) { if (txt[i] === '\\') i++; v += txt[i++]; }
+      i++; args.push(v);
+    } else {
+      let j = i; while (j < txt.length && txt[j] !== ',') j++;
+      const t = txt.slice(i, j).trim(); i = j;
+      if (t === 'this.value') args.push(el.value);
+      else if (t === 'true') args.push(true); else if (t === 'false') args.push(false);
+      else if (t === 'null') args.push(null); else if (t === 'undefined' || t === '') args.push(undefined);
+      else if (!isNaN(Number(t))) args.push(Number(t));
+      else throw new Error('argumento não suportado: ' + t);
+    }
+    skip(); if (txt[i] === ',') i++;
+  }
+  return args;
+}
+function _executarHandler(codigo, el) {
+  // separa instruções por ';' fora de aspas
+  const partes = []; let q = null, atual = '';
+  for (let k = 0; k < codigo.length; k++) {
+    const ch = codigo[k];
+    if (q) { atual += ch; if (ch === '\\') atual += codigo[++k]; else if (ch === q) q = null; }
+    else if (ch === "'" || ch === '"') { q = ch; atual += ch; }
+    else if (ch === ';') { partes.push(atual); atual = ''; } else atual += ch;
+  }
+  partes.push(atual);
+  for (const instr of partes.map(x => x.trim()).filter(Boolean)) {
+    const m = instr.match(/^([A-Za-z_$][\w$]*)\(([\s\S]*)\)$/);
+    if (!m || typeof window[m[1]] !== 'function') throw new Error('handler inválido: ' + instr);
+    window[m[1]](..._parseArgs(m[2], el));
+  }
+}
+['click', 'change', 'input'].forEach(tipo => {
+  document.addEventListener(tipo, e => {
+    const el = e.target.closest('[data-on-' + tipo + ']');
+    if (!el) return;
+    try { _executarHandler(el.getAttribute('data-on-' + tipo), el); }
+    catch (err) { console.error('[ui]', err.message); }
+  });
 });

@@ -40,14 +40,14 @@ async function modulo_dashboard(el) {
         <div class="kpi-card" style="border-color:var(--c-warning)">
           <div class="kpi-label">Alertas Stock <span class="kpi-icon">⚠️</span></div>
           <div class="kpi-valor texto-aviso">${d.alertas_stock}</div>
-          <div class="kpi-sub"><button class="btn-primario" style="padding:.3rem .75rem;font-size:.78rem" onclick="carregarModulo('stock')">Ver stock</button></div>
+          <div class="kpi-sub"><button class="btn-primario" style="padding:.3rem .75rem;font-size:.78rem" data-on-click="carregarModulo('stock')">Ver stock</button></div>
         </div>` : ''}
       </div>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
         <div class="card">
           <div class="card-header"><span class="card-titulo">Pedidos em Aberto</span>
-            <button class="btn-primario" style="padding:.3rem .75rem;font-size:.78rem" onclick="carregarModulo('pedidos')">Ver todos</button></div>
+            <button class="btn-primario" style="padding:.3rem .75rem;font-size:.78rem" data-on-click="carregarModulo('pedidos')">Ver todos</button></div>
           ${d.pedidos_abertos.length === 0 ? '<p class="muted" style="padding:.5rem 0">Sem pedidos activos</p>' :
             d.pedidos_abertos.slice(0, 5).map(p => `
             <div style="display:flex;align-items:center;justify-content:space-between;padding:.4rem 0;border-bottom:1px solid var(--c-border)">
@@ -86,7 +86,7 @@ async function modulo_pedidos(el) {
     el.innerHTML = `
       <div class="toolbar">
         <span class="secao-titulo">🍽️ Pedidos</span>
-        <button class="btn-primario" onclick="modalNovoPedido()">+ Novo Pedido</button>
+        <button class="btn-primario" data-on-click="modalNovoPedido()">+ Novo Pedido</button>
       </div>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
@@ -114,12 +114,12 @@ async function modulo_pedidos(el) {
 function renderPedidoCard(p) {
   const itensTexto = (p.itens || []).slice(0, 3).map(i => `${i.quantidade}x ${i.produto_nome}`).join(', ');
   const acoes = p.status === 'ABERTO' ? `
-    <button class="btn-secundario" style="padding:.35rem .7rem;font-size:.8rem" onclick="mudarStatusPedido('${p.id}','EM_PREPARO')">Em Preparo</button>
-    <button class="btn-perigo" style="padding:.35rem .7rem;font-size:.8rem" onclick="mudarStatusPedido('${p.id}','CANCELADO')">Cancelar</button>` :
+    <button class="btn-secundario" style="padding:.35rem .7rem;font-size:.8rem" data-on-click="mudarStatusPedido('${p.id}','EM_PREPARO')">Em Preparo</button>
+    <button class="btn-perigo" style="padding:.35rem .7rem;font-size:.8rem" data-on-click="mudarStatusPedido('${p.id}','CANCELADO')">Cancelar</button>` :
   p.status === 'EM_PREPARO' ? `
-    <button class="btn-sucesso" style="padding:.35rem .7rem;font-size:.8rem" onclick="mudarStatusPedido('${p.id}','PRONTO')">Pronto</button>` :
+    <button class="btn-sucesso" style="padding:.35rem .7rem;font-size:.8rem" data-on-click="mudarStatusPedido('${p.id}','PRONTO')">Pronto</button>` :
   p.status === 'PRONTO' ? `
-    <button class="btn-primario" style="padding:.35rem .7rem;font-size:.8rem" onclick="mudarStatusPedido('${p.id}','FECHADO')">Fechar</button>` : '';
+    <button class="btn-primario" style="padding:.35rem .7rem;font-size:.8rem" data-on-click="mudarStatusPedido('${p.id}','FECHADO')">Fechar</button>` : '';
 
   return `
     <div class="pedido-card ${p.status}">
@@ -162,7 +162,7 @@ async function modalNovoPedido() {
     </div>
     <div class="campo">
       <label>Filtrar por categoria</label>
-      <select id="np-categoria" onchange="filtrarProdutosModal(this.value)">
+      <select id="np-categoria" data-on-change="filtrarProdutosModal(this.value)">
         <option value="">Todas</option>
         ${categorias.map(c => `<option value="${c}">${c}</option>`).join('')}
       </select>
@@ -181,7 +181,7 @@ async function modalNovoPedido() {
       <label>Observações</label>
       <textarea id="np-obs" rows="2" placeholder="Notas especiais..."></textarea>
     </div>
-    <button class="btn-primario btn-bloco" onclick="confirmarNovoPedido()">Confirmar Pedido</button>
+    <button class="btn-primario btn-bloco" data-on-click="confirmarNovoPedido()">Confirmar Pedido</button>
   `);
 
   window._produtosModal = produtos || [];
@@ -200,7 +200,7 @@ function renderProdutosModal(prods, cat) {
   return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;max-height:250px;overflow-y:auto">
     ${lista.map(p => `
       <div style="background:var(--c-bg);border:1px solid var(--c-border);border-radius:6px;padding:.6rem;cursor:pointer"
-           onclick="adicionarAoCarrinho('${p.id}','${p.nome.replace(/'/g,"\\'")}',${p.preco})">
+           data-on-click="adicionarAoCarrinho('${p.id}','${p.nome.replace(/'/g,"\\'")}',${p.preco})">
         <div style="font-size:.88rem;font-weight:600">${p.nome}</div>
         <div class="produto-preco">${formatarMoeda(p.preco)}</div>
       </div>`).join('')}
@@ -231,11 +231,11 @@ function renderCarrinho() {
     const sub = item.preco * item.quantidade;
     total += sub;
     return `<div style="display:flex;align-items:center;gap:.4rem;margin:.2rem 0;font-size:.85rem">
-      <button onclick="window._carrinhoItens.splice(${i},1);renderCarrinho()" style="background:none;border:none;color:var(--c-danger);cursor:pointer;font-size:.9rem">✕</button>
+      <button data-on-click="carrinhoRemover(${i})" style="background:none;border:none;color:var(--c-danger);cursor:pointer;font-size:.9rem">✕</button>
       <span style="flex:1">${item.nome}</span>
-      <button onclick="window._carrinhoItens[${i}].quantidade=Math.max(1,window._carrinhoItens[${i}].quantidade-1);renderCarrinho()" style="background:var(--c-surface2);border:none;color:var(--c-text);cursor:pointer;border-radius:4px;padding:0 6px">−</button>
+      <button data-on-click="carrinhoMenos(${i})" style="background:var(--c-surface2);border:none;color:var(--c-text);cursor:pointer;border-radius:4px;padding:0 6px">−</button>
       <span style="min-width:20px;text-align:center">${item.quantidade}</span>
-      <button onclick="window._carrinhoItens[${i}].quantidade++;renderCarrinho()" style="background:var(--c-surface2);border:none;color:var(--c-text);cursor:pointer;border-radius:4px;padding:0 6px">+</button>
+      <button data-on-click="carrinhoMais(${i})" style="background:var(--c-surface2);border:none;color:var(--c-text);cursor:pointer;border-radius:4px;padding:0 6px">+</button>
       <span class="texto-primario" style="min-width:80px;text-align:right">${formatarMoeda(sub)}</span>
     </div>`;
   }).join('');
@@ -280,7 +280,7 @@ async function modulo_mesas(el) {
             <div class="secao-titulo" style="font-size:.8rem;color:var(--c-muted);margin-bottom:.5rem">${zona.toUpperCase()} (${mesasZona.length})</div>
             <div class="grid-cards">
               ${mesasZona.map(m => `
-                <div class="mesa-card ${m.status}" onclick="modalMesa('${m.id}','${m.numero}','${m.status}')">
+                <div class="mesa-card ${m.status}" data-on-click="modalMesa('${m.id}','${m.numero}','${m.status}')">
                   <div class="card-numero">${m.numero}</div>
                   <div class="card-zona">${m.capacidade} lugares</div>
                   <div class="status-badge status-${m.status}" style="font-size:.7rem;margin-top:.3rem">${m.status}</div>
@@ -306,11 +306,11 @@ function modalMesa(id, numero, statusActual) {
       </select>
     </div>
     <div style="display:flex;gap:.5rem;margin-top:.5rem">
-      <button class="btn-primario" style="flex:1" onclick="salvarStatusMesa('${id}')">Actualizar</button>
-      <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
+      <button class="btn-primario" style="flex:1" data-on-click="salvarStatusMesa('${id}')">Actualizar</button>
+      <button class="btn-secundario" data-on-click="fecharModal()">Cancelar</button>
     </div>
     <hr style="border-color:var(--c-border);margin:1rem 0">
-    <button class="btn-primario btn-bloco" onclick="fecharModal();window._mesaPreSelecionada='${id}';modalNovoPedido()">
+    <button class="btn-primario btn-bloco" data-on-click="novoPedidoNaMesa('${id}')">
       + Novo Pedido nesta mesa
     </button>
   `);
@@ -337,7 +337,7 @@ async function modulo_quartos(el) {
     el.innerHTML = `
       <div class="toolbar">
         <span class="secao-titulo">🛏️ Quartos</span>
-        <button class="btn-primario" onclick="modalNovaReserva()">+ Nova Reserva</button>
+        <button class="btn-primario" data-on-click="modalNovaReserva()">+ Nova Reserva</button>
       </div>
       ${tipos.map(tipo => {
         const qs = quartos.filter(q => q.tipo === tipo);
@@ -346,7 +346,7 @@ async function modulo_quartos(el) {
             <div class="secao-titulo" style="font-size:.8rem;color:var(--c-muted);margin-bottom:.5rem">${tipo.replace(/_/g,' ')} (${qs.length})</div>
             <div class="grid-cards">
               ${qs.map(q => `
-                <div class="quarto-card ${q.status}" onclick="modalQuarto('${q.id}','${q.numero}','${q.tipo}','${q.status}')">
+                <div class="quarto-card ${q.status}" data-on-click="modalQuarto('${q.id}','${q.numero}','${q.tipo}','${q.status}')">
                   <div class="card-numero">${q.numero}</div>
                   <div class="card-tipo">${q.tipo.replace(/_/g,' ')}</div>
                   <div class="status-badge status-${q.status}" style="font-size:.7rem;margin-top:.3rem">${q.status}</div>
@@ -372,11 +372,11 @@ function modalQuarto(id, numero, tipo, status) {
       </select>
     </div>
     <div style="display:flex;gap:.5rem;margin-top:.5rem">
-      <button class="btn-primario" style="flex:1" onclick="salvarStatusQuarto('${id}')">Actualizar</button>
-      <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
+      <button class="btn-primario" style="flex:1" data-on-click="salvarStatusQuarto('${id}')">Actualizar</button>
+      <button class="btn-secundario" data-on-click="fecharModal()">Cancelar</button>
     </div>
     <hr style="border-color:var(--c-border);margin:1rem 0">
-    <button class="btn-primario btn-bloco" onclick="fecharModal();window._quartoPreSelecionado='${id}';modalNovaReserva()">
+    <button class="btn-primario btn-bloco" data-on-click="novaReservaNoQuarto('${id}')">
       + Reservar este quarto
     </button>
   `);
@@ -401,7 +401,7 @@ async function modalNovaReserva() {
   abrirModal('Nova Reserva de Quarto', `
     <div class="campo">
       <label>Quarto</label>
-      <select id="res-quarto" onchange="actualizarPrecosReserva(this.value)">
+      <select id="res-quarto" data-on-change="actualizarPrecosReserva(this.value)">
         <option value="">— Seleccionar —</option>
         ${disponiveis.map(q => `<option value="${q.id}" data-p2h="${q.preco_2h}" data-pp="${q.preco_pernoite}" data-pd="${q.preco_diaria}">${q.numero} — ${q.tipo.replace(/_/g,' ')}</option>`).join('')}
       </select>
@@ -409,7 +409,7 @@ async function modalNovaReserva() {
     <div id="precos-quarto" class="mb-2"></div>
     <div class="campo">
       <label>Fracção</label>
-      <select id="res-fracao" onchange="actualizarPrecosReserva()">
+      <select id="res-fracao" data-on-change="actualizarPrecosReserva()">
         <option value="DUAS_HORAS">2 Horas</option>
         <option value="PERNOITE">Pernoite</option>
         <option value="DIARIA">Diária</option>
@@ -434,7 +434,7 @@ async function modalNovaReserva() {
       <textarea id="res-obs" rows="2"></textarea>
     </div>
     <div id="valor-reserva" style="text-align:right;font-weight:700;color:var(--c-primary);margin-bottom:1rem"></div>
-    <button class="btn-primario btn-bloco" onclick="confirmarReserva()">Confirmar Reserva</button>
+    <button class="btn-primario btn-bloco" data-on-click="confirmarReserva()">Confirmar Reserva</button>
   `);
 
   // Pré-preencher datas
@@ -496,8 +496,8 @@ async function modulo_produtos(el) {
     el.innerHTML = `
       <div class="toolbar">
         <span class="secao-titulo">📋 Produtos / Menu</span>
-        ${isAdmin ? '<button class="btn-primario" onclick="modalNovoProduto()">+ Novo Produto</button>' : ''}
-        <input type="text" class="input-pesquisa" placeholder="Pesquisar..." oninput="filtrarProdutosTabela(this.value)" id="pesq-produtos">
+        ${isAdmin ? '<button class="btn-primario" data-on-click="modalNovoProduto()">+ Novo Produto</button>' : ''}
+        <input type="text" class="input-pesquisa" placeholder="Pesquisar..." data-on-input="filtrarProdutosTabela(this.value)" id="pesq-produtos">
       </div>
       ${categorias.map(cat => {
         const prods = produtos.filter(p => p.categoria === cat);
@@ -514,8 +514,8 @@ async function modulo_produtos(el) {
                       <td class="produto-preco">${formatarMoeda(p.preco)}</td>
                       <td>${p.disponivel ? '<span class="status-badge status-LIVRE">Disponível</span>' : '<span class="status-badge status-FECHADO">Indisponível</span>'}</td>
                       ${isAdmin ? `<td><div class="row-acoes">
-                        <button class="btn-secundario" style="padding:.3rem .6rem;font-size:.78rem" onclick="modalEditarProduto('${p.id}','${p.nome.replace(/'/g,"\\'")}',${p.preco},'${p.categoria}',${p.disponivel})">Editar</button>
-                        <button class="btn-${p.disponivel ? 'perigo' : 'sucesso'}" style="padding:.3rem .6rem;font-size:.78rem" onclick="toggleDisponibilidade('${p.id}',${p.disponivel})">${p.disponivel ? 'Ocultar' : 'Mostrar'}</button>
+                        <button class="btn-secundario" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="modalEditarProduto('${p.id}','${p.nome.replace(/'/g,"\\'")}',${p.preco},'${p.categoria}',${p.disponivel})">Editar</button>
+                        <button class="btn-${p.disponivel ? 'perigo' : 'sucesso'}" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="toggleDisponibilidade('${p.id}',${p.disponivel})">${p.disponivel ? 'Ocultar' : 'Mostrar'}</button>
                       </div></td>` : ''}
                     </tr>`).join('')}
                 </tbody>
@@ -547,7 +547,7 @@ function modalNovoProduto() {
     </div>
     <div class="campo"><label>Preço (Kz)</label><input type="number" id="np-preco" placeholder="0" min="0"></div>
     <div class="campo"><label>Descrição</label><textarea id="np-desc" rows="2" placeholder="Opcional"></textarea></div>
-    <button class="btn-primario btn-bloco" onclick="guardarNovoProduto()">Guardar</button>
+    <button class="btn-primario btn-bloco" data-on-click="guardarNovoProduto()">Guardar</button>
   `);
 }
 
@@ -577,7 +577,7 @@ function modalEditarProduto(id, nome, preco, categoria, disponivel) {
     <div class="campo"><label>Disponível</label>
       <select id="ep-disp"><option value="true" ${disponivel ? 'selected' : ''}>Sim</option><option value="false" ${!disponivel ? 'selected' : ''}>Não</option></select>
     </div>
-    <button class="btn-primario btn-bloco" onclick="salvarEdicaoProduto('${id}')">Guardar</button>
+    <button class="btn-primario btn-bloco" data-on-click="salvarEdicaoProduto('${id}')">Guardar</button>
   `);
 }
 
@@ -620,7 +620,7 @@ async function modulo_stock(el) {
     el.innerHTML = `
       <div class="toolbar">
         <span class="secao-titulo">📦 Stock</span>
-        ${isAdmin ? '<button class="btn-primario" onclick="modalNovoStockItem()">+ Novo Item</button>' : ''}
+        ${isAdmin ? '<button class="btn-primario" data-on-click="modalNovoStockItem()">+ Novo Item</button>' : ''}
         ${alertas.length > 0 ? `<span class="status-badge status-LIMPEZA">⚠️ ${alertas.length} alertas de stock baixo</span>` : ''}
       </div>
       <div class="card tabela-wrapper">
@@ -636,8 +636,8 @@ async function modulo_stock(el) {
                 <td>${i.unidade}</td>
                 <td>${i.alerta_stock ? '<span class="status-badge status-LIMPEZA">⚠️ Baixo</span>' : '<span class="status-badge status-LIVRE">OK</span>'}</td>
                 <td><div class="row-acoes">
-                  <button class="btn-sucesso" style="padding:.3rem .6rem;font-size:.78rem" onclick="modalMovimentoStock('${i.id}','${i.nome.replace(/'/g,"\\'")}','${i.unidade}','COMPRA')">+ Entrada</button>
-                  <button class="btn-perigo" style="padding:.3rem .6rem;font-size:.78rem" onclick="modalMovimentoStock('${i.id}','${i.nome.replace(/'/g,"\\'")}','${i.unidade}','AJUSTE')">Ajuste</button>
+                  <button class="btn-sucesso" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="modalMovimentoStock('${i.id}','${i.nome.replace(/'/g,"\\'")}','${i.unidade}','COMPRA')">+ Entrada</button>
+                  <button class="btn-perigo" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="modalMovimentoStock('${i.id}','${i.nome.replace(/'/g,"\\'")}','${i.unidade}','AJUSTE')">Ajuste</button>
                 </div></td>
               </tr>`).join('')}
           </tbody>
@@ -665,7 +665,7 @@ function modalNovoStockItem() {
       <select id="si-un"><option>un</option><option>kg</option><option>g</option><option>L</option><option>ml</option></select>
     </div>
     <div class="campo"><label>Fornecedor</label><input type="text" id="si-forn" placeholder="Opcional"></div>
-    <button class="btn-primario btn-bloco" onclick="guardarNovoStockItem()">Guardar</button>
+    <button class="btn-primario btn-bloco" data-on-click="guardarNovoStockItem()">Guardar</button>
   `);
 }
 
@@ -697,7 +697,7 @@ function modalMovimentoStock(id, nome, unidade, tipo) {
     </div>
     <div class="campo"><label>Quantidade (${unidade})</label><input type="number" id="mv-qty" value="1" min="0.001" step="0.001"></div>
     <div class="campo"><label>Motivo / Notas</label><textarea id="mv-motivo" rows="2"></textarea></div>
-    <button class="btn-primario btn-bloco" onclick="confirmarMovimento('${id}')">Registar Movimento</button>
+    <button class="btn-primario btn-bloco" data-on-click="confirmarMovimento('${id}')">Registar Movimento</button>
   `);
 }
 
@@ -766,7 +766,7 @@ async function modulo_financeiro(el) {
       <div class="card">
         <div class="card-header">
           <span class="card-titulo">Últimas Facturas</span>
-          <button class="btn-primario" style="padding:.3rem .75rem;font-size:.78rem" onclick="modalNovaFatura()">+ Emitir Factura</button>
+          <button class="btn-primario" style="padding:.3rem .75rem;font-size:.78rem" data-on-click="modalNovaFatura()">+ Emitir Factura</button>
         </div>
         <div class="tabela-wrapper">
           <table>
@@ -797,7 +797,7 @@ function modalNovaFatura() {
     <div class="campo"><label>NIF do Cliente</label><input type="text" id="fat-nif" placeholder="Opcional"></div>
     <div class="campo"><label>Valor Total (Kz)</label><input type="number" id="fat-total" placeholder="0" min="0"></div>
     <p class="muted texto-pequeno mb-2">IVA de 14% calculado automaticamente</p>
-    <button class="btn-primario btn-bloco" onclick="emitirFatura()">Emitir</button>
+    <button class="btn-primario btn-bloco" data-on-click="emitirFatura()">Emitir</button>
   `);
 }
 
@@ -826,8 +826,8 @@ async function modulo_clientes(el) {
     el.innerHTML = `
       <div class="toolbar">
         <span class="secao-titulo">👥 Clientes</span>
-        <button class="btn-primario" onclick="modalNovoCliente()">+ Novo Cliente</button>
-        <input type="text" class="input-pesquisa" placeholder="Pesquisar..." oninput="pesquisarClientes(this.value)">
+        <button class="btn-primario" data-on-click="modalNovoCliente()">+ Novo Cliente</button>
+        <input type="text" class="input-pesquisa" placeholder="Pesquisar..." data-on-input="pesquisarClientes(this.value)">
       </div>
       <div class="card tabela-wrapper">
         <table id="tab-clientes">
@@ -876,7 +876,7 @@ function modalNovoCliente() {
     <div class="campo"><label>Telefone</label><input type="tel" id="nc-tel" placeholder="+244 9xx xxx xxx"></div>
     <div class="campo"><label>Email</label><input type="email" id="nc-email" placeholder="email@exemplo.com"></div>
     <div class="campo"><label>NIF</label><input type="text" id="nc-nif" placeholder="Opcional"></div>
-    <button class="btn-primario btn-bloco" onclick="guardarNovoCliente()">Guardar</button>
+    <button class="btn-primario btn-bloco" data-on-click="guardarNovoCliente()">Guardar</button>
   `);
 }
 
@@ -908,7 +908,7 @@ async function modulo_funcionarios(el) {
     el.innerHTML = `
       <div class="toolbar">
         <span class="secao-titulo">👨‍💼 Funcionários</span>
-        <button class="btn-primario" onclick="modalNovoFuncionario()">+ Novo Funcionário</button>
+        <button class="btn-primario" data-on-click="modalNovoFuncionario()">+ Novo Funcionário</button>
       </div>
       <div class="card tabela-wrapper">
         <table>
@@ -923,8 +923,8 @@ async function modulo_funcionarios(el) {
                 <td>${f.ativo ? '<span class="status-badge status-LIVRE">Activo</span>' : '<span class="status-badge status-FECHADO">Inactivo</span>'}</td>
                 <td class="muted">${f.ultimo_acesso ? formatarData(f.ultimo_acesso) : 'Nunca'}</td>
                 <td><div class="row-acoes">
-                  <button class="btn-secundario" style="padding:.3rem .6rem;font-size:.78rem" onclick="modalEditarFuncionario('${f.id}','${f.nome.replace(/'/g,"\\'")}','${f.cargo||''}','${f.nivel_acesso}',${f.salario||0},${f.ativo})">Editar</button>
-                  <button class="btn-${f.ativo ? 'perigo' : 'sucesso'}" style="padding:.3rem .6rem;font-size:.78rem" onclick="toggleActivarFunc('${f.id}',${f.ativo})">${f.ativo ? 'Desactivar' : 'Activar'}</button>
+                  <button class="btn-secundario" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="modalEditarFuncionario('${f.id}','${f.nome.replace(/'/g,"\\'")}','${f.cargo||''}','${f.nivel_acesso}',${f.salario||0},${f.ativo})">Editar</button>
+                  <button class="btn-${f.ativo ? 'perigo' : 'sucesso'}" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="toggleActivarFunc('${f.id}',${f.ativo})">${f.ativo ? 'Desactivar' : 'Activar'}</button>
                 </div></td>
               </tr>`).join('')}
           </tbody>
@@ -950,7 +950,7 @@ function modalNovoFuncionario() {
       </select>
     </div>
     <div class="campo"><label>Salário (Kz)</label><input type="number" id="nf-sal" value="200000" min="0"></div>
-    <button class="btn-primario btn-bloco" onclick="guardarNovoFuncionario()">Guardar</button>
+    <button class="btn-primario btn-bloco" data-on-click="guardarNovoFuncionario()">Guardar</button>
   `);
 }
 
@@ -981,7 +981,7 @@ function modalEditarFuncionario(id, nome, cargo, nivel, salario, ativo) {
     </div>
     <div class="campo"><label>Salário (Kz)</label><input type="number" id="ef-sal" value="${salario}" min="0"></div>
     <div class="campo"><label>Nova Senha (deixar vazio para não alterar)</label><input type="password" id="ef-senha" placeholder="Mínimo 8 caracteres"></div>
-    <button class="btn-primario btn-bloco" onclick="salvarEdicaoFuncionario('${id}')">Guardar</button>
+    <button class="btn-primario btn-bloco" data-on-click="salvarEdicaoFuncionario('${id}')">Guardar</button>
   `);
 }
 
@@ -1035,7 +1035,7 @@ async function modulo_configuracoes(el) {
         <div class="campo"><label>Fuso Horário</label>
           <input type="text" id="cfg-tz" value="${cfg.timezone || 'Africa/Luanda'}" readonly>
         </div>
-        <button class="btn-primario" onclick="guardarConfiguracoes()">Guardar Configurações</button>
+        <button class="btn-primario" data-on-click="guardarConfiguracoes()">Guardar Configurações</button>
       </div>
 
       <div class="card mt-2" style="max-width:500px">
@@ -1064,3 +1064,11 @@ async function guardarConfiguracoes() {
     toast('Configurações guardadas!', 'sucesso');
   } catch (e) { toast(e.message, 'erro'); }
 }
+
+
+// ── Acções do carrinho / atalhos (chamadas via data-on-click; a CSP não permite JS inline) ──
+function carrinhoMenos(i) { const it = window._carrinhoItens[i]; if (it) { it.quantidade = Math.max(1, it.quantidade - 1); renderCarrinho(); } }
+function carrinhoMais(i) { const it = window._carrinhoItens[i]; if (it) { it.quantidade++; renderCarrinho(); } }
+function carrinhoRemover(i) { window._carrinhoItens.splice(i, 1); renderCarrinho(); }
+function novoPedidoNaMesa(id) { fecharModal(); window._mesaPreSelecionada = id; modalNovoPedido(); }
+function novaReservaNoQuarto(id) { fecharModal(); window._quartoPreSelecionado = id; modalNovaReserva(); }
