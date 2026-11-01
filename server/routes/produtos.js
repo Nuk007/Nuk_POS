@@ -84,7 +84,7 @@ router.put('/:id', authMiddleware, requerNivel(['ADMIN', 'GERENTE']), async (req
  *     tags: [Produtos]
  *     security: [{ bearerAuth: [] }]
  *     parameters: [{ in: path, name: id, required: true, schema: { type: string, format: uuid } }]
- *     responses: { 200: { description: Lista de { stock_item_id, nome, unidade, quantidade } }, 404: { description: Produto não encontrado } }
+ *     responses: { 200: { description: "Lista de ingredientes (stock_item_id, nome, unidade, quantidade)" }, 404: { description: Produto não encontrado } }
  *   put:
  *     summary: Define a receita do produto (lista vazia = não abate stock). ADMIN/GERENTE
  *     tags: [Produtos]
