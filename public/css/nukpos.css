@@ -33,6 +33,17 @@ body {
   line-height: 1.5;
 }
 
+/* ── SPLASH (arranque do sistema) ─────────────────────────────
+   Ecrã inicial com o emblema completo (primeira imagem), sobre o mesmo fundo do login. Some sozinho
+   ao fim de pouco tempo (ver nukpos.js) — só decorativo, nunca bloqueia a app a sério. */
+.tela-splash {
+  position: fixed; inset: 0; z-index: 9999;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+  transition: opacity .5s ease, visibility .5s ease;
+}
+.tela-splash.a-esconder { opacity: 0; visibility: hidden; pointer-events: none; }
+
 /* ── LOGIN ─────────────────────────────────────────────────── */
 .tela-login {
   min-height: 100vh;

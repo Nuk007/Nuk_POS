@@ -76,11 +76,13 @@ body {
 }
 .ll-brand {
   position: relative; z-index: 1;
+  padding-top: 116px; /* espaço para a marca do canto superior esquerdo (.ll-logo), agora fora do fluxo */
 }
 .ll-logo {
-  display: flex;
-  align-items: center;
-  margin-bottom: 40px;
+  /* Canto superior esquerdo do painel (segunda imagem) — não é o formulário principal do
+     sistema (esse é o login do POS em index.html), por isso sai da hero central e fixa-se
+     ao canto, deixando o headline ocupar o espaço que a marca grande tinha antes. */
+  position: absolute; top: 40px; left: 44px;
 }
 .ll-logo-mark {
   width: 42px; height: 42px;
@@ -636,7 +638,7 @@ tbody tr:hover td { background: #F8FAFC; }
   <div class="login-left">
     <div class="ll-brand">
       <div class="ll-logo">
-        <span class="marca marca--xl"><img src="/img/logo-nukpos.png" alt="Nuk_POS Sistema Integrado" width="597" height="405"></span>
+        <span class="marca marca--xs"><img src="/img/logo-nukpos-texto.png" alt="Nuk_POS Sistema Integrado" width="597" height="200"></span>
       </div>
       <div class="ll-headline">Gestão completa<br>do seu negócio.</div>
       <div class="ll-sub">Plataforma SaaS multi-tenant para restauração, hospedagem e eventos. Controlo total, em tempo real.</div>
@@ -675,7 +677,7 @@ tbody tr:hover td { background: #F8FAFC; }
   <aside class="sidebar">
     <div class="sb-header">
       <div class="sb-logo">
-        <span class="marca marca--sm"><img src="/img/logo-nukpos.png" alt="Nuk_POS Sistema Integrado" width="597" height="405"></span>
+        <span class="marca marca--sm"><img src="/img/logo-nukpos-texto.png" alt="Nuk_POS Sistema Integrado" width="597" height="200"></span>
       </div>
       <div class="sb-badge">SUPERADMIN</div>
     </div>

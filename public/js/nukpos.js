@@ -301,6 +301,13 @@ function badgeStatus(status) {
   return `<span class="status-badge status-${status}">${status.replace(/_/g,' ')}</span>`;
 }
 
+// ── Splash de arranque ───────────────────────────────────────
+// Puramente decorativo: nunca atrasa nem bloqueia o login/app por baixo, só desaparece sozinho.
+window.addEventListener('DOMContentLoaded', () => {
+  const splash = document.getElementById('tela-splash');
+  if (splash) setTimeout(() => splash.classList.add('a-esconder'), 900);
+});
+
 // ── Inicialização ─────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
   if (NUK.token && NUK.utilizador) {
