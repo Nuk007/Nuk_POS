@@ -68,9 +68,12 @@ async function doLogin() {
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('app').style.display = 'block';
     loadDashboard();
-  } catch {
+  } catch (e) {
+    // Mostra o erro real devolvido pelo servidor (ex.: "Chave inválida", "Autenticação
+    // obrigatória", "Serviço indisponível") em vez de uma mensagem genérica — sem isto,
+    // não há forma de distinguir uma chave errada de uma falha de rede ou do servidor.
     API_KEY = '';
-    errEl.textContent = 'Chave inválida ou serviço indisponível.';
+    errEl.textContent = e.message || 'Chave inválida ou serviço indisponível.';
     errEl.hidden = false;
   } finally {
     btn.textContent = 'Entrar no painel'; btn.disabled = false;

@@ -1,10 +1,11 @@
 /* Marca Nuk_POS — a escrita sobre um retângulo sólido que "tapa" a luz por detrás
    (painel opaco; a luz só se vê a tentar sair pelas margens do retângulo — sem
-   animação, estado único e estático). Duas imagens oficiais:
-   - /img/logo-nukpos.png        — emblema completo (crachá + "Nuk_POS SISTEMA INTEGRADO"):
-                                    arranque do sistema (splash) e formulário principal (login).
-   - /img/logo-nukpos-texto.png  — só o descritivo (recorte do emblema): todos os outros
-                                    formulários, sempre no canto superior esquerdo (ver .marca-canto). */
+   animação, estado único e estático). Uma única imagem oficial em todo o lado:
+   /img/logo-nukpos-texto.png — só a escrita "Nuk_POS SISTEMA INTEGRADO", sem nenhum
+   emblema/crachá por cima (pedido do utilizador em 01/11/2026). Usada no arranque
+   (splash), no formulário principal (login), na sidebar e, nos restantes formulários
+   (activação, portal do cliente, superadmin), sempre no canto superior esquerdo —
+   ver .marca-canto. */
 .marca {
   position: relative;
   display: inline-flex;
