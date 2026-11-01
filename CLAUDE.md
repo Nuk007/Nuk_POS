@@ -92,4 +92,5 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 
 ## Quartos (configuração)
 - `server/services/quartos.service.js` + `POST /api/quartos`, `PUT/DELETE /api/quartos/:id` (só ADMIN, por estabelecimento; número único por tenant → 409). Não se apaga quarto ocupado ou com histórico de reservas (409) — marcar BLOQUEADO. UI: cartão «Quartos e preços» em Configurações (`modulo_configuracoes`); o módulo Quartos é só operacional (estado, reservas).
+- Ementa (criar/editar produtos, preços, ocultar, receitas de stock) também só em Configurações → Ementa (API de escrita só ADMIN); o módulo Produtos é consulta.
 - **Regra do dono: toda a configuração vive no painel de Configurações**, nunca nos módulos operacionais (evita acidentes). Novas configurações vão para lá.

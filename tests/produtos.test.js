@@ -82,15 +82,14 @@ describe('POST /api/produtos', () => {
     expect(res.body).toHaveProperty('id');
   });
 
-  it('cria produto como GERENTE', async () => {
-    mockPool.query.mockResolvedValueOnce({ rows: [produtoRow()] });
+  it('recusa criar produto a GERENTE (configuração só do ADMIN)', async () => {
 
     const res = await request(app)
       .post('/api/produtos')
       .set('Authorization', `Bearer ${gerenteToken}`)
       .send(payload);
 
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(403);
   });
 
   it('retorna 403 para OPERADOR', async () => {

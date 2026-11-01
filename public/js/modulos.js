@@ -334,6 +334,7 @@ async function salvarStatusMesa(id) {
 async function modulo_quartos(el) {
   try {
     const quartos = await api('GET', '/quartos') || [];
+    const produtos = await api('GET', '/produtos') || [];
     const tipos = [...new Set(quartos.map(q => q.tipo))].sort();
 
     el.innerHTML = `
@@ -546,43 +547,47 @@ async function confirmarReserva() {
 // ════════════════════════════════════════════════════════════
 // PRODUTOS
 // ════════════════════════════════════════════════════════════
+// Tabela de produtos agrupada por categoria. `gerir` = botões de configuração (só no painel de Configurações).
+function htmlEmentaProdutos(produtos, gerir) {
+  const categorias = [...new Set(produtos.map(p => p.categoria))].sort();
+  if (!categorias.length) return '<div class="muted" style="padding:1rem">Ainda não há produtos.' + (gerir ? '' : ' O Administrador cria-os em ⚙️ Configurações → Ementa.') + '</div>';
+  return categorias.map(cat => {
+    const prods = produtos.filter(p => p.categoria === cat);
+    return `
+      <div class="mb-2">
+        <div class="secao-titulo" style="font-size:.8rem;margin-bottom:.5rem">${cat} (${prods.length})</div>
+        <div class="card tabela-wrapper">
+          <table>
+            <thead><tr><th>Nome</th><th>Preço</th><th>Estado</th>${gerir ? '<th>Acções</th>' : ''}</tr></thead>
+            <tbody>
+              ${prods.map(p => `
+                <tr>
+                  <td>${p.nome}${p.descricao ? `<div class="muted texto-pequeno">${p.descricao}</div>` : ''}</td>
+                  <td class="produto-preco">${formatarMoeda(p.preco)}</td>
+                  <td>${p.disponivel ? '<span class="status-badge status-LIVRE">Disponível</span>' : '<span class="status-badge status-FECHADO">Indisponível</span>'}</td>
+                  ${gerir ? `<td><div class="row-acoes">
+                    <button class="btn-secundario" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="modalEditarProduto('${p.id}','${p.nome.replace(/'/g,"\\'")}',${p.preco},'${p.categoria}',${p.disponivel})">Editar</button>
+                    <button class="btn-secundario" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="modalIngredientes('${p.id}')">Stock</button>
+                    <button class="btn-${p.disponivel ? 'perigo' : 'sucesso'}" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="toggleDisponibilidade('${p.id}',${p.disponivel})">${p.disponivel ? 'Ocultar' : 'Mostrar'}</button>
+                  </div></td>` : ''}
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// Consulta da ementa (todos os perfis): só leitura e pesquisa. A gestão vive em Configurações → Ementa.
 async function modulo_produtos(el) {
   try {
     const produtos = await api('GET', '/produtos') || [];
-    const categorias = [...new Set(produtos.map(p => p.categoria))].sort();
-    const isAdmin = ['ADMIN','GERENTE'].includes(NUK.utilizador.nivel_acesso);
-
     el.innerHTML = `
       <div class="toolbar">
         <span class="secao-titulo">📋 Produtos / Menu</span>
-        ${isAdmin ? '<button class="btn-primario" data-on-click="modalNovoProduto()">+ Novo Produto</button>' : ''}
         <input type="text" class="input-pesquisa" placeholder="Pesquisar..." data-on-input="filtrarProdutosTabela(this.value)" id="pesq-produtos">
       </div>
-      ${categorias.map(cat => {
-        const prods = produtos.filter(p => p.categoria === cat);
-        return `
-          <div class="mb-2">
-            <div class="secao-titulo" style="font-size:.8rem;margin-bottom:.5rem">${cat} (${prods.length})</div>
-            <div class="card tabela-wrapper">
-              <table id="tab-${cat}">
-                <thead><tr><th>Nome</th><th>Preço</th><th>Estado</th>${isAdmin ? '<th>Acções</th>' : ''}</tr></thead>
-                <tbody>
-                  ${prods.map(p => `
-                    <tr>
-                      <td>${p.nome}${p.descricao ? `<div class="muted texto-pequeno">${p.descricao}</div>` : ''}</td>
-                      <td class="produto-preco">${formatarMoeda(p.preco)}</td>
-                      <td>${p.disponivel ? '<span class="status-badge status-LIVRE">Disponível</span>' : '<span class="status-badge status-FECHADO">Indisponível</span>'}</td>
-                      ${isAdmin ? `<td><div class="row-acoes">
-                        <button class="btn-secundario" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="modalEditarProduto('${p.id}','${p.nome.replace(/'/g,"\\'")}',${p.preco},'${p.categoria}',${p.disponivel})">Editar</button>
-                        <button class="btn-secundario" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="modalIngredientes('${p.id}')">Stock</button>
-                        <button class="btn-${p.disponivel ? 'perigo' : 'sucesso'}" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="toggleDisponibilidade('${p.id}',${p.disponivel})">${p.disponivel ? 'Ocultar' : 'Mostrar'}</button>
-                      </div></td>` : ''}
-                    </tr>`).join('')}
-                </tbody>
-              </table>
-            </div>
-          </div>`;
-      }).join('')}
+      ${htmlEmentaProdutos(produtos, false)}
     `;
     window._todosProdutos = produtos;
   } catch (e) {
@@ -664,7 +669,7 @@ async function guardarNovoProduto() {
     await api('POST', '/produtos', { nome, categoria, preco: parseFloat(preco), descricao });
     toast('Produto criado!', 'sucesso');
     fecharModal();
-    carregarModulo('produtos');
+    carregarModulo('configuracoes');
   } catch (e) { toast(e.message, 'erro'); }
 }
 
@@ -693,7 +698,7 @@ async function salvarEdicaoProduto(id) {
     await api('PUT', `/produtos/${id}`, { nome, categoria, preco, disponivel });
     toast('Produto actualizado!', 'sucesso');
     fecharModal();
-    carregarModulo('produtos');
+    carregarModulo('configuracoes');
   } catch (e) { toast(e.message, 'erro'); }
 }
 
@@ -701,7 +706,7 @@ async function toggleDisponibilidade(id, atual) {
   try {
     await api('PUT', `/produtos/${id}`, { disponivel: !atual });
     toast(`Produto ${!atual ? 'disponível' : 'oculto'}`, 'sucesso');
-    carregarModulo('produtos');
+    carregarModulo('configuracoes');
   } catch (e) { toast(e.message, 'erro'); }
 }
 
@@ -1249,6 +1254,15 @@ async function modulo_configuracoes(el) {
               <div class="muted" style="font-size:.8rem">${formatarMoeda(q.preco_2h)}/2h · ${formatarMoeda(q.preco_pernoite)} pernoite · ${formatarMoeda(q.preco_diaria)} diária</div></div>
             <button class="btn-secundario" data-on-click="modalFormQuarto('${q.id}')">Editar</button>
           </div>`).join('') : '<div class="muted">Ainda não há quartos. Crie o primeiro.</div>'}
+      </div>
+
+      <div class="card mt-2">
+        <div class="toolbar" style="margin-bottom:.5rem">
+          <div class="card-titulo">EMENTA (PRODUTOS, PREÇOS E RECEITAS)</div>
+          <button class="btn-primario" data-on-click="modalNovoProduto()">+ Novo Produto</button>
+          <input type="text" class="input-pesquisa" placeholder="Pesquisar produto..." data-on-input="filtrarProdutosTabela(this.value)">
+        </div>
+        ${htmlEmentaProdutos(produtos, true)}
       </div>
 
       <div class="card mt-2" style="max-width:500px">

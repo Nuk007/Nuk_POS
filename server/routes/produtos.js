@@ -20,7 +20,7 @@ router.get('/', authMiddleware, async (req, res) => {
 });
 
 // POST /api/produtos
-router.post('/', authMiddleware, requerNivel(['ADMIN', 'GERENTE']), async (req, res) => {
+router.post('/', authMiddleware, requerNivel(['ADMIN']), async (req, res) => {
   const { nome, descricao, preco, categoria, disponivel } = req.body;
   if (!nome || preco === undefined) {
     return res.status(400).json({ erro: 'nome e preco são obrigatórios' });
@@ -45,7 +45,7 @@ router.post('/', authMiddleware, requerNivel(['ADMIN', 'GERENTE']), async (req, 
 });
 
 // PUT /api/produtos/:id
-router.put('/:id', authMiddleware, requerNivel(['ADMIN', 'GERENTE']), async (req, res) => {
+router.put('/:id', authMiddleware, requerNivel(['ADMIN']), async (req, res) => {
   const { id } = req.params;
   if (!isUUID(id)) return res.status(400).json({ erro: 'id inválido' });
   const { nome, descricao, preco, categoria, disponivel, ativo } = req.body;
@@ -86,7 +86,7 @@ router.put('/:id', authMiddleware, requerNivel(['ADMIN', 'GERENTE']), async (req
  *     parameters: [{ in: path, name: id, required: true, schema: { type: string, format: uuid } }]
  *     responses: { 200: { description: "Lista de ingredientes (stock_item_id, nome, unidade, quantidade)" }, 404: { description: Produto não encontrado } }
  *   put:
- *     summary: Define a receita do produto (lista vazia = não abate stock). ADMIN/GERENTE
+ *     summary: Define a receita do produto (lista vazia = não abate stock). ADMIN
  *     tags: [Produtos]
  *     security: [{ bearerAuth: [] }]
  *     requestBody: { content: { application/json: { schema: { type: object, required: [ingredientes], properties: { ingredientes: { type: array, items: { type: object, properties: { stock_item_id: { type: string, format: uuid }, quantidade: { type: number } } } } } } } } }
@@ -100,7 +100,7 @@ router.get('/:id/ingredientes', authMiddleware, (req, res, next) => {
   if (!isUUID(req.params.id)) return res.status(400).json({ erro: 'id inválido' });
   comErros(r => stockSvc.obterIngredientes({ tenantId: r.tenantId, produtoId: r.params.id }))(req, res, next);
 });
-router.put('/:id/ingredientes', authMiddleware, requerNivel(['ADMIN', 'GERENTE']), (req, res, next) => {
+router.put('/:id/ingredientes', authMiddleware, requerNivel(['ADMIN']), (req, res, next) => {
   if (!isUUID(req.params.id)) return res.status(400).json({ erro: 'id inválido' });
   comErros(r => stockSvc.definirIngredientes({ tenantId: r.tenantId, produtoId: r.params.id, ingredientes: r.body.ingredientes }))(req, res, next);
 });
