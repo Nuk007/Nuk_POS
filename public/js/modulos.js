@@ -339,8 +339,12 @@ async function modulo_quartos(el) {
     el.innerHTML = `
       <div class="toolbar">
         <span class="secao-titulo">🛏️ Quartos</span>
-        <button class="btn-primario" data-on-click="modalNovaReserva()">+ Nova Reserva</button>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+          <button class="btn-secundario" data-on-click="modalFormQuarto('')">+ Novo Quarto</button>
+          <button class="btn-primario" data-on-click="modalNovaReserva()">+ Nova Reserva</button>
+        </div>
       </div>
+      ${quartos.length ? '' : '<div class="muted" style="padding:2rem;text-align:center">Ainda não há quartos. Clique em <b>+ Novo Quarto</b> para configurar o primeiro.</div>'}
       ${tipos.map(tipo => {
         const qs = quartos.filter(q => q.tipo === tipo);
         return `
@@ -381,7 +385,64 @@ function modalQuarto(id, numero, tipo, status) {
     <button class="btn-primario btn-bloco" data-on-click="novaReservaNoQuarto('${id}')">
       + Reservar este quarto
     </button>
+    <button class="btn-secundario btn-bloco" style="margin-top:.5rem" data-on-click="modalFormQuarto('${id}')">
+      ✏️ Editar quarto e preços
+    </button>
   `);
+}
+
+const TIPOS_QUARTO = ['STANDARD','SUPERIOR','SUITE','SUITE_PRESIDENCIAL','VIP_EXECUTIVO'];
+
+async function modalFormQuarto(id) {
+  let q = { numero: '', tipo: 'STANDARD', andar: 0, preco_2h: '', preco_pernoite: '', preco_diaria: '', descricao: '' };
+  if (id) {
+    const lista = await api('GET', '/quartos') || [];
+    q = lista.find(x => x.id === id) || q;
+  }
+  const esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  abrirModal(id ? `Editar quarto ${esc(q.numero)}` : 'Novo quarto', `
+    <div class="campo"><label>Número / nome *</label><input type="text" id="qf-numero" maxlength="10" value="${esc(q.numero)}" placeholder="Ex.: 101"></div>
+    <div class="campo"><label>Tipo *</label>
+      <select id="qf-tipo">${TIPOS_QUARTO.map(t => `<option value="${t}" ${t === q.tipo ? 'selected' : ''}>${t.replace(/_/g, ' ')}</option>`).join('')}</select>
+    </div>
+    <div class="campo"><label>Andar</label><input type="number" id="qf-andar" value="${esc(q.andar)}"></div>
+    <div class="campo"><label>Preço 2 horas (Kz) *</label><input type="number" min="0" step="any" id="qf-p2h" value="${esc(q.preco_2h)}"></div>
+    <div class="campo"><label>Preço pernoite (Kz) *</label><input type="number" min="0" step="any" id="qf-ppern" value="${esc(q.preco_pernoite)}"></div>
+    <div class="campo"><label>Preço diária (Kz) *</label><input type="number" min="0" step="any" id="qf-pdia" value="${esc(q.preco_diaria)}"></div>
+    <div class="campo"><label>Descrição</label><input type="text" id="qf-desc" maxlength="500" value="${esc(q.descricao)}"></div>
+    <div style="display:flex;gap:.5rem;margin-top:.5rem">
+      <button class="btn-primario" style="flex:1" data-on-click="guardarQuarto('${id}')">Guardar</button>
+      <button class="btn-secundario" data-on-click="fecharModal()">Cancelar</button>
+    </div>
+    ${id ? `<button class="btn-secundario btn-bloco" style="margin-top:.75rem;color:var(--c-erro,#e55)" data-on-click="apagarQuarto('${id}')">🗑 Apagar quarto</button>` : ''}
+  `);
+}
+
+async function guardarQuarto(id) {
+  const v = i => document.getElementById(i).value;
+  const dados = {
+    numero: v('qf-numero').trim(), tipo: v('qf-tipo'), andar: v('qf-andar') === '' ? 0 : Number(v('qf-andar')),
+    preco_2h: v('qf-p2h'), preco_pernoite: v('qf-ppern'), preco_diaria: v('qf-pdia'), descricao: v('qf-desc'),
+  };
+  try {
+    await api(id ? 'PUT' : 'POST', id ? `/quartos/${id}` : '/quartos', dados);
+    toast(id ? 'Quarto actualizado' : 'Quarto criado', 'sucesso');
+    fecharModal();
+    carregarModulo('quartos');
+  } catch (e) {
+    toast(e.message || 'Erro ao guardar quarto', 'erro');
+  }
+}
+
+async function apagarQuarto(id) {
+  try {
+    await api('DELETE', `/quartos/${id}`);
+    toast('Quarto apagado', 'sucesso');
+    fecharModal();
+    carregarModulo('quartos');
+  } catch (e) {
+    toast(e.message || 'Erro ao apagar quarto', 'erro');
+  }
 }
 
 async function salvarStatusQuarto(id) {

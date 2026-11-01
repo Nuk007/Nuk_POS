@@ -4,6 +4,7 @@ const router = express.Router();
 const { pool } = require('../db');
 const { authMiddleware, requerNivel, validarUUID } = require('../middleware/auth');
 const { broadcast } = require('../middleware/broadcast');
+const svc = require('../services/quartos.service');
 
 // GET /api/quartos
 router.get('/', authMiddleware, async (req, res) => {
@@ -90,6 +91,40 @@ router.patch('/:id/status', authMiddleware, validarUUID('id'), requerNivel(['ADM
   } catch (e) {
     res.status(500).json({ erro: 'Erro interno do servidor' });
   }
+});
+
+/**
+ * @openapi
+ * /api/quartos:
+ *   post:
+ *     tags: [Quartos]
+ *     summary: Criar quarto (ADMIN/GERENTE)
+ *     requestBody: { content: { application/json: { schema: { type: object, required: [numero, tipo, preco_2h, preco_pernoite, preco_diaria], properties: { numero: { type: string }, tipo: { type: string, enum: [STANDARD, SUPERIOR, SUITE, SUITE_PRESIDENCIAL, VIP_EXECUTIVO] }, andar: { type: integer }, preco_2h: { type: number }, preco_pernoite: { type: number }, preco_diaria: { type: number }, descricao: { type: string } } } } } }
+ *     responses: { 201: { description: Quarto criado }, 400: { description: Dados inválidos }, 409: { description: Número já existe } }
+ * /api/quartos/{id}:
+ *   put:
+ *     tags: [Quartos]
+ *     summary: Editar quarto e preços (ADMIN/GERENTE)
+ *     responses: { 200: { description: Quarto actualizado }, 404: { description: Não encontrado }, 409: { description: Número já existe } }
+ *   delete:
+ *     tags: [Quartos]
+ *     summary: Apagar quarto sem histórico de reservas (ADMIN/GERENTE)
+ *     responses: { 204: { description: Apagado }, 409: { description: Ocupado ou com reservas } }
+ */
+const gestor = [authMiddleware, requerNivel(['ADMIN', 'GERENTE'])];
+const falha = (res, next) => e => e.statusCode ? res.status(e.statusCode).json({ erro: e.message }) : next(e);
+
+router.post('/', ...gestor, async (req, res, next) => {
+  try { res.status(201).json(await svc.criarQuarto({ tenantId: req.tenantId, dados: req.body || {} })); }
+  catch (e) { falha(res, next)(e); }
+});
+router.put('/:id', ...gestor, validarUUID('id'), async (req, res, next) => {
+  try { res.json(await svc.actualizarQuarto({ tenantId: req.tenantId, id: req.params.id, dados: req.body || {} })); }
+  catch (e) { falha(res, next)(e); }
+});
+router.delete('/:id', ...gestor, validarUUID('id'), async (req, res, next) => {
+  try { await svc.removerQuarto({ tenantId: req.tenantId, id: req.params.id }); res.status(204).end(); }
+  catch (e) { falha(res, next)(e); }
 });
 
 module.exports = router;

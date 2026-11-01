@@ -89,3 +89,6 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 - Rate limiters em memória → Redis se houver multi-instância.
 - Certificação AGT (assinatura/hash, SAF-T, série certificada) antes de produção definitiva — processo a cargo do dono; os PDFs actuais não têm validade fiscal.
 - Frontend (public/, ~4.800 linhas vanilla JS) sem testes.
+
+## Quartos (configuração)
+- `server/services/quartos.service.js` + `POST /api/quartos`, `PUT/DELETE /api/quartos/:id` (ADMIN/GERENTE, por estabelecimento; número único por tenant → 409). Não se apaga quarto ocupado ou com histórico de reservas (409) — marcar BLOQUEADO. UI: "+ Novo Quarto" e "Editar quarto e preços" em `modulos.js`.
