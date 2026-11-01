@@ -64,7 +64,7 @@ async function doLogin() {
   errEl.hidden = true;
   try {
     API_KEY = key;
-    await api('/api/superadmin/dashboard');
+    await api('/api/saas/dashboard');
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('app').style.display = 'block';
     loadDashboard();
@@ -100,7 +100,7 @@ function navigate(page) {
 // ── DASHBOARD ────────────────────────────────────────
 async function loadDashboard() {
   try {
-    const d = await api('/api/superadmin/dashboard');
+    const d = await api('/api/saas/dashboard');
     document.getElementById('s-total').textContent     = d.resumo.total;
     document.getElementById('s-activas').textContent   = d.resumo.activas;
     document.getElementById('s-pendentes').textContent = d.resumo.pendentes;
@@ -144,7 +144,7 @@ async function loadTenants() {
   if (tSearch) p.set('q', tSearch);
   if (tEstado) p.set('estado', tEstado);
   try {
-    const d = await api(`/api/superadmin/tenants?${p}`);
+    const d = await api(`/api/saas/tenants?${p}`);
     if (!d.tenants.length) {
       tbody.innerHTML = '<tr><td colspan="6"><div class="empty"><div class="empty-icon">🏢</div><p>Nenhum tenant encontrado</p></div></td></tr>';
     } else {
@@ -193,7 +193,7 @@ async function verTenant(id) {
   document.getElementById('modal-tenant-title').textContent = '…';
   document.getElementById('modal-tenant').hidden = false;
   try {
-    const t = await api(`/api/superadmin/tenants/${id}`);
+    const t = await api(`/api/saas/tenants/${id}`);
     const licKey = (t.licencas && t.licencas[0] && t.licencas[0].license_key) ? t.licencas[0].license_key : null;
     document.getElementById('modal-tenant-title').textContent = t.nome;
     const dias = daysLeft(t.licenca_fim);
@@ -224,7 +224,7 @@ async function alterarEstado(id, s, nome) {
   const label = s==='SUSPENSA' ? 'Suspender' : 'Reactivar';
   miniConfirm(`${label} "${nome}"?`, async () => {
     try {
-      await api(`/api/superadmin/tenants/${id}/estado`, { method: 'PATCH', body: { estado: s } });
+      await api(`/api/saas/tenants/${id}/estado`, { method: 'PATCH', body: { estado: s } });
       toast(`${nome} — ${s==='SUSPENSA'?'suspenso':'reactivado'}`);
       closeModal('modal-tenant'); loadTenants();
     } catch (e) { toast(e.message, 'err'); }
@@ -235,7 +235,7 @@ async function renovarLicenca(id, nome) {
   miniPrompt(`Renovar licença de "${nome}" — dias a adicionar:`, '30', async (val) => {
     if (!val || isNaN(+val)) return;
     try {
-      const r = await api(`/api/superadmin/tenants/${id}/renovar`, { method: 'POST', body: { duracao_dias: +val } });
+      const r = await api(`/api/saas/tenants/${id}/renovar`, { method: 'POST', body: { duracao_dias: +val } });
       toast(`Licença renovada até ${fmt(r.novo_fim)}`);
       closeModal('modal-tenant'); loadTenants(); loadDashboard();
     } catch (e) { toast(e.message, 'err'); }
@@ -290,7 +290,7 @@ function miniPrompt(msg, defaultVal, onOk) {
 async function reenviarWA(key, nome) {
   miniConfirm(`Reenviar link de activação para "${nome}" via WhatsApp?`, async () => {
     try {
-      await api(`/api/superadmin/licencas/${key}/reenviar`, { method: 'POST' });
+      await api(`/api/saas/licencas/${key}/reenviar`, { method: 'POST' });
       toast('Link de activação reenviado via WhatsApp');
     } catch (e) { toast(e.message, 'err'); }
   });
@@ -314,7 +314,7 @@ async function criarTenant() {
   const btn = document.getElementById('btn-criar-tenant');
   btn.disabled = true; btn.textContent = 'A criar…';
   try {
-    const r = await api('/api/superadmin/tenants', {
+    const r = await api('/api/saas/tenants', {
       method: 'POST',
       body: { nome, telefone_whatsapp: tel, nif, email, plano_nome: plano, duracao_dias: dias, notas },
     });
@@ -341,7 +341,7 @@ async function loadExpiracoes() {
   const c = document.getElementById('exp-content');
   c.innerHTML = '<div style="text-align:center;padding:36px"><span class="spinner"></span></div>';
   try {
-    const d = await api('/api/superadmin/dashboard');
+    const d = await api('/api/saas/dashboard');
     if (!d.expiram_em_7_dias.length) {
       c.innerHTML = '<div class="empty"><div class="empty-icon">✅</div><p>Nenhuma licença a expirar nos próximos 7 dias</p></div>';
     } else {
@@ -369,7 +369,7 @@ async function loadExpiracoes() {
 
 async function reenviarWAById(id, nome) {
   try {
-    const t = await api(`/api/superadmin/tenants/${id}`);
+    const t = await api(`/api/saas/tenants/${id}`);
     const licKey = (t.licencas && t.licencas[0] && t.licencas[0].license_key) ? t.licencas[0].license_key : null;
     if (!licKey) { toast('Sem chave de licença', 'err'); return; }
     await reenviarWA(licKey, nome);

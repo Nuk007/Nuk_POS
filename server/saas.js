@@ -99,7 +99,7 @@ async function enviarWhatsAppActivacao(telefone, nomeEmpresa, licenseKey, baseUr
 
 // ──────────────────────────────────────────────────────────────
 // SUPERADMIN — DASHBOARD / MÉTRICAS GLOBAIS
-// GET /api/superadmin/dashboard
+// GET /api/saas/dashboard
 // ──────────────────────────────────────────────────────────────
 router.get('/dashboard', superAdminAuth, async (req, res) => {
   try {
@@ -147,7 +147,7 @@ router.get('/dashboard', superAdminAuth, async (req, res) => {
 
 // ──────────────────────────────────────────────────────────────
 // SUPERADMIN — LISTAR PLANOS
-// GET /api/superadmin/planos
+// GET /api/saas/planos
 // ──────────────────────────────────────────────────────────────
 router.get('/planos', superAdminAuth, async (req, res) => {
   try {
@@ -160,7 +160,7 @@ router.get('/planos', superAdminAuth, async (req, res) => {
 
 // ──────────────────────────────────────────────────────────────
 // SUPERADMIN — ACTUALIZAR PLANO
-// PUT /api/superadmin/planos/:id
+// PUT /api/saas/planos/:id
 // ──────────────────────────────────────────────────────────────
 router.put('/planos/:id', superAdminAuth, async (req, res) => {
   const { nome, descricao, max_funcionarios, max_produtos, max_mesas, preco_mensal, preco_anual, ativo } = req.body;
@@ -179,7 +179,7 @@ router.put('/planos/:id', superAdminAuth, async (req, res) => {
 
 // ──────────────────────────────────────────────────────────────
 // SUPERADMIN — LISTAR TENANTS
-// GET /api/superadmin/tenants?estado=ACTIVA&q=hotel
+// GET /api/saas/tenants?estado=ACTIVA&q=hotel
 // ──────────────────────────────────────────────────────────────
 router.get('/tenants', superAdminAuth, async (req, res) => {
   const { estado, q, page = 1 } = req.query;
@@ -224,7 +224,7 @@ router.get('/tenants', superAdminAuth, async (req, res) => {
 
 // ──────────────────────────────────────────────────────────────
 // SUPERADMIN — CRIAR TENANT + GERAR LICENÇA + ENVIAR WHATSAPP
-// POST /api/superadmin/tenants
+// POST /api/saas/tenants
 // Body: { nome, telefone_whatsapp, email, nif, plano_nome, duracao_dias, notas }
 // ──────────────────────────────────────────────────────────────
 router.post('/tenants', superAdminAuth, async (req, res) => {
@@ -307,7 +307,7 @@ router.post('/tenants', superAdminAuth, async (req, res) => {
 
 // ──────────────────────────────────────────────────────────────
 // SUPERADMIN — DETALHES DE UM TENANT
-// GET /api/superadmin/tenants/:id
+// GET /api/saas/tenants/:id
 // ──────────────────────────────────────────────────────────────
 router.get('/tenants/:id', superAdminAuth, async (req, res) => {
   try {
@@ -342,7 +342,7 @@ router.get('/tenants/:id', superAdminAuth, async (req, res) => {
 
 // ──────────────────────────────────────────────────────────────
 // SUPERADMIN — MUDAR ESTADO DE TENANT
-// PATCH /api/superadmin/tenants/:id/estado
+// PATCH /api/saas/tenants/:id/estado
 // Body: { estado: 'ACTIVA' | 'SUSPENSA' | 'CANCELADA' }
 // ──────────────────────────────────────────────────────────────
 router.patch('/tenants/:id/estado', superAdminAuth, async (req, res) => {
@@ -363,7 +363,7 @@ router.patch('/tenants/:id/estado', superAdminAuth, async (req, res) => {
 
 // ──────────────────────────────────────────────────────────────
 // SUPERADMIN — REENVIAR LINK DE ACTIVAÇÃO VIA WHATSAPP
-// POST /api/superadmin/licencas/:key/reenviar
+// POST /api/saas/licencas/:key/reenviar
 // ──────────────────────────────────────────────────────────────
 router.post('/licencas/:key/reenviar', superAdminAuth, async (req, res) => {
   try {
@@ -393,7 +393,7 @@ router.post('/licencas/:key/reenviar', superAdminAuth, async (req, res) => {
 
 // ──────────────────────────────────────────────────────────────
 // SUPERADMIN — GERAR NOVA LICENÇA PARA TENANT EXISTENTE (renovação)
-// POST /api/superadmin/tenants/:id/renovar
+// POST /api/saas/tenants/:id/renovar
 // Body: { duracao_dias, plano_nome }
 // ──────────────────────────────────────────────────────────────
 router.post('/tenants/:id/renovar', superAdminAuth, async (req, res) => {
@@ -434,7 +434,7 @@ router.post('/tenants/:id/renovar', superAdminAuth, async (req, res) => {
 
 // ──────────────────────────────────────────────────────────────
 // PÚBLICO — VERIFICAR LICENÇA (pré-activação)
-// GET /api/activate/:key
+// GET /api/saas/activate/:key
 // ──────────────────────────────────────────────────────────────
 router.get('/activate/:key', async (req, res) => {
   try {
@@ -483,7 +483,7 @@ router.get('/activate/:key', async (req, res) => {
 
 // ──────────────────────────────────────────────────────────────
 // PÚBLICO — CONFIRMAR ACTIVAÇÃO DA LICENÇA
-// POST /api/activate/:key/confirmar
+// POST /api/saas/activate/:key/confirmar
 // Body: { nome_admin, telefone_admin, email_admin, password }
 // ──────────────────────────────────────────────────────────────
 router.post('/activate/:key/confirmar', async (req, res) => {

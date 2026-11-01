@@ -10,6 +10,7 @@
  */
 process.env.NODE_ENV  = 'test';
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-jwt-integration-nukpos';
+process.env.SUPERADMIN_KEY = process.env.SUPERADMIN_KEY || 'test-superadmin-key-integration-nukpos';
 // DATABASE_URL foi definida pelo globalSetup (ou por TEST_DATABASE_URL)
 if (process.env.TEST_DATABASE_URL) process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
 
