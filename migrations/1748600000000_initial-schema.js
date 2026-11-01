@@ -29,12 +29,12 @@ exports.up = (pgm) => {
     nif:              { type: 'varchar(30)' },
     telefone_whatsapp:{ type: 'varchar(30)', notNull: true },
     email:            { type: 'varchar(200)' },
-    pais:             { type: 'varchar(60)', default: "'Angola'" },
-    moeda:            { type: 'varchar(10)', default: "'Kz'" },
-    timezone:         { type: 'varchar(60)', default: "'Africa/Luanda'" },
+    pais:             { type: 'varchar(60)', default: pgm.func("'Angola'") },
+    moeda:            { type: 'varchar(10)', default: pgm.func("'Kz'") },
+    timezone:         { type: 'varchar(60)', default: pgm.func("'Africa/Luanda'") },
     plano_id:         { type: 'uuid', references: 'planos_assinatura' },
     estado:           {
-      type: 'varchar(20)', default: "'PENDENTE'",
+      type: 'varchar(20)', default: pgm.func("'PENDENTE'"),
       check: "estado IN ('PENDENTE','ACTIVA','SUSPENSA','EXPIRADA','CANCELADA')",
     },
     slug:             { type: 'varchar(60)', unique: true },
@@ -53,13 +53,13 @@ exports.up = (pgm) => {
     inicio:           { type: 'timestamptz' },
     fim:              { type: 'timestamptz' },
     estado:           {
-      type: 'varchar(20)', default: "'PENDENTE'",
+      type: 'varchar(20)', default: pgm.func("'PENDENTE'"),
       check: "estado IN ('PENDENTE','ACTIVA','EXPIRADA','REVOGADA')",
     },
     whatsapp_enviado_em: { type: 'timestamptz' },
     activado_em:      { type: 'timestamptz' },
     activado_por_ip:  { type: 'varchar(50)' },
-    gerado_por:       { type: 'varchar(200)', default: "'superadmin'" },
+    gerado_por:       { type: 'varchar(200)', default: pgm.func("'superadmin'") },
     notas:            { type: 'text' },
     criado_em:        { type: 'timestamptz', default: pgm.func('NOW()') },
   }, { ifNotExists: true });
@@ -74,7 +74,7 @@ exports.up = (pgm) => {
     telefone:     { type: 'varchar(30)' },
     password_hash:{ type: 'varchar(255)' },
     estado:       {
-      type: 'varchar(20)', default: "'PENDENTE'",
+      type: 'varchar(20)', default: pgm.func("'PENDENTE'"),
       check: "estado IN ('PENDENTE','ACTIVO','BLOQUEADO')",
     },
     ultimo_acesso:{ type: 'timestamptz' },
@@ -92,7 +92,7 @@ exports.up = (pgm) => {
     password_hash:   { type: 'varchar(255)', notNull: true },
     cargo:           { type: 'varchar(100)' },
     nivel_acesso:    {
-      type: 'varchar(20)', default: "'OPERADOR'",
+      type: 'varchar(20)', default: pgm.func("'OPERADOR'"),
       check: "nivel_acesso IN ('ADMIN','GERENTE','OPERADOR')",
     },
     salario:         { type: 'numeric(12,2)', default: 0 },
@@ -117,7 +117,7 @@ exports.up = (pgm) => {
     password_hash:     { type: 'varchar(255)' },
     pin_hash:          { type: 'varchar(255)' },
     nivel_fidelizacao: {
-      type: 'varchar(10)', default: "'BRONZE'",
+      type: 'varchar(10)', default: pgm.func("'BRONZE'"),
       check: "nivel_fidelizacao IN ('BRONZE','PRATA','OURO','PLATINA')",
     },
     saldo_carteira:    { type: 'numeric(15,2)', default: 0 },
@@ -138,7 +138,7 @@ exports.up = (pgm) => {
     capacidade:       { type: 'integer', default: 4 },
     zona:             { type: 'varchar(50)' },
     status:           {
-      type: 'varchar(20)', default: "'LIVRE'",
+      type: 'varchar(20)', default: pgm.func("'LIVRE'"),
       check: "status IN ('LIVRE','OCUPADA','RESERVADA','LIMPEZA','MANUTENCAO')",
     },
     ultima_atividade: { type: 'timestamptz' },
@@ -170,7 +170,7 @@ exports.up = (pgm) => {
     cliente_id:    { type: 'uuid', references: 'clientes' },
     funcionario_id:{ type: 'uuid', references: 'funcionarios' },
     status:        {
-      type: 'varchar(20)', default: "'ABERTO'",
+      type: 'varchar(20)', default: pgm.func("'ABERTO'"),
       check: "status IN ('ABERTO','EM_PREPARO','PRONTO','FECHADO','CANCELADO')",
     },
     total:         { type: 'numeric(15,2)', default: 0 },
@@ -190,7 +190,7 @@ exports.up = (pgm) => {
     quantidade:     { type: 'numeric(8,2)', notNull: true },
     preco_unitario: { type: 'numeric(10,2)', notNull: true },
     status_cozinha: {
-      type: 'varchar(20)', default: "'AGUARDANDO'",
+      type: 'varchar(20)', default: pgm.func("'AGUARDANDO'"),
       check: "status_cozinha IN ('AGUARDANDO','PREPARANDO','PRONTO','ENTREGUE')",
     },
     observacoes:    { type: 'varchar(300)' },
@@ -211,7 +211,7 @@ exports.up = (pgm) => {
     preco_pernoite:  { type: 'numeric(10,2)', notNull: true },
     preco_diaria:    { type: 'numeric(10,2)', notNull: true },
     status:          {
-      type: 'varchar(20)', default: "'DISPONIVEL'",
+      type: 'varchar(20)', default: pgm.func("'DISPONIVEL'"),
       check: "status IN ('DISPONIVEL','OCUPADO','LIMPEZA','MANUTENCAO','BLOQUEADO')",
     },
     descricao:       { type: 'text' },
@@ -233,7 +233,7 @@ exports.up = (pgm) => {
     checkin:       { type: 'timestamptz', notNull: true },
     checkout:      { type: 'timestamptz', notNull: true },
     status:        {
-      type: 'varchar(20)', default: "'CONFIRMADA'",
+      type: 'varchar(20)', default: pgm.func("'CONFIRMADA'"),
       check: "status IN ('CONFIRMADA','CHECKIN','CHECKOUT','CANCELADA','NO_SHOW')",
     },
     valor_total:   { type: 'numeric(10,2)', notNull: true },
@@ -257,7 +257,7 @@ exports.up = (pgm) => {
     },
     quantidade_quartos:  { type: 'integer', notNull: true, default: 1 },
     status:              {
-      type: 'varchar(20)', default: "'PENDENTE'",
+      type: 'varchar(20)', default: pgm.func("'PENDENTE'"),
       check: "status IN ('PENDENTE','CONFIRMADA','CANCELADA')",
     },
     observacoes:         { type: 'text' },
@@ -329,7 +329,7 @@ exports.up = (pgm) => {
     pedido_id:      { type: 'uuid', unique: true, references: 'pedidos' },
     reserva_id:     { type: 'uuid', references: 'reservas' },
     cliente_id:     { type: 'uuid', references: 'clientes' },
-    serie:          { type: 'varchar(5)', default: "'FT'" },
+    serie:          { type: 'varchar(5)', default: pgm.func("'FT'") },
     ano:            { type: 'integer', notNull: true },
     sequencial:     { type: 'integer', notNull: true },
     numero_fatura:  { type: 'varchar(30)', notNull: true, unique: true },
