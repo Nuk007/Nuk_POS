@@ -8,6 +8,7 @@ const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const twilio = require('twilio');
 const { pool } = require('./db');
+const { saasLimiter } = require('./middleware/rateLimiters');
 
 const router = express.Router();
 
@@ -227,7 +228,7 @@ router.get('/tenants', superAdminAuth, async (req, res) => {
 // POST /api/saas/tenants
 // Body: { nome, telefone_whatsapp, email, nif, plano_nome, duracao_dias, notas }
 // ──────────────────────────────────────────────────────────────
-router.post('/tenants', superAdminAuth, async (req, res) => {
+router.post('/tenants', saasLimiter, superAdminAuth, async (req, res) => {
   const {
     nome,
     telefone_whatsapp,
@@ -382,10 +383,27 @@ router.post('/licencas/:key/reenviar', superAdminAuth, async (req, res) => {
     }
 
     const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
-    const link = await enviarWhatsAppActivacao(lic.telefone_whatsapp, lic.tenant_nome, lic.license_key, baseUrl);
-    await pool.query(`UPDATE licencas SET whatsapp_enviado_em = NOW() WHERE license_key = $1`, [req.params.key]);
+    let link = `${baseUrl}/activate/${lic.license_key}`;
+    let whatsappEnviado = false;
 
-    res.json({ ok: true, link, whatsapp_enviado: true });
+    // Falha do WhatsApp/Twilio não pode rebentar o pedido — ao contrário de POST /tenants e
+    // POST /tenants/:id/renovar (que já tratavam isto), esta rota deixava a excepção subir até
+    // ao catch geral e devolvia sempre 500 "Erro interno do servidor", mesmo com a licença válida
+    // e o link bom (descoberto em 01/11/2026: reenviar sem Twilio configurado rebentava sempre).
+    try {
+      link = await enviarWhatsAppActivacao(lic.telefone_whatsapp, lic.tenant_nome, lic.license_key, baseUrl);
+      await pool.query(`UPDATE licencas SET whatsapp_enviado_em = NOW() WHERE license_key = $1`, [req.params.key]);
+      whatsappEnviado = true;
+    } catch (wErr) {
+      console.warn(`⚠️  WhatsApp não reenviado para ${lic.telefone_whatsapp}: ${wErr.message}`);
+    }
+
+    res.json({
+      ok: true,
+      link,
+      whatsapp_enviado: whatsappEnviado,
+      aviso: whatsappEnviado ? null : 'WhatsApp não enviado — envie o link manualmente',
+    });
   } catch (err) {
     res.status(500).json({ erro: 'Erro interno do servidor' });
   }

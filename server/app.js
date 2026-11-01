@@ -18,7 +18,7 @@ const { router: saasRouter, verificarLicencaTenant, resolverTenant } = require('
 const broadcast = require('./middleware/broadcast');
 const { initWebSocket } = require('./websocket');
 const { logger, initSentry, sentryErrorHandler } = require('./monitoring');
-const { globalLimiter, saasLimiter, apiWriteLimiter } = require('./middleware/rateLimiters');
+const { globalLimiter, apiWriteLimiter } = require('./middleware/rateLimiters');
 
 // ── Protecção global ─────────────────────────────────────────
 process.on('unhandledRejection', (reason) => {
@@ -125,7 +125,14 @@ app.use('/api/docs',
 );
 
 // ── Rotas SaaS (superadmin + activação de tenants) ───────────
-app.use('/api/saas', saasLimiter, saasRouter);
+// saasLimiter aplica-se só a POST /tenants (dentro de saas.js) — nunca ao router inteiro.
+// Estava aqui a cobrir TODO o /api/saas (dashboard, listar/ver tenants, activação pública…)
+// com 5 pedidos/15min, quando o limite era pensado só para a criação de tenants (ver
+// server/middleware/rateLimiters.js): qualquer navegação normal no painel — dashboard +
+// listar + abrir um tenant já são 3 pedidos — esgotava o limite e bloqueava o superadmin
+// por 15 minutos, devolvendo "Demasiados pedidos ao painel de administração." (descoberto
+// em 01/11/2026 ao diagnosticar "a chave não funciona").
+app.use('/api/saas', saasRouter);
 
 // ── Rotas autenticadas ───────────────────────────────────────
 // C-01 fix: resolverTenant corre PRIMEIRO para popular req.tenantId a partir do JWT,

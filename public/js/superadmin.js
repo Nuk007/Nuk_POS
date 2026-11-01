@@ -293,8 +293,16 @@ function miniPrompt(msg, defaultVal, onOk) {
 async function reenviarWA(key, nome) {
   miniConfirm(`Reenviar link de activação para "${nome}" via WhatsApp?`, async () => {
     try {
-      await api(`/api/saas/licencas/${key}/reenviar`, { method: 'POST' });
-      toast('Link de activação reenviado via WhatsApp');
+      const r = await api(`/api/saas/licencas/${key}/reenviar`, { method: 'POST' });
+      if (r.whatsapp_enviado) {
+        toast('Link de activação reenviado via WhatsApp');
+      } else {
+        // WhatsApp indisponível (ex.: Twilio não configurado) — a licença continua válida e o
+        // link funciona; só o envio automático falhou, por isso copiamos o link em vez de
+        // reportar sucesso a enviar uma mensagem que não saiu.
+        copyText(r.link);
+        toast('WhatsApp indisponível — link copiado para enviar manualmente', 'err');
+      }
     } catch (e) { toast(e.message, 'err'); }
   });
 }
