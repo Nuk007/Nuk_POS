@@ -1,36 +1,38 @@
-/* Marca Nuk_POS — logótipo "suspenso" com luz laranja por detrás e contorno florescente
-   (usar em todas as páginas). Duas imagens oficiais:
+/* Marca Nuk_POS — a escrita sobre um retângulo sólido que "tapa" a luz por detrás
+   (painel opaco; a luz só se vê a tentar sair pelas margens do retângulo — sem
+   animação, estado único e estático). Duas imagens oficiais:
    - /img/logo-nukpos.png        — emblema completo (crachá + "Nuk_POS SISTEMA INTEGRADO"):
                                     arranque do sistema (splash) e formulário principal (login).
    - /img/logo-nukpos-texto.png  — só o descritivo (recorte do emblema): todos os outros
                                     formulários, sempre no canto superior esquerdo (ver .marca-canto). */
-.marca { position: relative; display: inline-flex; align-items: center; justify-content: center; isolation: isolate; }
-.marca::before {
-  content: ""; position: absolute; inset: -22% -14%; z-index: -1; border-radius: 50%;
-  background: radial-gradient(ellipse at center, rgba(255,122,24,.78) 0%, rgba(232,101,10,.40) 42%, transparent 70%);
-  filter: blur(14px); animation: marca-pulso 3.4s ease-in-out infinite;
-}
-/* Contorno que "floresce": um anel laranja que nasce colado à imagem, abre e desvanece em loop —
-   a par do brilho difuso de ::before, dá a leitura de um contorno a florescer, não só uma luz solta. */
-.marca::after {
-  content: ""; position: absolute; inset: -6% 4%; z-index: -1; border-radius: 50%;
-  border: 2px solid rgba(255,145,46,.7);
-  animation: marca-contorno 3.4s ease-in-out infinite;
+.marca {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(var(--marca-w, 200px) * 0.14) calc(var(--marca-w, 200px) * 0.2);
+  border-radius: calc(var(--marca-w, 200px) * 0.07);
+  background: linear-gradient(160deg, #14213d, #0b1426);
+  /* Retângulo opaco a bloquear a luz laranja: o brilho só aparece difuso nas
+     margens (box-shadow), nunca atravessa o painel — por isso estático, não um halo solto. */
+  box-shadow:
+    0 0 calc(var(--marca-w, 200px) * 0.22) rgba(255, 122, 24, 0.4),
+    0 10px 30px rgba(11, 20, 38, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 .marca img {
-  display: block; height: auto; width: var(--marca-w, 200px); max-width: 100%; margin: 0; object-fit: contain;
-  filter: drop-shadow(0 0 12px rgba(255,122,24,.55)) drop-shadow(0 3px 10px rgba(0,0,0,.45));
+  display: block;
+  height: auto;
+  width: var(--marca-w, 200px);
+  max-width: 100%;
+  margin: 0;
+  object-fit: contain;
 }
 .marca--xl { --marca-w: 260px; }
 .marca--lg { --marca-w: 200px; }
 .marca--md { --marca-w: 150px; }
 .marca--sm { --marca-w: 132px; }
 .marca--xs { --marca-w: 90px; }
-@keyframes marca-pulso { 0%,100% { opacity: .72; transform: scale(1); } 50% { opacity: 1; transform: scale(1.06); } }
-@keyframes marca-contorno { 0% { opacity: .85; transform: scale(.92); } 70%,100% { opacity: 0; transform: scale(1.2); } }
-@media (prefers-reduced-motion: reduce) { .marca::before, .marca::after { animation: none; } }
-/* Placa escura para páginas de fundo claro (o texto prateado do logótipo precisa de contraste) */
-.marca-placa { display: inline-flex; padding: 28px 40px; border-radius: 28px; background: linear-gradient(160deg, #14213d, #0b1426); box-shadow: 0 10px 30px rgba(11,20,38,.25); }
 /* Canto superior esquerdo — usado em todos os formulários que não são o principal (activação,
    portal do cliente, login do superadmin): a marca fica sempre presa ao canto do ecrã,
    independente do scroll ou do ecrã/cartão activo. */
