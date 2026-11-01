@@ -239,7 +239,16 @@ async function renovarLicenca(id, nome) {
     if (!val || isNaN(+val)) return;
     try {
       const r = await api(`/api/saas/tenants/${id}/renovar`, { method: 'POST', body: { duracao_dias: +val } });
-      toast(`Licença renovada até ${fmt(r.novo_fim)}`);
+      if (r.whatsapp_enviado) {
+        toast('Licença renovada — link de activação enviado via WhatsApp');
+      } else if (r.whatsapp_manual) {
+        // Mesmo padrão do AviationMoney: renovação nunca fica bloqueada por falha no envio
+        // automático — abre-se o wa.me com a mensagem já escrita (01/11/2026).
+        window.open(r.whatsapp_manual, '_blank');
+        toast('Licença renovada — envio automático indisponível, abri o WhatsApp para enviar à mão', 'err');
+      } else {
+        toast('Licença renovada');
+      }
       closeModal('modal-tenant'); loadTenants(); loadDashboard();
     } catch (e) { toast(e.message, 'err'); }
   });
@@ -296,10 +305,14 @@ async function reenviarWA(key, nome) {
       const r = await api(`/api/saas/licencas/${key}/reenviar`, { method: 'POST' });
       if (r.whatsapp_enviado) {
         toast('Link de activação reenviado via WhatsApp');
+      } else if (r.whatsapp_manual) {
+        // WhatsApp automático indisponível (API não configurada, ou o modelo ainda não está
+        // aprovado no WhatsApp Manager) — a licença continua válida e o link funciona; só o
+        // envio automático falhou. Padrão do AviationMoney: nunca bloquear, abrir sempre o
+        // wa.me com a mensagem já escrita, em vez de só copiar o link (01/11/2026).
+        window.open(r.whatsapp_manual, '_blank');
+        toast('Envio automático indisponível — abri o WhatsApp para enviar à mão', 'err');
       } else {
-        // WhatsApp indisponível (ex.: Twilio não configurado) — a licença continua válida e o
-        // link funciona; só o envio automático falhou, por isso copiamos o link em vez de
-        // reportar sucesso a enviar uma mensagem que não saiu.
         copyText(r.link);
         toast('WhatsApp indisponível — link copiado para enviar manualmente', 'err');
       }
@@ -333,7 +346,10 @@ async function criarTenant() {
     result.className = 'alert alert-ok';
     result.innerHTML = `<strong>${nome}</strong> registado com sucesso.<br>
       Slug: <code>/${r.slug}</code><br>
-      ${r.whatsapp_enviado ? '📲 Link de activação enviado via WhatsApp.' : `⚠️ WhatsApp não enviado — link de activação:<br><code style="word-break:break-all;font-size:12px">${r.activation_link}</code>`}
+      ${r.whatsapp_enviado
+        ? '📲 Link de activação enviado via WhatsApp.'
+        : `⚠️ WhatsApp automático não enviado — link de activação:<br><code style="word-break:break-all;font-size:12px">${r.activation_link}</code>` +
+          (r.whatsapp_manual ? `<br><a href="${r.whatsapp_manual}" target="_blank" class="btn btn-sm btn-blue" style="margin-top:8px;display:inline-block">📲 Abrir WhatsApp com a mensagem</a>` : '')}
       <div class="key-box" style="margin-top:10px"><code>${r.license_key}</code><button class="copy-btn" data-action="copy" data-key="${r.license_key}">📋</button></div>`;
     ['nt-nome','nt-nif','nt-tel','nt-email','nt-notas'].forEach(i => document.getElementById(i).value='');
     document.getElementById('nt-dias').value = '30';

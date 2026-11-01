@@ -65,17 +65,18 @@ describe('Painel Superadmin — autenticação e prefixo da API', () => {
   });
 });
 
-describe('POST /api/saas/licencas/:key/reenviar — não pode rebentar sem Twilio', () => {
+describe('POST /api/saas/licencas/:key/reenviar — não pode rebentar sem WhatsApp configurado', () => {
   /**
    * Regressão: reportado pelo utilizador em produção como "Erro interno do servidor" ao
    * clicar "📲 Reenviar link" no modal de um tenant. Ao contrário de POST /tenants e
    * POST /tenants/:id/renovar (que já isolavam a falha do envio de WhatsApp num try/catch
    * próprio e degradavam com sucesso), esta rota deixava `enviarWhatsAppActivacao` rebentar
-   * até ao catch geral e devolvia sempre 500 — mesmo com a licença válida e sem o Twilio
-   * estar configurado (como é o caso aqui, em teste). TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN
-   * não estão definidas no ambiente de testes, por isso este teste cobre exactamente esse caminho.
+   * até ao catch geral e devolvia sempre 500 — mesmo com a licença válida e sem o WhatsApp
+   * (Meta Cloud API) estar configurado (como é o caso aqui, em teste). WHATSAPP_TOKEN/
+   * WHATSAPP_PHONE_NUMBER_ID não estão definidas no ambiente de testes, por isso este teste
+   * cobre exactamente esse caminho — e confirma que cai sempre no link manual wa.me.
    */
-  test('licença PENDENTE existente: reenviar sem Twilio configurado devolve 200, não 500', async () => {
+  test('licença PENDENTE existente: reenviar sem WhatsApp configurado devolve 200, não 500', async () => {
     const { tenantId } = await global.criarTenantFixture({ slug: 'it-reenviar' });
     const plano = await global.pool.query(`SELECT id FROM planos_assinatura ORDER BY preco_mensal LIMIT 1`);
     const licenseKey = `NUK-REENV-${Date.now().toString(36)}`;
@@ -95,6 +96,7 @@ describe('POST /api/saas/licencas/:key/reenviar — não pode rebentar sem Twili
     expect(r.body).toHaveProperty('link');
     expect(r.body.link).toMatch(new RegExp(`/activate/${licenseKey}$`));
     expect(r.body.aviso).toMatch(/manualmente/i);
+    expect(r.body.whatsapp_manual).toMatch(/^https:\/\/wa\.me\//);
   });
 
   test('licença inexistente continua a devolver 404, não 500', async () => {

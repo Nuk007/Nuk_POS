@@ -1,28 +1,53 @@
 // Nuk_POS — Módulo SaaS Multi-Tenant
 // Superadmin: gestão de tenants e licenças
-// Activação: link via WhatsApp (Twilio)
+// Activação: link via WhatsApp (Meta Cloud API, com fallback manual wa.me)
 // Isolamento: tenant_id injectado em todas as operações
 
 const express = require('express');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
-const twilio = require('twilio');
 const { pool } = require('./db');
 const { saasLimiter } = require('./middleware/rateLimiters');
 
 const router = express.Router();
 
 // ──────────────────────────────────────────────────────────────
-// CONFIGURAÇÃO TWILIO
+// WhatsApp Business Cloud API (Meta) — mesmo padrão do AviationMoney
+// Decisão de 01/11/2026 (pedido do dono): o Twilio nunca chegou a ser configurado em produção —
+// o botão "Reenviar link" dizia sempre "enviado com sucesso" sem nada ter saído. Substituído pela
+// API oficial do WhatsApp Business da Meta, com o mesmo padrão já em uso no AviationMoney:
+// WHATSAPP_TOKEN + WHATSAPP_PHONE_NUMBER_ID activam o envio automático por modelo (template,
+// a aprovar no WhatsApp Manager); sem as duas, ou se a chamada falhar, cai-se sempre para um link
+// manual wa.me (abre o WhatsApp já com a mensagem escrita) — nunca bloqueia a criação/activação.
 // ──────────────────────────────────────────────────────────────
-function getTwilioClient() {
-  const sid = process.env.TWILIO_ACCOUNT_SID;
-  const token = process.env.TWILIO_AUTH_TOKEN;
-  if (!sid || !token) throw new Error('Credenciais Twilio não configuradas');
-  return twilio(sid, token);
+const WHATSAPP_API_VERSION = process.env.WHATSAPP_API_VERSION || 'v21.0';
+const whatsappConfigurado = () => !!(process.env.WHATSAPP_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID);
+
+async function enviarWhatsAppTemplate(telefone, template, parametrosCorpo) {
+  const url = `https://graph.facebook.com/${WHATSAPP_API_VERSION}/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}` },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp', to: telefone, type: 'template',
+      template: { name: template, language: { code: 'pt_PT' }, components: [{ type: 'body', parameters: parametrosCorpo.map(texto => ({ type: 'text', text: texto })) }] },
+    }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j?.error?.message || `Falha ao enviar WhatsApp (HTTP ${r.status}).`);
+  return j;
 }
 
-const TWILIO_FROM = process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886'; // número Twilio sandbox
+function textoActivacao(nomeEmpresa, link) {
+  return `Nuk_POS: a licença para ${nomeEmpresa} foi gerada. Para activar o seu sistema, abra este link: ${link} (uso único, guarde-o em lugar seguro).`;
+}
+
+// Link "clicar para conversar" — funciona sempre, sem conta nem credenciais: abre o WhatsApp do
+// destinatário já com a mensagem escrita, para enviar à mão quando a Cloud API não está disponível.
+function linkManualWhatsApp(telefone, texto) {
+  const tel = String(telefone || '').replace(/\D/g, '');
+  return `https://wa.me/${tel}?text=${encodeURIComponent(texto)}`;
+}
 
 // ──────────────────────────────────────────────────────────────
 // MIDDLEWARE DE AUTENTICAÇÃO DO SUPERADMIN
@@ -79,22 +104,17 @@ async function slugUnico(base) {
   }
 }
 
+// Tenta enviar a activação pela Cloud API; lança sempre que não estiver configurada ou a chamada
+// falhar — quem chama decide o que fazer a seguir (ver linkManualWhatsApp acima, usado nos 3
+// pontos que geram/reenviam uma activação).
 async function enviarWhatsAppActivacao(telefone, nomeEmpresa, licenseKey, baseUrl) {
+  if (!whatsappConfigurado()) throw new Error('WhatsApp não configurado (WHATSAPP_TOKEN/WHATSAPP_PHONE_NUMBER_ID em falta)');
   const link = `${baseUrl}/activate/${licenseKey}`;
-  const msg =
-    `🎉 *Bem-vindo ao Nuk_POS!*\n\n` +
-    `A sua licença para *${nomeEmpresa}* foi gerada.\n\n` +
-    `Clique no link abaixo para activar o seu sistema:\n` +
-    `${link}\n\n` +
-    `⚠️ Este link é de uso único. Guarde-o em lugar seguro.\n\n` +
-    `_Nuk_POS — Sistema de Gestão Moderno_`;
-
-  const client = getTwilioClient();
-  await client.messages.create({
-    from: TWILIO_FROM,
-    to: `whatsapp:+${telefone.replace(/\D/g, '')}`,
-    body: msg,
-  });
+  await enviarWhatsAppTemplate(
+    telefone.replace(/\D/g, ''),
+    process.env.WHATSAPP_TEMPLATE_ACTIVACAO || 'activacao_tenant',
+    [nomeEmpresa, link]
+  );
   return link;
 }
 
@@ -276,17 +296,19 @@ router.post('/tenants', saasLimiter, superAdminAuth, async (req, res) => {
 
     // Enviar WhatsApp (fora da transacção — falha não reverte o tenant)
     const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
+    const activationLink = `${baseUrl}/activate/${licenseKey}`;
     let whatsappEnviado = false;
-    let activationLink = `${baseUrl}/activate/${licenseKey}`;
+    let whatsappManual = null;
 
     try {
-      activationLink = await enviarWhatsAppActivacao(telefone_whatsapp, nome, licenseKey, baseUrl);
+      await enviarWhatsAppActivacao(telefone_whatsapp, nome, licenseKey, baseUrl);
       await pool.query(
         `UPDATE licencas SET whatsapp_enviado_em = NOW() WHERE license_key = $1`, [licenseKey]
       );
       whatsappEnviado = true;
     } catch (wErr) {
       console.warn(`⚠️  WhatsApp não enviado para ${telefone_whatsapp}: ${wErr.message}`);
+      whatsappManual = linkManualWhatsApp(telefone_whatsapp, textoActivacao(nome, activationLink));
     }
 
     res.status(201).json({
@@ -296,7 +318,8 @@ router.post('/tenants', saasLimiter, superAdminAuth, async (req, res) => {
       license_key: licenseKey,
       activation_link: activationLink,
       whatsapp_enviado: whatsappEnviado,
-      aviso: whatsappEnviado ? null : 'WhatsApp não enviado — envie o link manualmente',
+      whatsapp_manual: whatsappManual,
+      aviso: whatsappEnviado ? null : 'WhatsApp não enviado — use o link manual para enviar à mão',
     });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -383,25 +406,28 @@ router.post('/licencas/:key/reenviar', superAdminAuth, async (req, res) => {
     }
 
     const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
-    let link = `${baseUrl}/activate/${lic.license_key}`;
+    const link = `${baseUrl}/activate/${lic.license_key}`;
     let whatsappEnviado = false;
+    let whatsappManual = null;
 
-    // Falha do WhatsApp/Twilio não pode rebentar o pedido — ao contrário de POST /tenants e
+    // Falha do WhatsApp não pode rebentar o pedido — ao contrário de POST /tenants e
     // POST /tenants/:id/renovar (que já tratavam isto), esta rota deixava a excepção subir até
     // ao catch geral e devolvia sempre 500 "Erro interno do servidor", mesmo com a licença válida
-    // e o link bom (descoberto em 01/11/2026: reenviar sem Twilio configurado rebentava sempre).
+    // e o link bom (descoberto em 01/11/2026: reenviar sem WhatsApp configurado rebentava sempre).
     try {
-      link = await enviarWhatsAppActivacao(lic.telefone_whatsapp, lic.tenant_nome, lic.license_key, baseUrl);
+      await enviarWhatsAppActivacao(lic.telefone_whatsapp, lic.tenant_nome, lic.license_key, baseUrl);
       await pool.query(`UPDATE licencas SET whatsapp_enviado_em = NOW() WHERE license_key = $1`, [req.params.key]);
       whatsappEnviado = true;
     } catch (wErr) {
       console.warn(`⚠️  WhatsApp não reenviado para ${lic.telefone_whatsapp}: ${wErr.message}`);
+      whatsappManual = linkManualWhatsApp(lic.telefone_whatsapp, textoActivacao(lic.tenant_nome, link));
     }
 
     res.json({
       ok: true,
       link,
       whatsapp_enviado: whatsappEnviado,
+      whatsapp_manual: whatsappManual,
       aviso: whatsappEnviado ? null : 'WhatsApp não enviado — envie o link manualmente',
     });
   } catch (err) {
@@ -434,6 +460,7 @@ router.post('/tenants/:id/renovar', superAdminAuth, async (req, res) => {
 
     const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
     let whatsappEnviado = false;
+    let whatsappManual = null;
     const activationLink = `${baseUrl}/activate/${licenseKey}`;
 
     try {
@@ -442,9 +469,16 @@ router.post('/tenants/:id/renovar', superAdminAuth, async (req, res) => {
       whatsappEnviado = true;
     } catch (e) {
       console.warn('WhatsApp não enviado:', e.message);
+      whatsappManual = linkManualWhatsApp(tenant.rows[0].telefone_whatsapp, textoActivacao(tenant.rows[0].nome, activationLink));
     }
 
-    res.json({ ok: true, license_key: licenseKey, activation_link: activationLink, whatsapp_enviado: whatsappEnviado });
+    res.json({
+      ok: true,
+      license_key: licenseKey,
+      activation_link: activationLink,
+      whatsapp_enviado: whatsappEnviado,
+      whatsapp_manual: whatsappManual,
+    });
   } catch (err) {
     res.status(500).json({ erro: 'Erro interno do servidor' });
   }
@@ -583,24 +617,17 @@ router.post('/activate/:key/confirmar', async (req, res) => {
 
     await client.query('COMMIT');
 
-    // Enviar WhatsApp de boas-vindas
+    // Enviar WhatsApp de boas-vindas (melhor-esforço — a activação já está feita e confirmada
+    // na resposta abaixo, independentemente de esta mensagem sair ou não).
     const telNotif = telefone_admin || null;
-    if (telNotif) {
+    if (telNotif && whatsappConfigurado()) {
       try {
         const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
-        const clientTwilio = getTwilioClient();
-        await clientTwilio.messages.create({
-          from: TWILIO_FROM,
-          to: `whatsapp:+${telNotif.replace(/\D/g, '')}`,
-          body:
-            `✅ *Nuk_POS activado com sucesso!*\n\n` +
-            `Empresa: *${lic.tenant_nome}*\n` +
-            `Plano: ${lic.plano_nome}\n` +
-            `Válido até: ${fim.toLocaleDateString('pt-PT')}\n\n` +
-            `Aceda ao seu painel em:\n${baseUrl}/\n\n` +
-            `Email: ${emailAdmin}\n` +
-            `_Guarde estas credenciais em local seguro._`,
-        });
+        await enviarWhatsAppTemplate(
+          telNotif.replace(/\D/g, ''),
+          process.env.WHATSAPP_TEMPLATE_BOAS_VINDAS || 'boas_vindas_tenant',
+          [lic.tenant_nome, lic.plano_nome, fim.toLocaleDateString('pt-PT'), `${baseUrl}/`, emailAdmin]
+        );
       } catch (e) {
         console.warn('WhatsApp boas-vindas não enviado:', e.message);
       }
