@@ -340,11 +340,10 @@ async function modulo_quartos(el) {
       <div class="toolbar">
         <span class="secao-titulo">🛏️ Quartos</span>
         <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-          <button class="btn-secundario" data-on-click="modalFormQuarto('')">+ Novo Quarto</button>
           <button class="btn-primario" data-on-click="modalNovaReserva()">+ Nova Reserva</button>
         </div>
       </div>
-      ${quartos.length ? '' : '<div class="muted" style="padding:2rem;text-align:center">Ainda não há quartos. Clique em <b>+ Novo Quarto</b> para configurar o primeiro.</div>'}
+      ${quartos.length ? '' : '<div class="muted" style="padding:2rem;text-align:center">Ainda não há quartos. Um Administrador pode criá-los em <b>⚙️ Configurações → Quartos e preços</b>.</div>'}
       ${tipos.map(tipo => {
         const qs = quartos.filter(q => q.tipo === tipo);
         return `
@@ -384,9 +383,6 @@ function modalQuarto(id, numero, tipo, status) {
     <hr style="border-color:var(--c-border);margin:1rem 0">
     <button class="btn-primario btn-bloco" data-on-click="novaReservaNoQuarto('${id}')">
       + Reservar este quarto
-    </button>
-    <button class="btn-secundario btn-bloco" style="margin-top:.5rem" data-on-click="modalFormQuarto('${id}')">
-      ✏️ Editar quarto e preços
     </button>
   `);
 }
@@ -428,7 +424,7 @@ async function guardarQuarto(id) {
     await api(id ? 'PUT' : 'POST', id ? `/quartos/${id}` : '/quartos', dados);
     toast(id ? 'Quarto actualizado' : 'Quarto criado', 'sucesso');
     fecharModal();
-    carregarModulo('quartos');
+    carregarModulo('configuracoes');
   } catch (e) {
     toast(e.message || 'Erro ao guardar quarto', 'erro');
   }
@@ -439,7 +435,7 @@ async function apagarQuarto(id) {
     await api('DELETE', `/quartos/${id}`);
     toast('Quarto apagado', 'sucesso');
     fecharModal();
-    carregarModulo('quartos');
+    carregarModulo('configuracoes');
   } catch (e) {
     toast(e.message || 'Erro ao apagar quarto', 'erro');
   }
@@ -454,7 +450,7 @@ async function salvarStatusQuarto(id) {
     toast(e.message || 'Erro ao actualizar estado', 'erro');
   }
   fecharModal();
-  carregarModulo('quartos');
+  carregarModulo('configuracoes');
 }
 
 async function modalNovaReserva() {
@@ -543,7 +539,7 @@ async function confirmarReserva() {
     await api('POST', '/quartos/reserva', { quarto_id, fracao, nome_hospede, checkin: new Date(checkin).toISOString(), checkout: new Date(checkout).toISOString(), observacoes });
     toast('Reserva confirmada!', 'sucesso');
     fecharModal();
-    carregarModulo('quartos');
+    carregarModulo('configuracoes');
   } catch (e) { toast(e.message, 'erro'); }
 }
 
@@ -1222,6 +1218,7 @@ async function modulo_configuracoes(el) {
   }
   try {
     const cfg = await api('GET', '/configuracoes');
+    const quartos = await api('GET', '/quartos') || [];
 
     el.innerHTML = `
       <div class="secao-titulo">⚙️ Configurações</div>
@@ -1239,6 +1236,19 @@ async function modulo_configuracoes(el) {
           <input type="text" id="cfg-tz" value="${cfg.timezone || 'Africa/Luanda'}" readonly>
         </div>
         <button class="btn-primario" data-on-click="guardarConfiguracoes()">Guardar Configurações</button>
+      </div>
+
+      <div class="card mt-2" style="max-width:500px">
+        <div class="toolbar" style="margin-bottom:.5rem">
+          <div class="card-titulo">QUARTOS E PREÇOS</div>
+          <button class="btn-secundario" data-on-click="modalFormQuarto('')">+ Novo Quarto</button>
+        </div>
+        ${quartos.length ? quartos.map(q => `
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;padding:.4rem 0">
+            <div style="min-width:0"><b>${q.numero}</b> <span class="muted">${q.tipo.replace(/_/g,' ')}</span>
+              <div class="muted" style="font-size:.8rem">${formatarMoeda(q.preco_2h)}/2h · ${formatarMoeda(q.preco_pernoite)} pernoite · ${formatarMoeda(q.preco_diaria)} diária</div></div>
+            <button class="btn-secundario" data-on-click="modalFormQuarto('${q.id}')">Editar</button>
+          </div>`).join('') : '<div class="muted">Ainda não há quartos. Crie o primeiro.</div>'}
       </div>
 
       <div class="card mt-2" style="max-width:500px">

@@ -98,20 +98,20 @@ router.patch('/:id/status', authMiddleware, validarUUID('id'), requerNivel(['ADM
  * /api/quartos:
  *   post:
  *     tags: [Quartos]
- *     summary: Criar quarto (ADMIN/GERENTE)
+ *     summary: Criar quarto (ADMIN)
  *     requestBody: { content: { application/json: { schema: { type: object, required: [numero, tipo, preco_2h, preco_pernoite, preco_diaria], properties: { numero: { type: string }, tipo: { type: string, enum: [STANDARD, SUPERIOR, SUITE, SUITE_PRESIDENCIAL, VIP_EXECUTIVO] }, andar: { type: integer }, preco_2h: { type: number }, preco_pernoite: { type: number }, preco_diaria: { type: number }, descricao: { type: string } } } } } }
  *     responses: { 201: { description: Quarto criado }, 400: { description: Dados inválidos }, 409: { description: Número já existe } }
  * /api/quartos/{id}:
  *   put:
  *     tags: [Quartos]
- *     summary: Editar quarto e preços (ADMIN/GERENTE)
+ *     summary: Editar quarto e preços (ADMIN)
  *     responses: { 200: { description: Quarto actualizado }, 404: { description: Não encontrado }, 409: { description: Número já existe } }
  *   delete:
  *     tags: [Quartos]
- *     summary: Apagar quarto sem histórico de reservas (ADMIN/GERENTE)
+ *     summary: Apagar quarto sem histórico de reservas (ADMIN)
  *     responses: { 204: { description: Apagado }, 409: { description: Ocupado ou com reservas } }
  */
-const gestor = [authMiddleware, requerNivel(['ADMIN', 'GERENTE'])];
+const gestor = [authMiddleware, requerNivel(['ADMIN'])]; // configuração = só no painel de Configurações (ADMIN)
 const falha = (res, next) => e => e.statusCode ? res.status(e.statusCode).json({ erro: e.message }) : next(e);
 
 router.post('/', ...gestor, async (req, res, next) => {

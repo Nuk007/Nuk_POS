@@ -3,7 +3,7 @@
 const request = require('supertest');
 const { app } = require('../../server/app');
 
-let A, B, G, ipN = 1;
+let A, B, G, M, ipN = 1;
 const ip = () => `10.9.${Math.floor(ipN / 250)}.${ipN++ % 250}`;
 const op = (T, m, url, body) => request(app)[m](url).set('X-Forwarded-For', ip()).set('Authorization', `Bearer ${T.token}`).send(body);
 const corpo = (o = {}) => ({ numero: '101', tipo: 'SUITE', andar: 1, preco_2h: 15000, preco_pernoite: 30000, preco_diaria: 45000, ...o });
@@ -12,6 +12,7 @@ beforeAll(async () => {
   A = await criarTenantFixture({ slug: 'it-quartos-a' });
   B = await criarTenantFixture({ slug: 'it-quartos-b' });
   G = await criarTenantFixture({ slug: 'it-quartos-g', nivel: 'OPERADOR' });
+  M = await criarTenantFixture({ slug: 'it-quartos-m', nivel: 'GERENTE' });
 }, 60000);
 
 describe('Quartos — configuração', () => {
@@ -45,6 +46,7 @@ describe('Quartos — configuração', () => {
   });
   test('perfil sem permissão não configura', async () => {
     expect((await op(G, 'post', '/api/quartos', corpo({ numero: '900' }))).status).toBe(403);
+    expect((await op(M, 'post', '/api/quartos', corpo({ numero: '901' }))).status).toBe(403);
     expect((await op(G, 'put', `/api/quartos/${id}`, { preco_2h: 1 })).status).toBe(403);
   });
   test('isolamento: outro estabelecimento não edita nem apaga', async () => {

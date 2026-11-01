@@ -91,4 +91,5 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 - Frontend (public/, ~4.800 linhas vanilla JS) sem testes.
 
 ## Quartos (configuração)
-- `server/services/quartos.service.js` + `POST /api/quartos`, `PUT/DELETE /api/quartos/:id` (ADMIN/GERENTE, por estabelecimento; número único por tenant → 409). Não se apaga quarto ocupado ou com histórico de reservas (409) — marcar BLOQUEADO. UI: "+ Novo Quarto" e "Editar quarto e preços" em `modulos.js`.
+- `server/services/quartos.service.js` + `POST /api/quartos`, `PUT/DELETE /api/quartos/:id` (só ADMIN, por estabelecimento; número único por tenant → 409). Não se apaga quarto ocupado ou com histórico de reservas (409) — marcar BLOQUEADO. UI: cartão «Quartos e preços» em Configurações (`modulo_configuracoes`); o módulo Quartos é só operacional (estado, reservas).
+- **Regra do dono: toda a configuração vive no painel de Configurações**, nunca nos módulos operacionais (evita acidentes). Novas configurações vão para lá.
