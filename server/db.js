@@ -313,6 +313,23 @@ async function initDB() {
     await client.query(`ALTER TABLE solicitacoes_hospedagem ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_solicitacoes_tenant ON solicitacoes_hospedagem(tenant_id)`);
 
+    // Solicitações do portal (hospedagem, serviços e eventos) — espelha a migração 1749000000000
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS solicitacoes_portal (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        tipo VARCHAR(12) NOT NULL CHECK (tipo IN ('HOSPEDAGEM','SERVICO','EVENTO')),
+        nome_servico VARCHAR(120) NOT NULL,
+        nome_contacto VARCHAR(200) NOT NULL,
+        telefone_contacto VARCHAR(30) NOT NULL,
+        observacoes TEXT,
+        status VARCHAR(12) NOT NULL DEFAULT 'PENDENTE' CHECK (status IN ('PENDENTE','CONFIRMADA','CANCELADA')),
+        criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_solic_portal_tenant_status ON solicitacoes_portal(tenant_id, status, criado_em DESC)`);
+
     // Stock (ingredientes)
     await client.query(`
       CREATE TABLE IF NOT EXISTS stock_items (

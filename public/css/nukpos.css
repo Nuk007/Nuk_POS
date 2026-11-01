@@ -291,7 +291,7 @@ tr:hover td { background: rgba(255,255,255,.02); }
 .status-LIVRE, .status-DISPONIVEL { background: rgba(16,185,129,.15); color: var(--c-success); }
 .status-OCUPADA, .status-OCUPADO, .status-ABERTO { background: rgba(232,101,10,.15); color: var(--c-primary); }
 .status-RESERVADA, .status-CONFIRMADA, .status-EM_PREPARO { background: rgba(59,130,246,.15); color: var(--c-info); }
-.status-LIMPEZA, .status-PRONTO { background: rgba(245,158,11,.15); color: var(--c-warning); }
+.status-LIMPEZA, .status-PRONTO, .status-PENDENTE { background: rgba(245,158,11,.15); color: var(--c-warning); }
 .status-MANUTENCAO, .status-CANCELADO, .status-CANCELADA { background: rgba(239,68,68,.15); color: var(--c-danger); }
 .status-FECHADO, .status-CHECKOUT { background: rgba(156,163,175,.15); color: var(--c-muted); }
 .status-CHECKIN { background: rgba(16,185,129,.15); color: var(--c-success); }

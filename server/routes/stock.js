@@ -87,7 +87,7 @@ router.get('/', authMiddleware, async (req, res, next) => {
  */
 router.post('/', authMiddleware, requerNivel(['ADMIN', 'GERENTE']), async (req, res, next) => {
   try {
-    const item = await svc.criarItemStock({ tenantId: req.tenantId, ...req.body });
+    const item = await svc.criarItemStock({ ...req.body, tenantId: req.tenantId });
     res.status(201).json(item);
   } catch (e) {
     if (e.statusCode) return res.status(e.statusCode).json({ erro: e.message });

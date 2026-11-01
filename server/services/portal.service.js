@@ -188,10 +188,13 @@ async function criarPedidoRestaurante({ tenantId, itens, mesa_ref, observacoes, 
       nukcoinPago = totalFinal;
     }
 
+    // Mesa indicada pelo cliente: se não existir, recusa-se (um pedido sem local não chega a quem o serve)
     let mesaId = null;
     if (mesa_ref) {
-      const m = await db.query(`SELECT id FROM mesas WHERE numero = $1 AND ($2::uuid IS NULL OR tenant_id = $2)`, [String(mesa_ref), T(tenantId)]);
-      mesaId = m.rows[0] ? m.rows[0].id : null;
+      const ref = String(mesa_ref).trim();
+      const m = await db.query(`SELECT id FROM mesas WHERE UPPER(numero) = UPPER($1) AND ($2::uuid IS NULL OR tenant_id = $2)`, [ref, T(tenantId)]);
+      if (!m.rows[0]) throw erro(400, `A mesa "${ref.slice(0, 10)}" não existe. Confirme o número da mesa.`);
+      mesaId = m.rows[0].id;
     }
     const pedidoId = uuidv4();
     await db.query(

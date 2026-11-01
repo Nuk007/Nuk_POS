@@ -18,6 +18,7 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 ## Base de dados e migrações
 - Schema base idempotente em `server/db.js` (initDB, CREATE IF NOT EXISTS). Alterações novas vão para `migrations/` (node-pg-migrate), NUNCA só para o initDB.
 - `scripts/start.js` aplica migrações pendentes no arranque (produção). Numa base pré-existente marca a inicial como aplicada. Falha de migração não bloqueia o arranque.
+- Nas migrações, valores por omissão de texto usam `default: pgm.func("'X'")`. Com `default: "'X'"` o node-pg-migrate duplica as aspas e uma base nova (instalação nova ou «recomeçar do zero») fica com `'LIVRE'` literal, que viola os CHECK (`tests/migracoes.test.js` guarda isto). A produção não foi afectada: foi criada pelo initDB().
 - Índices compostos seguem os padrões de acesso reais (tenant_id + status/criado_em/categoria). Login usa índice funcional `LOWER(email)`.
 - A DB de produção no Render **bloqueia todas as ligações externas** (IP allowlist vazia) — queries só de dentro do serviço.
 
@@ -36,7 +37,11 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 - `definir-pin` só funciona enquanto o cliente não tem PIN; reposição por ADMIN/GERENTE em `/api/cliente/reset-pin`. `perfil` e `historico` exigem PIN.
 - Estrelas: 5 estrelas = 20% (limite 25 000 Kz), consome as estrelas; pedidos ≥ 25 000 Kz dão 1 estrela.
 - Pedidos: máquina de estados em `actualizarStatusPedido`; financeiro conta receita só de FECHADO; facturas numeradas sob `pg_advisory_xact_lock`.
-- Tempo real: o POS escuta `novo_pedido`, `novo_pedido_cliente`, `cliente_novo`, `nukcoin_carregado`.
+- Tempo real: o POS escuta `novo_pedido`, `novo_pedido_cliente`, `cliente_novo`, `nukcoin_carregado`, `nova_solicitacao_portal`.
+- **Nas rotas, o `tenantId` vai SEMPRE depois do corpo**: `svc.x({ ...req.body, tenantId: req.tenantId })`. Com `{ tenantId, ...req.body }` um `"tenantId": null` no corpo saltava o isolamento entre estabelecimentos (login, cadastro, pedidos…). Nas rotas públicas novas, escolher os campos do corpo explicitamente.
+- Pedido de convidado (sem conta): o portal envia-o na mesma, sem `cliente_id`/`pin`; não pode pagar com NUKCOIN (400). `mesa_ref` (digitada ou vinda do QR `?mesa=M03`) tem de existir (sem distinguir maiúsculas), senão 400 e nada se grava.
+- Solicitações de hospedagem, serviços e eventos: `POST /api/cliente/solicitacao` → tabela `solicitacoes_portal` (`services/solicitacoes.service.js`; migração 1749000000000, espelhada em db.js). O POS tem o módulo «Solicitações» (`/api/solicitacoes-portal`, lista paginada, `/pendentes`, `PATCH /:id/status`) com indicador no menu. Não se grava preço (os do portal são indicativos). `/pedido-hospedagem` e `solicitacoes_hospedagem` ficam por compatibilidade e já não são usados pelo portal.
+- Frontend do portal (`public/js/cliente.js`): **sem modo demo/offline** — se o servidor não responder, mostra erro, mantém o carrinho e não dá nada como enviado. Navegação por `data-action` registada em `ACOES` (nunca `.onclick=`, conflita com a delegação). As categorias de produto do servidor mapeiam-se para as secções do menu em `SECCOES` (categoria nova = emoji em `EMOJI_CAT`; `tests/frontend.test.js` verifica contra o CHECK do db.js).
 
 ## Stock abatido pelas vendas
 - Cada produto tem uma receita em `produto_ingredientes` (item de stock + quantidade por unidade vendida; `GET/PUT /api/produtos/:id/ingredientes`, PUT só ADMIN/GERENTE; botão «Stock» na lista de produtos). Produto sem receita não mexe no stock.
@@ -73,6 +78,10 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 ## Dívida conhecida (próximos passos)
 - Se o admin demo `admin@nukpos.ao` já existir numa BD de produção antiga, apagá-lo/desactivá-lo (o seed deixou de o criar em produção; ver «Reset»).
 - Força bruta ao PIN do portal só limitada pelo clienteLimiter (60/10min por IP).
+- Pedidos do portal sem chave de idempotência: se a resposta se perder depois de o servidor gravar, o «tentar de novo» cria um pedido duplicado.
+- Preços de hospedagem/serviços estão escritos à mão no `cliente.html` (indicativos, iguais para todos os estabelecimentos) — deviam vir da configuração de cada tenant.
+- O POS carrega o cliente socket.io de `cdn.socket.io` (sem SRI); o servidor já serve o mesmo ficheiro em `/socket.io/socket.io.js`.
+- `GET /api/solicitacoes-hospedagem` (antigo) filtra por `clientes.tenant_id`, por isso não lista pedidos de convidados; usar `solicitacoes_portal`.
 - @openapi parcial no portal (faltam hospedagem, perfil, eventos).
 - Testar a UI em navegador real (Playwright) ainda não faz parte do CI.
 - 13 das 16 rotas ainda sem camada de serviço nem testes dedicados (financeiro e reservas prioritárias).

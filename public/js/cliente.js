@@ -1,44 +1,10 @@
+'use strict';
 // ═══════════════════════════════════════════════
-//  DADOS
+//  PORTAL DO CLIENTE — Nuk_POS
+//  Sem modo demo: se o servidor não responder, o cliente é avisado e nada se dá como enviado.
 // ═══════════════════════════════════════════════
-const MENU = {
-  comidas:[
-    {n:'Frango Grelhado',e:'🍗',p:3500},
-    {n:'Funge c/ Muamba',e:'🍲',p:4000},
-    {n:'Bife de Vitela',e:'🥩',p:5500},
-    {n:'Peixe Frito',e:'🐟',p:4500},
-    {n:'Churrasco Misto',e:'🍖',p:7000},
-    {n:'Salada Mista',e:'🥗',p:2000},
-    {n:'Camarão Grelhado',e:'🦐',p:8000},
-    {n:'Sopa do Dia',e:'🍜',p:1500},
-  ],
-  bebidas:[
-    {n:'Cuca (lata)',e:'🍺',p:500},
-    {n:'Cuca (600ml)',e:'🍺',p:700},
-    {n:'Água (500ml)',e:'💧',p:300},
-    {n:'Refrigerante',e:'🥤',p:500},
-    {n:'Sumo Natural',e:'🍊',p:1200},
-    {n:'Whisky',e:'🥃',p:3000},
-    {n:'Vinho (taça)',e:'🍷',p:2500},
-    {n:'Café',e:'☕',p:400},
-  ],
-  cigarros:[
-    {n:'Marlboro',e:'🚬',p:1200},
-    {n:'LM',e:'🚬',p:1000},
-    {n:'SG',e:'🚬',p:800},
-    {n:'Peter Stuyvesant',e:'🚬',p:1100},
-  ],
-  outros:[
-    {n:'Sobremesa do Dia',e:'🍮',p:1500},
-    {n:'Fruta da Época',e:'🍍',p:1200},
-    {n:'Água Tónica',e:'🫧',p:600},
-    {n:'Gelado',e:'🍦',p:1000},
-  ]
-};
 
-// ═══════════════════════════════════════════════
-//  CONFIGURAÇÃO API
-// ═══════════════════════════════════════════════
+// ── Configuração ────────────────────────────────
 const API_BASE = window.location.origin;
 // O estabelecimento vem do QR code: /cliente?r=<slug>. Fica guardado para o resto da visita.
 const TENANT_SLUG = (() => {
@@ -47,513 +13,420 @@ const TENANT_SLUG = (() => {
   try { if (v) sessionStorage.setItem('nuk_slug', v); else v = sessionStorage.getItem('nuk_slug') || ''; } catch (e) {}
   return v;
 })();
+// QR por mesa: /cliente?r=<slug>&mesa=M03 preenche a mesa no carrinho
+const MESA_QR = (new URLSearchParams(location.search).get('mesa') || '').trim().slice(0, 10);
+
+// Categorias do servidor → secções do menu
+const SECCOES = {
+  comidas:  { grid: 'grid-comidas',  cats: ['CHURRASCO', 'PEIXE', 'PRATO', 'ENTRADA', 'ACOMPANHAMENTO'] },
+  bebidas:  { grid: 'grid-bebidas',  cats: ['BEBIDA', 'COCKTAIL'] },
+  cigarros: { grid: 'grid-cigarros', cats: ['SHISHA'] },
+  outros:   { grid: 'grid-outros',   cats: [] },            // tudo o resto (SOBREMESA, OUTRO, …)
+};
+const EMOJI_CAT = {
+  CHURRASCO: '🍖', PEIXE: '🐟', PRATO: '🍽️', ENTRADA: '🥗', ACOMPANHAMENTO: '🍚',
+  BEBIDA: '🥤', COCKTAIL: '🍹', SHISHA: '💨', SOBREMESA: '🍮', OUTRO: '📦',
+};
+const METODOS = {
+  coin:     { api: 'NUKCOIN',       nome: 'Nuk-Coin' },
+  cash:     { api: 'CASH',          nome: 'Dinheiro' },
+  tpa:      { api: 'TPA',           nome: 'TPA' },
+  express:  { api: 'EXPRESS',       nome: 'Express' },
+  transfer: { api: 'TRANSFERENCIA', nome: 'Transferência' },
+};
+
+// ── Estado da sessão ────────────────────────────
+function novaSessao() {
+  return {
+    nome: '', tel: '', prov: '',
+    isCliente: false, clienteId: null, pin: null, stars: 0, wallet: 0,
+    cart: {},          // { [produto_id]: { id, nome, preco, qtd } }
+    payMethod: null,
+    menu: null,        // produtos do servidor (null = ainda não carregado)
+    aEnviar: false,    // evita duplo toque (dois pedidos iguais)
+  };
+}
+let session = novaSessao();
+
+// ── Utilidades ──────────────────────────────────
 function api(path, opts = {}) {
   const headers = Object.assign({ 'X-Tenant-Slug': TENANT_SLUG }, opts.headers || {});
   return fetch(API_BASE + path, Object.assign({}, opts, { headers }));
 }
-
-// ═══════════════════════════════════════════════
-//  ESTADO DA SESSÃO
-// ═══════════════════════════════════════════════
-let session = {
-  nome:'', tel:'', prov:'',
-  isCliente:false, clienteId:null, stars:0, wallet:0, pontos:50,
-  cart:{}, payMethod:null, creditSel:0,
-  // cardápio real carregado da API
-  menuLoaded:false, menuData:{}
-};
-
-// ═══════════════════════════════════════════════
-//  UTILIDADES
-// ═══════════════════════════════════════════════
-if(!TENANT_SLUG){ document.addEventListener('DOMContentLoaded',()=>{ const a=document.getElementById('acc-sem-slug'); if(a) a.style.display='block'; }); }
-function go(id){ document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active')); document.getElementById(id).classList.add('active'); window.scrollTo(0,0); }
-function fmt(n){ return n.toLocaleString('pt-PT')+' Kz'; }
-function toast(msg,type='info'){
-  const t=document.getElementById('toast');
-  t.textContent=msg; t.className='show '+(type||'');
-  clearTimeout(t._t); t._t=setTimeout(()=>t.className='',2800);
+/** Chamada à API que nunca lança: devolve { ok, status, data, rede } (rede = sem ligação ao servidor). */
+async function chamar(path, { method = 'GET', body, headers } = {}) {
+  const h = Object.assign({}, headers || {});
+  if (body !== undefined) h['Content-Type'] = 'application/json';
+  let r;
+  try { r = await api(path, { method, headers: h, body: body !== undefined ? JSON.stringify(body) : undefined }); }
+  catch (e) { return { ok: false, status: 0, data: {}, rede: true }; }
+  const data = await r.json().catch(() => ({}));
+  return { ok: r.ok, status: r.status, data, rede: false };
 }
+const MSG_REDE = 'Sem ligação ao servidor. Tente novamente.';
 
-// ═══════════════════════════════════════════════
-//  ECRÃ 0 — ACESSO
-// ═══════════════════════════════════════════════
-async function submitAcesso(){
-  const nome=document.getElementById('acc-nome').value.trim();
-  const tel=document.getElementById('acc-tel').value.trim();
-  const prov=document.getElementById('acc-prov').value;
-  if(!nome){ toast('Insira o seu nome.','err'); return; }
-  if(!/^9[0-9]{8}$/.test(tel)){ toast('Telemóvel inválido (9XXXXXXXX).','err'); return; }
-  if(!prov){ toast('Seleccione a sua província.','err'); return; }
-  session.nome=nome; session.tel=tel; session.prov=prov;
+function $(id) { return document.getElementById(id); }
+function no(tag, cls, texto) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (texto !== undefined) e.textContent = texto;
+  return e;
+}
+function go(id) {
+  const alvo = $(id); if (!alvo) return;
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  alvo.classList.add('active');
+  window.scrollTo(0, 0);
+}
+function fmt(n) { return Number(n || 0).toLocaleString('pt-PT') + ' Kz'; }
+function toast(msg, type = 'info') {
+  const t = $('toast');
+  t.textContent = msg; t.className = 'show ' + (type || '');
+  clearTimeout(t._t); t._t = setTimeout(() => { t.className = ''; }, 3200);
+}
+function ocupar(botao, ocupado) { if (botao) botao.disabled = !!ocupado; }
 
-  // Identificar cliente registado (telefone + PIN). Sem PIN → visitante.
-  const pin=document.getElementById('acc-pin').value.trim();
-  if(pin){
-    if(!/^\d{4}$/.test(pin)){ toast('O PIN tem 4 dígitos.','err'); return; }
-    try {
-      let r = await api(`/api/cliente/login`, {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ telefone: tel, pin })
-      });
-      if(r.status===403){
-        // cliente antigo sem PIN: o PIN escolhido fica definido (só é possível enquanto não existir um)
-        const d = await api(`/api/cliente/definir-pin`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ telefone: tel, pin }) });
-        if(d.ok){ toast('PIN definido. Guarde-o: é a sua chave.','ok'); r = await api(`/api/cliente/login`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ telefone: tel, pin }) }); }
-      }
-      if(r.status===401){ toast('Telefone ou PIN incorrecto. Ainda não tem conta? Crie uma abaixo.','err'); return; }
-      if(r.status===400 || r.status===404 || r.status===403){ const e=await r.json().catch(()=>({})); toast(e.erro||'Não foi possível entrar.','err'); return; }
-      if(r.ok){
-        const data = await r.json();
-        const c = data.cliente;
-        session.isCliente = true;
-        session.clienteId = c.id;
-        session.pin = pin;
-        session.stars = c.estrelas || 0;
-        session.wallet = parseFloat(c.nukcoin_saldo) || 0;
-        session.pontos = c.pontos || 50;
-        session.nome = c.nome; // usa nome do BD
-      }
-    } catch(e) {
-      toast('Sem ligação ao servidor. Tente novamente.','err'); return;
+if (!TENANT_SLUG) { const a = $('acc-sem-slug'); if (a) a.style.display = 'block'; }
+
+// ── Ecrã 0 — Acesso ─────────────────────────────
+async function submitAcesso() {
+  if (session.aEnviar) return;
+  const nome = $('acc-nome').value.trim();
+  const tel = $('acc-tel').value.trim();
+  const prov = $('acc-prov').value;
+  if (!nome) { toast('Insira o seu nome.', 'err'); return; }
+  if (!/^9[0-9]{8}$/.test(tel)) { toast('Telemóvel inválido (9XXXXXXXX).', 'err'); return; }
+  if (!prov) { toast('Seleccione a sua província.', 'err'); return; }
+  const pin = $('acc-pin').value.trim();
+  if (pin && !/^\d{4}$/.test(pin)) { toast('O PIN tem 4 dígitos.', 'err'); return; }
+
+  // Sem PIN → visitante. Com PIN → identifica o cliente registado.
+  const novo = novaSessao();
+  novo.nome = nome; novo.tel = tel; novo.prov = prov;
+  if (pin) {
+    session.aEnviar = true;
+    let r = await chamar('/api/cliente/login', { method: 'POST', body: { telefone: tel, pin } });
+    if (r.status === 403 && r.data.sem_pin) {
+      // cliente antigo sem PIN: o PIN escolhido fica definido (só é possível enquanto não existir um)
+      const d = await chamar('/api/cliente/definir-pin', { method: 'POST', body: { telefone: tel, pin } });
+      if (d.ok) { toast('PIN definido. Guarde-o: é a sua chave.', 'ok'); r = await chamar('/api/cliente/login', { method: 'POST', body: { telefone: tel, pin } }); }
     }
+    session.aEnviar = false;
+    if (r.rede) { toast(MSG_REDE, 'err'); return; }
+    if (r.status === 401) { toast('Telefone ou PIN incorrecto. Ainda não tem conta? Crie uma abaixo.', 'err'); return; }
+    if (!r.ok) { toast(r.data.erro || 'Não foi possível entrar. Tente novamente.', 'err'); return; }
+    const c = r.data.cliente;
+    Object.assign(novo, { isCliente: true, clienteId: c.id, pin, stars: c.estrelas || 0, wallet: parseFloat(c.nukcoin_saldo) || 0, nome: c.nome });
   }
+  session = novo;
 
-  // Actualizar ecrã auth
-  document.getElementById('auth-greeting').textContent='Seja bem-vindo'+(session.isCliente?', '+session.nome.split(' ')[0]+'!':'!');
-  document.getElementById('auth-name-sub').textContent=session.isCliente?'Como pretende prosseguir?':'Seleccione uma opção abaixo.';
-  if(session.isCliente){ renderStars(session.stars); document.getElementById('stars-bar').style.display='flex'; }
-  else { document.getElementById('stars-bar').style.display='none'; }
+  $('auth-greeting').textContent = 'Seja bem-vindo' + (session.isCliente ? ', ' + session.nome.split(' ')[0] + '!' : '!');
+  $('auth-name-sub').textContent = session.isCliente ? 'Como pretende prosseguir?' : 'Seleccione uma opção abaixo.';
+  if (session.isCliente) renderStars(session.stars); else $('stars-bar').style.display = 'none';
   go('s-auth');
 }
 
-function renderStars(n){
-  const bar=document.getElementById('stars-bar');
-  bar.style.display='flex';
-  const stars=bar.querySelectorAll('.star');
-  stars.forEach((s,i)=>s.classList.toggle('on',i<n));
-  document.getElementById('stars-desc').textContent=n>=5?'🎁 Tem 20% de desconto disponível!':n+' / 5 para 20% desconto';
+function renderStars(n) {
+  const bar = $('stars-bar');
+  bar.style.display = 'flex';
+  bar.querySelectorAll('.star').forEach((s, i) => s.classList.toggle('on', i < n));
+  $('stars-desc').textContent = n >= 5 ? '🎁 Tem 20% de desconto disponível!' : n + ' / 5 para 20% desconto';
 }
 
-// ═══════════════════════════════════════════════
-//  ECRÃ 1 — AUTH / SAIR
-// ═══════════════════════════════════════════════
-function sair(){
-  // Se veio do formulário de acesso, volta; caso contrário recomeça
+function sair() {
+  session = novaSessao();
+  ['acc-nome', 'acc-tel', 'acc-pin'].forEach(id => { $(id).value = ''; });
   go('s-acesso');
-  session={nome:'',tel:'',prov:'',isCliente:false,stars:0,wallet:0,pontos:50,cart:{},payMethod:null,creditSel:0};
 }
 
-// ═══════════════════════════════════════════════
-//  ECRÃ 3 — PERFIL TILE
-// ═══════════════════════════════════════════════
-function loadClienteMenu(){
-  document.getElementById('cli-nome-tile').textContent=session.nome||'—';
-  document.getElementById('cli-tel-tile').textContent='+244 '+session.tel;
-  document.getElementById('cli-avatar').textContent=(session.nome||'?')[0].toUpperCase();
-  document.getElementById('cli-wallet-pill').textContent='💜 '+fmt(session.wallet);
-  document.getElementById('cli-stars-pill').textContent='⭐ '+session.stars+'/5';
+// ── Navegação ───────────────────────────────────
+function voltarMenu() { if (session.isCliente) loadClienteMenu(); else go('s-convidado'); }
+function voltarInicio() { if (session.isCliente) loadClienteMenu(); else go('s-auth'); }
+
+function abrirCliente() {
+  if (!session.nome) { toast('Identifique-se primeiro no formulário.', 'err'); go('s-acesso'); return; }
+  if (!session.isCliente) { toast('Crie a sua conta para aceder à área de cliente.', 'info'); abrirCadastrar(); return; }
+  loadClienteMenu();
+}
+function abrirCadastrar() {
+  if (session.nome && !$('cad-nome').value) $('cad-nome').value = session.nome;
+  if (session.tel && !$('cad-tel').value) $('cad-tel').value = session.tel;
+  if (session.prov && !$('cad-prov').value) $('cad-prov').value = session.prov;
+  go('s-cadastrar');
+}
+function loadClienteMenu() {
+  $('cli-nome-tile').textContent = session.nome || '—';
+  $('cli-tel-tile').textContent = '+244 ' + session.tel;
+  $('cli-avatar').textContent = (session.nome || '?')[0].toUpperCase();
+  $('cli-wallet-pill').textContent = '💜 ' + fmt(session.wallet);
+  $('cli-stars-pill').textContent = '⭐ ' + session.stars + '/5';
   go('s-cliente-menu');
 }
 
-// ═══════════════════════════════════════════════
-//  ECRÃ 4 — NUK-COIN
-// ═══════════════════════════════════════════════
-function loadNukCoin(){
-  document.getElementById('wlt-saldo').innerHTML=fmt(session.wallet).replace(' Kz','')+'<span> Kz</span>';
-  session.creditSel=0;
-  document.querySelectorAll('.credit-opt').forEach(o=>o.classList.remove('selected'));
-  const cc=document.getElementById('credit-confirm'); if(cc) cc.style.display='none';
+// ── Nuk-Coin ────────────────────────────────────
+function setSaldo(n) {
+  const e = $('wlt-saldo');
+  e.replaceChildren(document.createTextNode(Number(n || 0).toLocaleString('pt-PT') + ' '), no('span', null, 'Kz'));
+}
+function loadNukCoin() {
+  setSaldo(session.wallet);
   go('s-nukcoin');
   atualizarSaldo();
 }
-// Saldo e movimentos reais (exige o PIN da sessão)
-async function atualizarSaldo(){
-  if(!session.clienteId || !session.pin) return;
-  try {
-    const p = await api(`/api/cliente/perfil`,{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ telefone: session.tel, pin: session.pin }) });
-    if(p.ok){
-      const d = await p.json();
-      session.wallet = parseFloat(d.cliente.nukcoin_saldo)||0; session.stars = d.cliente.estrelas||0;
-      document.getElementById('wlt-saldo').innerHTML=fmt(session.wallet).replace(' Kz','')+'<span> Kz</span>';
-      document.getElementById('cli-wallet-pill').textContent='💜 '+fmt(session.wallet);
-    }
-    const h = await api(`/api/cliente/nukcoin/historico?cliente_id=${session.clienteId}`,{ headers:{ 'X-Cliente-Pin': session.pin } });
-    if(h.ok){
-      const { movimentos } = await h.json();
-      const nomes = { CARREGAMENTO:'Carregamento', CONSUMO:'Consumo', ESTORNO:'Estorno', BONUS:'Bónus' };
-      document.getElementById('wlt-hist').innerHTML = movimentos.length ? movimentos.map(m=>{
-        const entra = m.tipo!=='CONSUMO';
-        return '<div class="hist-item"><div><div style="font-weight:600">'+(nomes[m.tipo]||m.tipo)+'</div><div class="hist-date">'+new Date(m.criado_em).toLocaleString('pt-PT')+'</div></div><div class="hist-val">'+(entra?'+':'−')+fmt(parseFloat(m.valor))+'</div></div>';
-      }).join('') : '<div class="hist-item"><div class="hist-date">Ainda sem movimentos</div></div>';
-    }
-  } catch(e){ /* sem ligação: mantém o que está no ecrã */ }
-}
-function selectCredit(el,val){
-  session.creditSel=val;
-  document.querySelectorAll('.credit-opt').forEach(o=>o.classList.remove('selected'));
-  el.classList.add('selected');
-  document.getElementById('credit-confirm').style.display='block';
-  document.getElementById('credit-chosen').textContent='Carregar '+fmt(val)+' na carteira Nuk-Coin.';
-}
-async function confirmarCredito(){
-  if(!session.creditSel) return;
-  if(!session.clienteId){ toast('Necessário ser cliente registado.','err'); return; }
-  try {
-    const r = await api(`/api/cliente/nukcoin/carregar`, {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ cliente_id: session.clienteId, valor: session.creditSel })
-    });
-    const data = await r.json();
-    if(!r.ok){ toast(data.erro||'Erro ao carregar.','err'); return; }
-    session.wallet = parseFloat(data.saldo_atual);
-    document.getElementById('wlt-saldo').innerHTML=fmt(session.wallet).replace(' Kz','')+'<span> Kz</span>';
-    const hist=document.getElementById('wlt-hist');
-    const li=document.createElement('div'); li.className='hist-item';
-    li.innerHTML='<div><div style="font-weight:600">Carregamento</div><div class="hist-date">Agora</div></div><div class="hist-val">+'+fmt(session.creditSel)+'</div>';
-    hist.prepend(li);
-    document.getElementById('cli-wallet-pill').textContent='💜 '+fmt(session.wallet);
-    document.getElementById('credit-confirm').style.display='none';
-    document.querySelectorAll('.credit-opt').forEach(o=>o.classList.remove('selected'));
-    toast('✓ Carteira carregada com '+fmt(session.creditSel),'ok');
-    session.creditSel=0;
-  } catch(e) {
-    // Fallback offline
-    session.wallet+=session.creditSel;
-    document.getElementById('wlt-saldo').innerHTML=fmt(session.wallet).replace(' Kz','')+'<span> Kz</span>';
-    document.getElementById('cli-wallet-pill').textContent='💜 '+fmt(session.wallet);
-    document.getElementById('credit-confirm').style.display='none';
-    document.querySelectorAll('.credit-opt').forEach(o=>o.classList.remove('selected'));
-    toast('✓ Carteira carregada (demo)','ok');
-    session.creditSel=0;
-  }
-}
-
-// ═══════════════════════════════════════════════
-//  ECRÃ 5 — RESTAURANTE
-// ═══════════════════════════════════════════════
-// Mapeamento categoria → emoji e grid
-const CAT_MAP={
-  'Comidas':{e:'🍽️',grid:'grid-comidas'},
-  'Bebidas':{e:'🥤',grid:'grid-bebidas'},
-  'Cigarros':{e:'🚬',grid:'grid-cigarros'},
-  'Outros':{e:'📦',grid:'grid-outros'},
-};
-function emojiForCat(cat){
-  const k=Object.keys(CAT_MAP).find(k=>cat&&cat.toLowerCase().includes(k.toLowerCase()));
-  return k?CAT_MAP[k].e:'📦';
-}
-function gridForCat(cat){
-  const k=Object.keys(CAT_MAP).find(k=>cat&&cat.toLowerCase().includes(k.toLowerCase()));
-  return k?CAT_MAP[k].grid:'grid-outros';
-}
-
-function buildMenu(){
-  // Limpar todos os grids
-  ['grid-comidas','grid-bebidas','grid-cigarros','grid-outros'].forEach(id=>{
-    document.getElementById(id).innerHTML='';
-  });
-  // Usar menuData (API) ou MENU (fallback)
-  let produtos=[];
-  if(session.menuLoaded && session.menuData.produtos && session.menuData.produtos.length>0){
-    produtos=session.menuData.produtos;
-  } else {
-    // Converter MENU estático para formato API
-    ['comidas','bebidas','cigarros','outros'].forEach(cat=>{
-      (MENU[cat]||[]).forEach(item=>produtos.push({id:null,nome:item.n,preco:item.p,categoria:cat.charAt(0).toUpperCase()+cat.slice(1),_emoji:item.e}));
-    });
-  }
-  produtos.forEach(item=>{
-    const gid=gridForCat(item.categoria);
-    const g=document.getElementById(gid); if(!g) return;
-    const d=document.createElement('div'); d.className='menu-item';
-    const qty=session.cart[item.nome]||0; if(qty>0) d.classList.add('in-cart');
-    const em=item._emoji||emojiForCat(item.categoria);
-    d.innerHTML='<span class="menu-item-emoji">'+em+'</span><div class="menu-item-name">'+item.nome+'</div><div class="menu-item-price">'+fmt(parseFloat(item.preco))+'</div>';
-    if(qty>0) d.innerHTML+='<div style="font-size:.65rem;color:var(--ok);margin-top:3px">No carrinho: '+qty+'</div>';
-    d.onclick=()=>{ addToCart({n:item.nome,p:parseFloat(item.preco),e:em,id:item.id}); };
-    g.appendChild(d);
+/** Saldo, estrelas e movimentos reais (exige o PIN da sessão). */
+async function atualizarSaldo() {
+  if (!session.isCliente || !session.pin) return;
+  const p = await chamar('/api/cliente/perfil', { method: 'POST', body: { telefone: session.tel, pin: session.pin } });
+  if (p.ok) {
+    session.wallet = parseFloat(p.data.cliente.nukcoin_saldo) || 0;
+    session.stars = p.data.cliente.estrelas || 0;
+    setSaldo(session.wallet);
+    $('cli-wallet-pill').textContent = '💜 ' + fmt(session.wallet);
+    $('cli-stars-pill').textContent = '⭐ ' + session.stars + '/5';
+    renderStars(session.stars);
+  } else if (p.rede) { toast(MSG_REDE, 'err'); return; }
+  const h = await chamar('/api/cliente/nukcoin/historico?cliente_id=' + encodeURIComponent(session.clienteId), { headers: { 'X-Cliente-Pin': session.pin } });
+  if (!h.ok) return;
+  const nomes = { CARREGAMENTO: 'Carregamento', CONSUMO: 'Consumo', ESTORNO: 'Estorno', BONUS: 'Bónus' };
+  const lista = $('wlt-hist');
+  lista.replaceChildren();
+  const movs = h.data.movimentos || [];
+  if (!movs.length) { const v = no('div', 'hist-item'); v.appendChild(no('div', 'hist-date', 'Ainda sem movimentos')); lista.appendChild(v); return; }
+  movs.forEach(m => {
+    const linha = no('div', 'hist-item');
+    const esq = no('div');
+    const tit = no('div', null, nomes[m.tipo] || m.tipo); tit.style.fontWeight = '600';
+    esq.appendChild(tit);
+    esq.appendChild(no('div', 'hist-date', new Date(m.criado_em).toLocaleString('pt-PT')));
+    linha.appendChild(esq);
+    linha.appendChild(no('div', 'hist-val', (m.tipo === 'CONSUMO' ? '−' : '+') + fmt(parseFloat(m.valor))));
+    lista.appendChild(linha);
   });
 }
-function addToCart(item){
-  session.cart[item.n]=(session.cart[item.n]||0)+1;
-  session.cart[item.n+'_price']=item.p;
-  if(item.id) session.cart[item.n+'_id']=item.id;
-  updateCartBadge(); buildMenu();
-  toast(item.e+' '+item.n+' adicionado','info');
-}
 
-async function loadRestaurante(){
-  // Carregar cardápio da API se ainda não carregado
-  if(!session.menuLoaded){
-    try {
-      const r=await api(`/api/cliente/cardapio`);
-      if(r.ok){
-        session.menuData=await r.json();
-        session.menuLoaded=true;
-      }
-    } catch(e){ console.warn('Cardápio offline, usando demo'); }
+// ── Restaurante ─────────────────────────────────
+function gridDe(cat) {
+  const c = String(cat || '').toUpperCase();
+  const k = Object.keys(SECCOES).find(s => SECCOES[s].cats.includes(c));
+  return k ? SECCOES[k].grid : SECCOES.outros.grid;
+}
+function buildMenu() {
+  const grids = Object.values(SECCOES).map(s => s.grid);
+  grids.forEach(id => $(id).replaceChildren());
+  (session.menu || []).forEach(p => {
+    const qtd = (session.cart[p.id] || {}).qtd || 0;
+    const d = no('div', 'menu-item' + (qtd > 0 ? ' in-cart' : ''));
+    d.dataset.action = 'add-produto'; d.dataset.id = p.id;
+    d.appendChild(no('span', 'menu-item-emoji', EMOJI_CAT[String(p.categoria || '').toUpperCase()] || '📦'));
+    d.appendChild(no('div', 'menu-item-name', p.nome));
+    d.appendChild(no('div', 'menu-item-price', fmt(parseFloat(p.preco))));
+    if (qtd > 0) d.appendChild(no('div', 'menu-item-qty', 'No carrinho: ' + qtd));
+    $(gridDe(p.categoria)).appendChild(d);
+  });
+  grids.forEach(id => { const g = $(id); g.parentElement.style.display = g.children.length ? '' : 'none'; });
+}
+async function loadRestaurante() {
+  go('s-restaurante');
+  if (!session.menu) {
+    const r = await chamar('/api/cliente/cardapio');
+    if (r.ok && Array.isArray(r.data.produtos) && r.data.produtos.length) {
+      session.menu = r.data.produtos;
+      $('menu-erro').style.display = 'none';
+    } else {
+      Object.values(SECCOES).forEach(s => { const g = $(s.grid); g.replaceChildren(); g.parentElement.style.display = 'none'; });
+      $('menu-erro-msg').textContent = r.rede ? MSG_REDE : (r.ok ? 'Ainda não há produtos disponíveis neste estabelecimento.' : (r.data.erro || 'Não foi possível carregar o menu.'));
+      $('menu-erro').style.display = 'block';
+      return;
+    }
   }
   buildMenu(); updateCartBadge();
 }
-function updateCartBadge(){
-  const total=Object.entries(session.cart).filter(([k])=>!k.endsWith('_price') && !k.endsWith('_id')).reduce((s,[,v])=>s+v,0);
-  document.getElementById('cart-badge').textContent=total;
-  document.getElementById('cart-badge-btn').textContent=total;
-  document.getElementById('cart-count').textContent=total;
-}
-function voltarDeRestaurante(){ session.isCliente?go('s-cliente-menu'):go('s-convidado'); }
+function recarregarMenu() { session.menu = null; loadRestaurante(); }
 
-// ═══════════════════════════════════════════════
-//  ECRÃ 6 — CARRINHO
-// ═══════════════════════════════════════════════
-function loadCarrinho(){
-  const items=Object.entries(session.cart).filter(([k])=>!k.endsWith('_price') && !k.endsWith('_id'));
-  const ul=document.getElementById('cart-list');
-  ul.innerHTML='';
-  let total=0;
-  if(items.length===0){
-    ul.innerHTML='<li style="color:var(--muted);font-size:.82rem;padding:12px 0;text-align:center">Carrinho vazio</li>';
-  } else {
-    items.forEach(([name,qty])=>{
-      const price=session.cart[name+'_price']||0;
-      total+=price*qty;
-      const li=document.createElement('li'); li.className='cart-item';
-      const nameSpan=document.createElement('span'); nameSpan.className='cart-item-name'; nameSpan.textContent=name;
-      const qtySpan=document.createElement('span'); qtySpan.className='cart-item-qty';
-      const btnMinus=document.createElement('button'); btnMinus.className='qty-btn'; btnMinus.textContent='−';
-      btnMinus.addEventListener('click',()=>changeQty(name,-1));
-      const qtyNum=document.createElement('span'); qtyNum.textContent=qty;
-      const btnPlus=document.createElement('button'); btnPlus.className='qty-btn'; btnPlus.textContent='+';
-      btnPlus.addEventListener('click',()=>changeQty(name,1));
-      qtySpan.appendChild(btnMinus); qtySpan.appendChild(qtyNum); qtySpan.appendChild(btnPlus);
-      const priceSpan=document.createElement('span'); priceSpan.className='cart-item-price'; priceSpan.textContent=fmt(price*qty);
-      li.appendChild(nameSpan); li.appendChild(qtySpan); li.appendChild(priceSpan);
-      ul.appendChild(li);
-    });
+function itensCarrinho() { return Object.values(session.cart); }
+function totalBruto() { return itensCarrinho().reduce((s, i) => s + i.preco * i.qtd, 0); }
+function updateCartBadge() {
+  const n = itensCarrinho().reduce((s, i) => s + i.qtd, 0);
+  ['cart-badge', 'cart-badge-btn', 'cart-count'].forEach(id => { $(id).textContent = n; });
+}
+function addProduto(id) {
+  const p = (session.menu || []).find(x => x.id === id); if (!p) return;
+  const it = session.cart[id] || (session.cart[id] = { id: p.id, nome: p.nome, preco: parseFloat(p.preco), qtd: 0 });
+  if (it.qtd >= 100) { toast('Máximo de 100 unidades por produto.', 'err'); return; }
+  it.qtd++;
+  updateCartBadge(); buildMenu();
+  toast('➕ ' + p.nome + ' adicionado', 'info');
+}
+function alterarQtd(id, delta) {
+  const it = session.cart[id]; if (!it) return;
+  it.qtd = Math.min(100, it.qtd + delta);
+  if (it.qtd <= 0) delete session.cart[id];
+  updateCartBadge(); buildMenu(); verCarrinho();
+}
+
+// ── Carrinho ────────────────────────────────────
+function verCarrinho() {
+  const ul = $('cart-list');
+  ul.replaceChildren();
+  const itens = itensCarrinho();
+  if (!itens.length) {
+    const li = no('li', null, 'Carrinho vazio');
+    li.style.cssText = 'color:var(--muted);font-size:.82rem;padding:12px 0;text-align:center';
+    ul.appendChild(li);
   }
-  // Desconto estrelas
-  let desc=false;
-  if(session.stars>=5 && total<=25000){ desc=true; total=Math.round(total*0.8); }
-  document.getElementById('disc-info').style.display=desc?'block':'none';
-  document.getElementById('cart-total').textContent=fmt(total);
-  document.getElementById('pay-coin-sub').textContent='Saldo: '+fmt(session.wallet);
-  document.getElementById('coin-pay-info').style.display='none';
-  session.cartTotal=total;
+  itens.forEach(i => {
+    const li = no('li', 'cart-item');
+    const qtd = no('span', 'cart-item-qty');
+    const menos = no('button', 'qty-btn', '−'); menos.dataset.action = 'qtd'; menos.dataset.id = i.id; menos.dataset.delta = '-1';
+    const mais = no('button', 'qty-btn', '+'); mais.dataset.action = 'qtd'; mais.dataset.id = i.id; mais.dataset.delta = '1';
+    qtd.append(menos, no('span', null, String(i.qtd)), mais);
+    li.append(no('span', 'cart-item-name', i.nome), qtd, no('span', 'cart-item-price', fmt(i.preco * i.qtd)));
+    ul.appendChild(li);
+  });
+  // Estimativa: quem decide o desconto final é o servidor
+  const bruto = totalBruto();
+  const comEstrelas = session.isCliente && session.stars >= 5 && bruto <= 25000;
+  $('disc-info').style.display = comEstrelas ? 'block' : 'none';
+  $('cart-total').textContent = fmt(comEstrelas ? Math.round(bruto * 0.8 * 100) / 100 : bruto);
+  // Convidado não tem carteira
+  $('pay-coin').style.display = session.isCliente ? '' : 'none';
+  if (!session.isCliente && session.payMethod === 'coin') limparPagamento();
+  $('pay-coin-sub').textContent = 'Saldo: ' + fmt(session.wallet);
+  $('coin-pay-info').style.display = session.payMethod === 'coin' ? 'block' : 'none';
+  if (!$('cart-mesa').value && MESA_QR) $('cart-mesa').value = MESA_QR;
   go('s-carrinho');
 }
-function changeQty(name,delta){
-  session.cart[name]=Math.max(0,(session.cart[name]||0)+delta);
-  if(session.cart[name]===0){ delete session.cart[name]; delete session.cart[name+'_price']; delete session.cart[name+'_id']; }
-  updateCartBadge(); loadCarrinho();
+function limparPagamento() {
+  session.payMethod = null;
+  document.querySelectorAll('.pay-opt').forEach(o => o.classList.remove('selected'));
+  $('coin-pay-info').style.display = 'none';
 }
-function selectPay(el,method){
-  session.payMethod=method;
-  document.querySelectorAll('.pay-opt').forEach(o=>o.classList.remove('selected'));
+function selectPay(el, method) {
+  if (method === 'coin' && !session.isCliente) { toast('O Nuk-Coin é só para clientes registados.', 'err'); return; }
+  session.payMethod = method;
+  document.querySelectorAll('.pay-opt').forEach(o => o.classList.remove('selected'));
   el.classList.add('selected');
-  document.getElementById('coin-pay-info').style.display=method==='coin'?'block':'none';
+  $('coin-pay-info').style.display = method === 'coin' ? 'block' : 'none';
 }
-async function confirmarPedido(){
-  const items=Object.entries(session.cart).filter(([k])=>!k.endsWith('_price') && !k.endsWith('_id'));
-  if(items.length===0){ toast('Adicione produtos ao carrinho.','err'); return; }
-  if(!session.payMethod){ toast('Seleccione a forma de pagamento.','err'); return; }
-  if(session.payMethod==='coin' && session.wallet<session.cartTotal){ toast('Saldo insuficiente. Carregue a carteira.','err'); return; }
 
-  // Mapear método para o formato da API
-  const metodosMap={coin:'NUKCOIN',cash:'CASH',tpa:'TPA',express:'EXPRESS',transfer:'TRANSFERENCIA'};
-  const metodoApi=metodosMap[session.payMethod]||'CASH';
+async function confirmarPedido() {
+  if (session.aEnviar) return;
+  const itens = itensCarrinho();
+  if (!itens.length) { toast('Adicione produtos ao carrinho.', 'err'); return; }
+  if (!session.payMethod) { toast('Seleccione a forma de pagamento.', 'err'); return; }
+  const metodo = METODOS[session.payMethod];
+  const body = { itens: itens.map(i => ({ produto_id: i.id, quantidade: i.qtd })), metodo_pagamento: metodo.api };
+  if (session.isCliente) { body.cliente_id = session.clienteId; body.pin = session.pin; }
+  const mesa = $('cart-mesa').value.trim();
+  if (mesa) body.mesa_ref = mesa;
 
-  // Montar itens para API
-  const itensApi=items.map(([nome,qty])=>{
-    const pid=session.cart[nome+'_id'];
-    return pid?{produto_id:pid,quantidade:qty}:null;
-  }).filter(Boolean);
-
-  let earnStar=false, totalFinal=session.cartTotal, novoSaldo=session.wallet;
-
-  if(itensApi.length>0 && session.clienteId){
-    // Enviar pedido real à API
-    try {
-      const r=await api(`/api/cliente/pedido-restaurante`,{
-        method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({
-          itens:itensApi,
-          cliente_id:session.clienteId,
-          pin:session.pin,
-          metodo_pagamento:metodoApi,
-          observacoes:null
-        })
-      });
-      const data=await r.json();
-      if(!r.ok){ toast(data.erro||'Erro ao enviar pedido.','err'); return; }
-      earnStar=data.estrela_ganha||false;
-      totalFinal=parseFloat(data.total_final)||session.cartTotal;
-      if(data.nukcoin_saldo_novo!=null) novoSaldo=parseFloat(data.nukcoin_saldo_novo);
-    } catch(e){
-      console.warn('API indisponível — modo demo');
-      // Continuar offline: calcular localmente
-      if(session.payMethod==='coin') novoSaldo=session.wallet-session.cartTotal;
-      earnStar=session.cartTotal>=25000;
-    }
-  } else {
-    // Convidado ou produtos sem ID — modo demo
-    if(session.payMethod==='coin') novoSaldo=session.wallet-session.cartTotal;
-    earnStar=session.cartTotal>=25000;
+  const botao = document.querySelector('[data-action="confirmar-pedido"]');
+  session.aEnviar = true; ocupar(botao, true);
+  const r = await chamar('/api/cliente/pedido-restaurante', { method: 'POST', body });
+  session.aEnviar = false; ocupar(botao, false);
+  if (!r.ok) {
+    // O pedido NÃO foi enviado: o carrinho fica intacto para tentar de novo
+    toast(r.rede ? 'Sem ligação ao servidor. O pedido NÃO foi enviado — tente novamente.' : (r.data.erro || 'Não foi possível enviar o pedido.'), 'err');
+    return;
   }
-
-  // Actualizar estado local
-  if(session.payMethod==='coin') session.wallet=novoSaldo;
-  if(earnStar){ session.stars=Math.min(5,session.stars+1); renderStars(session.stars); }
-  session.cart={}; session.payMethod=null; updateCartBadge(); buildMenu();
-
-  // Actualizar pilulas no menu cliente
-  if(session.isCliente){
-    document.getElementById('cli-wallet-pill').textContent='💜 '+fmt(session.wallet);
-    document.getElementById('cli-stars-pill').textContent='⭐ '+session.stars+'/5';
+  const d = r.data;
+  session.cart = {}; limparPagamento(); updateCartBadge(); buildMenu();
+  if (session.isCliente) {
+    if (d.nukcoin_saldo_novo != null) session.wallet = parseFloat(d.nukcoin_saldo_novo);
+    atualizarSaldo(); // sincroniza estrelas e saldo reais
+    $('cli-wallet-pill').textContent = '💜 ' + fmt(session.wallet);
   }
-
-  // Ecrã confirmação
-  const nomeMetodo={coin:'Nuk-Coin',cash:'Dinheiro',tpa:'TPA',express:'Express',transfer:'Transferência'}[session.payMethod||'cash'];
-  document.getElementById('pedido-ok-msg').textContent='Pedido confirmado. Pagamento: '+(nomeMetodo||metodoApi)+' — '+fmt(totalFinal);
-  document.getElementById('star-earned').style.display=earnStar?'block':'none';
-  document.getElementById('disc-earned').style.display=(session.stars>=5)?'block':'none';
+  $('pedido-ok-msg').textContent = 'Pedido ' + d.codigo + ' enviado. Pagamento: ' + metodo.nome + ' — ' + fmt(parseFloat(d.total_final));
+  $('star-earned').style.display = d.estrela_ganha ? 'block' : 'none';
+  const desc = parseFloat(d.desconto) || 0;
+  $('disc-earned').style.display = desc > 0 ? 'block' : 'none';
+  if (desc > 0) $('disc-earned').textContent = '🎁 Desconto de ' + fmt(desc) + ' aplicado neste pedido!';
   go('s-pedido-ok');
 }
 
-// ═══════════════════════════════════════════════
-//  ECRÃ 8 — SERVIÇOS
-// ═══════════════════════════════════════════════
-function voltarDeServicos(){ session.isCliente?go('s-cliente-menu'):go('s-convidado'); }
-// Mapeamento serviço → fracao API
-const FRACAO_MAP={'2 Horas':'DUAS_HORAS','Pernoite':'PERNOITE','Diária':'DIARIA','Semana':'DIARIA'};
-async function solicitarServico(tipo,preco){
-  const fracao=FRACAO_MAP[tipo]||'DIARIA';
-  try {
-    await api(`/api/cliente/pedido-hospedagem`,{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        fracao, quantidade:1,
-        nome_hospede:session.nome||null,
-        telefone:session.tel||null,
-        cliente_id:session.clienteId||null,
-        observacoes:tipo
-      })
-    });
-  } catch(e){ /* continuar offline */ }
-  document.getElementById('sol-emoji').textContent='🛎️';
-  document.getElementById('sol-titulo').textContent='Solicitação enviada!';
-  document.getElementById('sol-msg').textContent=tipo+' ('+preco+') — a nossa equipa entrará em contacto para confirmar.';
-  document.getElementById('sol-btn-menu').style.display=session.isCliente?'block':'none';
-  document.getElementById('sol-btn-menu').onclick=()=>session.isCliente?loadClienteMenu():go('s-convidado');
+// ── Serviços e Eventos ──────────────────────────
+/** Envia a solicitação ao POS. Devolve true só se o servidor a registou. */
+async function enviarSolicitacao(tipo, nomeServico) {
+  if (session.aEnviar) return false;
+  if (!session.nome || !session.tel) { toast('Identifique-se primeiro.', 'err'); go('s-acesso'); return false; }
+  session.aEnviar = true;
+  const r = await chamar('/api/cliente/solicitacao', { method: 'POST', body: { tipo, nome_servico: nomeServico, nome: session.nome, telefone: session.tel } });
+  session.aEnviar = false;
+  if (!r.ok) { toast(r.rede ? 'Sem ligação ao servidor. O pedido NÃO foi enviado — tente novamente.' : (r.data.erro || 'Não foi possível enviar o pedido.'), 'err'); return false; }
+  return true;
+}
+function mostrarConfirmacao(emoji, titulo, msg) {
+  $('sol-emoji').textContent = emoji;
+  $('sol-titulo').textContent = titulo;
+  $('sol-msg').textContent = msg;
   go('s-solicitacao-ok');
 }
-
-// ═══════════════════════════════════════════════
-//  ECRÃ 9 — EVENTOS
-// ═══════════════════════════════════════════════
-function voltarDeEventos(){ session.isCliente?go('s-cliente-menu'):go('s-convidado'); }
-function solicitarEvento(tipo){
-  document.getElementById('sol-emoji').textContent='🎉';
-  document.getElementById('sol-titulo').textContent='Evento solicitado!';
-  document.getElementById('sol-msg').textContent=tipo+' — receberá um orçamento personalizado em breve. Obrigado!';
-  document.getElementById('sol-btn-menu').style.display=session.isCliente?'block':'none';
-  go('s-solicitacao-ok');
+async function solicitarServico(nome, preco, categoria) {
+  const tipo = categoria === 'HOSPEDAGEM' ? 'HOSPEDAGEM' : 'SERVICO';
+  if (!(await enviarSolicitacao(tipo, nome))) return;
+  mostrarConfirmacao('🛎️', 'Pedido enviado!', nome + (preco ? ' (' + preco + ')' : '') + ' — a nossa equipa entrará em contacto para confirmar.');
+}
+async function solicitarEvento(nome) {
+  if (!(await enviarSolicitacao('EVENTO', nome))) return;
+  mostrarConfirmacao('🎉', 'Evento solicitado!', nome + ' — receberá um orçamento personalizado em breve. Obrigado!');
 }
 
-// ═══════════════════════════════════════════════
-//  ECRÃ 10 — CADASTRAR
-// ═══════════════════════════════════════════════
-async function cadastrar(){
-  const nome=document.getElementById('cad-nome').value.trim();
-  const tel=document.getElementById('cad-tel').value.trim();
-  const prov=document.getElementById('cad-prov').value;
-  const ref=document.getElementById('cad-ref').value.trim();
-  if(!nome){ toast('Insira o nome.','err'); return; }
-  if(!/^9[0-9]{8}$/.test(tel)){ toast('Telemóvel inválido (9XXXXXXXX).','err'); return; }
-  if(!prov){ toast('Seleccione a província.','err'); return; }
-  const cadPin=document.getElementById('cad-pin').value.trim();
-  if(!/^\d{4}$/.test(cadPin)){ toast('Escolha um PIN de 4 dígitos.','err'); return; }
+// ── Cadastro ────────────────────────────────────
+async function cadastrar() {
+  if (session.aEnviar) return;
+  const nome = $('cad-nome').value.trim();
+  const tel = $('cad-tel').value.trim();
+  const prov = $('cad-prov').value;
+  const ref = $('cad-ref').value.trim();
+  const pin = $('cad-pin').value.trim();
+  if (!nome) { toast('Insira o nome.', 'err'); return; }
+  if (!/^9[0-9]{8}$/.test(tel)) { toast('Telemóvel inválido (9XXXXXXXX).', 'err'); return; }
+  if (!prov) { toast('Seleccione a província.', 'err'); return; }
+  if (!/^\d{4}$/.test(pin)) { toast('Escolha um PIN de 4 dígitos.', 'err'); return; }
 
-  try {
-    const r=await api(`/api/cliente/cadastrar`,{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({nome,telefone:tel,provincia:prov,pin:cadPin,referido_por_tel:ref||null})
-    });
-    const data=await r.json();
-    if(!r.ok){ toast(data.erro||'Erro no cadastro.','err'); return; }
-    const c=data.cliente;
-    session.nome=c.nome; session.tel=c.telefone; session.prov=c.provincia||prov;
-    session.isCliente=true; session.clienteId=c.id; session.pin=cadPin;
-    session.stars=c.estrelas||0; session.wallet=parseFloat(c.nukcoin_saldo)||0;
-    session.pontos=c.pontos||50;
-    if(ref && /^9[0-9]{8}$/.test(ref)){
-      toast('⭐ O seu amigo (+244 '+ref+') ganhou uma estrela!','info');
-    }
-  } catch(e){
-    // Fallback offline
-    session.nome=nome; session.tel=tel; session.prov=prov;
-    session.isCliente=true; session.stars=0; session.wallet=0; session.pontos=50;
-    if(ref && /^9[0-9]{8}$/.test(ref)){
-      toast('⭐ O seu amigo (+244 '+ref+') ganhou uma estrela! (demo)','info');
-    }
-  }
+  session.aEnviar = true;
+  const r = await chamar('/api/cliente/cadastrar', { method: 'POST', body: { nome, telefone: tel, provincia: prov, pin, referido_por_tel: ref || null } });
+  session.aEnviar = false;
+  if (!r.ok) { toast(r.rede ? MSG_REDE : (r.data.erro || 'Erro no cadastro.'), 'err'); return; }
 
-  document.getElementById('sol-emoji').textContent='🎉';
-  document.getElementById('sol-titulo').textContent='Cadastro concluído!';
-  document.getElementById('sol-msg').textContent='Bem-vindo, '+session.nome.split(' ')[0]+'! Recebeu 50 pontos de boas-vindas. Pode agora aceder a todos os serviços.';
-  document.getElementById('sol-btn-menu').style.display='block';
-  document.getElementById('sol-btn-menu').onclick=()=>loadClienteMenu();
-  go('s-solicitacao-ok');
+  const c = r.data.cliente;
+  session = Object.assign(novaSessao(), {
+    nome: c.nome, tel: c.telefone, prov: c.provincia || prov,
+    isCliente: true, clienteId: c.id, pin, stars: c.estrelas || 0, wallet: parseFloat(c.nukcoin_saldo) || 0,
+  });
+  $('cad-pin').value = '';
+  if (r.data.referral_bonus) toast('⭐ O seu amigo (+244 ' + ref + ') ganhou uma estrela!', 'info');
+  renderStars(session.stars);
+  mostrarConfirmacao('🎉', 'Cadastro concluído!', 'Bem-vindo, ' + session.nome.split(' ')[0] + '! Recebeu ' + (c.pontos || 0) + ' pontos de boas-vindas. Pode agora aceder a todos os serviços.');
 }
 
-// ═══════════════════════════════════════════════
-//  NAVEGAÇÃO CLIENTE (botão Cliente no auth)
-// ═══════════════════════════════════════════════
-document.querySelector('#s-auth .btn-ok').onclick=function(){
-  if(!session.nome){ toast('Identifique-se primeiro no formulário.','err'); go('s-acesso'); return; }
-  if(!session.isCliente){ go('s-cadastrar'); return; }
-  loadClienteMenu();
+// ── Delegação de eventos (a CSP bloqueia onclick= inline) ──
+const ACOES = {
+  'go':                   el => go(el.dataset.screen),
+  'submit-acesso':        () => submitAcesso(),
+  'sair':                 () => sair(),
+  'abrir-cliente':        () => abrirCliente(),
+  'abrir-cadastrar':      () => abrirCadastrar(),
+  'abrir-nukcoin':        () => loadNukCoin(),
+  'abrir-restaurante':    () => loadRestaurante(),
+  'recarregar-menu':      () => recarregarMenu(),
+  'atualizar-saldo':      () => atualizarSaldo(),
+  'add-produto':          el => addProduto(el.dataset.id),
+  'ver-carrinho':         () => verCarrinho(),
+  'qtd':                  el => alterarQtd(el.dataset.id, parseInt(el.dataset.delta, 10)),
+  'select-pay':           el => selectPay(el, el.dataset.method),
+  'confirmar-pedido':     () => confirmarPedido(),
+  'voltar-inicio':        () => voltarInicio(),
+  'voltar-de-restaurante': () => voltarMenu(),
+  'voltar-de-servicos':   () => voltarMenu(),
+  'voltar-de-eventos':    () => voltarMenu(),
+  'solicitar-servico':    el => solicitarServico(el.dataset.tipo, el.dataset.preco, el.dataset.categoria),
+  'solicitar-evento':     el => solicitarEvento(el.dataset.tipo),
+  'cadastrar':            () => cadastrar(),
 };
-
-// Botão Nuk-Coin no menu cliente
-document.querySelector('#s-cliente-menu .btn-coin').onclick=loadNukCoin;
-
-// Botão Restaurante nos dois menus
-document.querySelectorAll('#s-convidado .btn-primary, #s-cliente-menu .btn-primary').forEach(b=>{
-  b.onclick=()=>{ loadRestaurante(); go('s-restaurante'); };
-});
-
-// Ver carrinho
-const btnVerCarrinho=document.querySelector('#s-restaurante button[data-action="go"][data-screen="s-carrinho"]');
-if(btnVerCarrinho) btnVerCarrinho.addEventListener('click',loadCarrinho);
-const btnCarrinhoPrimary=document.querySelector('#s-restaurante .btn-primary[data-action="go"]');
-if(btnCarrinhoPrimary) btnCarrinhoPrimary.addEventListener('click',loadCarrinho);
-
-// ═══════════════════════════════════════════════
-//  HELPERS
-// ═══════════════════════════════════════════════
-function voltarInicio(){ session.isCliente?loadClienteMenu():go('s-auth'); }
-
-// ═══════════════════════════════════════════════
-//  EVENT DELEGATION — substitui onclick= inline (bloqueados pela CSP)
-// ═══════════════════════════════════════════════
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-action]');
   if (!el) return;
-  const action = el.dataset.action;
-  if      (action === 'go')                 go(el.dataset.screen);
-  else if (action === 'submit-acesso')      submitAcesso();
-  else if (action === 'sair')               sair();
-  else if (action === 'select-credit')      selectCredit(el, parseFloat(el.dataset.value));
-  else if (action === 'confirmar-credito')  confirmarCredito();
-  else if (action === 'atualizar-saldo')    atualizarSaldo();
-  else if (action === 'voltar-de-restaurante') voltarDeRestaurante();
-  else if (action === 'select-pay')         selectPay(el, el.dataset.method);
-  else if (action === 'confirmar-pedido')   confirmarPedido();
-  else if (action === 'voltar-inicio')      voltarInicio();
-  else if (action === 'voltar-de-servicos') voltarDeServicos();
-  else if (action === 'solicitar-servico')  solicitarServico(el.dataset.tipo, el.dataset.preco);
-  else if (action === 'voltar-de-eventos')  voltarDeEventos();
-  else if (action === 'solicitar-evento')   solicitarEvento(el.dataset.tipo);
-  else if (action === 'cadastrar')          cadastrar();
+  const fn = ACOES[el.dataset.action];
+  if (fn) fn(el);
 });

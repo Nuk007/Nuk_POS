@@ -975,6 +975,68 @@ async function guardarNovoCliente() {
 }
 
 // ════════════════════════════════════════════════════════════
+// SOLICITAÇÕES DO PORTAL (hospedagem, serviços e eventos pedidos pelo cliente)
+// ════════════════════════════════════════════════════════════
+const ROTULO_SOLICITACAO = { HOSPEDAGEM: '🛏️ Hospedagem', SERVICO: '🛎️ Serviço', EVENTO: '🎉 Evento' };
+NUK.filtroSolicitacoes = 'PENDENTE';
+
+async function modulo_solicitacoes(el) {
+  try {
+    const estado = NUK.filtroSolicitacoes;
+    const r = await api('GET', `/solicitacoes-portal?limit=100${estado ? '&status=' + encodeURIComponent(estado) : ''}`);
+    const lista = r.data || [];
+    el.innerHTML = `
+      <div class="toolbar">
+        <span class="secao-titulo">🔔 Solicitações do portal</span>
+        <select class="input-pesquisa" data-on-change="filtrarSolicitacoes(this.value)">
+          ${[['PENDENTE', 'Por tratar'], ['CONFIRMADA', 'Confirmadas'], ['CANCELADA', 'Canceladas'], ['', 'Todas']]
+            .map(([v, t]) => `<option value="${v}" ${v === estado ? 'selected' : ''}>${t}</option>`).join('')}
+        </select>
+      </div>
+      <div class="card tabela-wrapper">
+        <table>
+          <thead><tr><th>Há</th><th>Tipo</th><th>Pedido</th><th>Cliente</th><th>Telefone</th><th>Estado</th><th>Acções</th></tr></thead>
+          <tbody>
+            ${lista.map(linhaSolicitacao).join('') || '<tr><td colspan="7" class="muted" style="text-align:center;padding:1rem">Sem solicitações</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    `;
+    actualizarBadgeSolicitacoes();
+  } catch (e) {
+    el.innerHTML = `<div class="erro-msg">Erro: ${esc(e.message)}</div>`;
+  }
+}
+
+function linhaSolicitacao(s) {
+  const porTratar = s.status === 'PENDENTE';
+  return `<tr>
+    <td>${tempoDesde(s.criado_em)}</td>
+    <td>${ROTULO_SOLICITACAO[s.tipo] || esc(s.tipo)}</td>
+    <td><strong>${esc(s.nome_servico)}</strong></td>
+    <td>${esc(s.nome_contacto)}</td>
+    <td>${esc(s.telefone_contacto)}</td>
+    <td>${badgeStatus(s.status)}</td>
+    <td>${porTratar
+      ? `<button class="btn-primario" data-on-click="actualizarSolicitacao('${esc(s.id)}','CONFIRMADA')">Confirmar</button> <button class="btn-secundario" data-on-click="actualizarSolicitacao('${esc(s.id)}','CANCELADA')">Cancelar</button>`
+      : ''}</td>
+  </tr>`;
+}
+
+function filtrarSolicitacoes(estado) {
+  NUK.filtroSolicitacoes = estado;
+  carregarModulo('solicitacoes');
+}
+
+async function actualizarSolicitacao(id, status) {
+  try {
+    await api('PATCH', `/solicitacoes-portal/${id}/status`, { status });
+    toast(status === 'CONFIRMADA' ? 'Solicitação confirmada' : 'Solicitação cancelada', 'sucesso');
+    carregarModulo('solicitacoes');
+  } catch (e) { toast(e.message, 'erro'); }
+}
+
+// ════════════════════════════════════════════════════════════
 // FUNCIONÁRIOS
 // ════════════════════════════════════════════════════════════
 async function modulo_funcionarios(el) {

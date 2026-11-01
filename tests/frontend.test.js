@@ -60,3 +60,38 @@ describe('delegação data-on-*', () => {
     expect(em_falta).toEqual([]);
   });
 });
+
+describe('portal do cliente (cliente.html ↔ cliente.js)', () => {
+  const html = ler('cliente.html');
+  const js = ler('js/cliente.js');
+
+  test('todo o data-action do portal tem uma acção registada no JS', () => {
+    const usadas = new Set([...html.matchAll(/data-action="([^"]+)"/g)].map(m => m[1]));
+    const dinamicas = new Set([...js.matchAll(/dataset\.action\s*=\s*'([^']+)'/g)].map(m => m[1]));
+    const registadas = new Set([...js.matchAll(/^\s*'([\w-]+)':\s/gm)].map(m => m[1]));
+    const em_falta = [...usadas, ...dinamicas].filter(a => !registadas.has(a));
+    expect(usadas.size).toBeGreaterThan(10);
+    expect(em_falta).toEqual([]);
+  });
+  test('sem handlers .onclick= (conflitam com a delegação), sem menu estático nem sucesso simulado', () => {
+    expect(js).not.toMatch(/\.onclick\s*=/);
+    expect(js).not.toMatch(/const MENU\s*=|\(demo\)|Fallback offline|API indispon/);
+  });
+  test('pedidos, serviços e eventos só se dão por enviados quando o servidor responde OK', () => {
+    expect(js).toMatch(/if \(!r\.ok\) \{[\s\S]*?O pedido NÃO foi enviado[\s\S]*?return;/);
+    expect(js).toMatch(/if \(!\(await enviarSolicitacao\('EVENTO'/);
+  });
+  test('todas as categorias de produto do servidor têm secção e emoji no menu do portal', () => {
+    const db = fs.readFileSync(path.join(__dirname, '..', 'server', 'db.js'), 'utf8');
+    const m = db.match(/ADD CONSTRAINT produtos_categoria_check\s+CHECK \(categoria IN \(([^)]*)\)\)/);
+    const categorias = [...m[1].matchAll(/'([A-Z_]+)'/g)].map(x => x[1]);
+    expect(categorias.length).toBeGreaterThanOrEqual(10);
+    const ctx = {}; vm.createContext(ctx);
+    const corte = (de, ate) => js.slice(js.indexOf(de), js.indexOf(ate));
+    vm.runInContext(corte('const SECCOES', 'const METODOS') + corte('function gridDe', 'function buildMenu') + '\nthis.gridDe = gridDe; this.EMOJI_CAT = EMOJI_CAT;', ctx);
+    const esperado = { CHURRASCO: 'grid-comidas', PEIXE: 'grid-comidas', PRATO: 'grid-comidas', ENTRADA: 'grid-comidas', ACOMPANHAMENTO: 'grid-comidas',
+      BEBIDA: 'grid-bebidas', COCKTAIL: 'grid-bebidas', SHISHA: 'grid-cigarros', SOBREMESA: 'grid-outros', OUTRO: 'grid-outros' };
+    categorias.forEach(c => { expect([c, ctx.gridDe(c)]).toEqual([c, esperado[c]]); expect(ctx.EMOJI_CAT[c]).toBeTruthy(); });
+    expect(ctx.gridDe('qualquer-coisa-nova')).toBe('grid-outros');
+  });
+});

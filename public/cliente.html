@@ -148,6 +148,7 @@
     .pill-ok     { background:var(--ok-s); color:var(--ok); }
     .pill-warn   { background:var(--warn-s); color:var(--warn); }
     .pill-gold   { background:var(--gold-s); color:var(--gold); }
+    .pill-info   { background:var(--info-s); color:var(--info); }
 
     /* ── CART ── */
     .cart-header {
@@ -205,6 +206,7 @@
     .menu-item-emoji { font-size:1.4rem; display:block; margin-bottom:4px; }
     .menu-item-name { font-size:.75rem; font-weight:700; line-height:1.2; }
     .menu-item-price { font-size:.68rem; color:var(--accent); margin-top:3px; }
+    .menu-item-qty { font-size:.65rem; color:var(--ok); margin-top:3px; }
 
     /* ── CREDIT GRID ── */
     .credit-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; margin-bottom:16px; }
@@ -363,9 +365,9 @@
 
     <div class="btn-grid">
       <button class="btn btn-info" data-action="go" data-screen="s-convidado">👤 Convidado</button>
-      <button class="btn btn-ok"   data-action="go" data-screen="s-cliente-menu">🎯 Cliente</button>
+      <button class="btn btn-ok"   data-action="abrir-cliente">🎯 Cliente</button>
     </div>
-    <button class="btn btn-primary" style="margin-top:8px" data-action="go" data-screen="s-cadastrar">📋 Cadastrar</button>
+    <button class="btn btn-primary" style="margin-top:8px" data-action="abrir-cadastrar">📋 Cadastrar</button>
     <button class="btn btn-ghost"   style="margin-top:8px" data-action="sair">✕ Sair</button>
 
     <div class="divider"><span>Programa de Fidelização</span></div>
@@ -386,7 +388,7 @@
       <span class="pill pill-accent">Convidado</span>
     </div>
     <h3>O que deseja?</h3>
-    <button class="btn btn-primary"   data-action="go" data-screen="s-restaurante">🍽️ Restaurante</button>
+    <button class="btn btn-primary"   data-action="abrir-restaurante">🍽️ Restaurante</button>
     <button class="btn btn-info"      data-action="go" data-screen="s-servicos">🛎️ Serviços</button>
     <button class="btn btn-warn"      data-action="go" data-screen="s-eventos">🎉 Eventos</button>
     <button class="btn btn-ghost"     data-action="go" data-screen="s-auth">← Voltar</button>
@@ -415,8 +417,8 @@
       </div>
     </div>
     <h3>Escolha uma opção</h3>
-    <button class="btn btn-coin"   data-action="go" data-screen="s-nukcoin">💜 Nuk-Coin</button>
-    <button class="btn btn-primary" data-action="go" data-screen="s-restaurante">🍽️ Restaurante</button>
+    <button class="btn btn-coin"   data-action="abrir-nukcoin">💜 Nuk-Coin</button>
+    <button class="btn btn-primary" data-action="abrir-restaurante">🍽️ Restaurante</button>
     <button class="btn btn-info"   data-action="go" data-screen="s-servicos">🛎️ Serviços</button>
     <button class="btn btn-warn"   data-action="go" data-screen="s-eventos">🎉 Eventos</button>
     <button class="btn btn-ghost"  data-action="go" data-screen="s-auth">← Voltar</button>
@@ -451,7 +453,7 @@
     <!-- Histórico de movimentos -->
     <div class="divider" style="margin-top:16px"><span>Movimentos</span></div>
     <div id="wlt-hist">
-      <div class="hist-item"><div><div style="font-weight:600">Crédito inicial</div><div class="hist-date">Hoje</div></div><div class="hist-val">+0 Kz</div></div>
+      <div class="hist-item"><div class="hist-date">A carregar movimentos…</div></div>
     </div>
   </div>
 </div>
@@ -464,11 +466,15 @@
     <div class="back-row">
       <button class="back-btn" id="rest-back-btn" data-action="voltar-de-restaurante">← Voltar</button>
       <span class="pill pill-accent">Restaurante</span>
-      <button data-action="go" data-screen="s-carrinho" style="background:none;border:none;cursor:pointer;color:var(--fg);font-size:.8rem;font-weight:700;display:flex;align-items:center;gap:5px">
+      <button data-action="ver-carrinho" style="background:none;border:none;cursor:pointer;color:var(--fg);font-size:.8rem;font-weight:700;display:flex;align-items:center;gap:5px">
         🛒 <span class="cart-count" id="cart-badge">0</span>
       </button>
     </div>
     <h3>Menu</h3>
+    <div class="info-box warn" id="menu-erro" style="display:none">
+      <span id="menu-erro-msg">Não foi possível carregar o menu.</span>
+      <button class="btn btn-ghost" style="margin-top:10px" data-action="recarregar-menu">↻ Tentar de novo</button>
+    </div>
 
     <!-- COMIDAS -->
     <div class="menu-section">
@@ -491,7 +497,7 @@
       <div class="menu-grid" id="grid-outros"></div>
     </div>
 
-    <button class="btn btn-primary" data-action="go" data-screen="s-carrinho" style="margin-top:4px">
+    <button class="btn btn-primary" data-action="ver-carrinho" style="margin-top:4px">
       🛒 Ver carrinho (<span id="cart-badge-btn">0</span> itens)
     </button>
   </div>
@@ -521,10 +527,14 @@
     <div class="info-box gold" id="disc-info" style="display:none">
       🎁 Tem 5 estrelas! <strong>20% de desconto</strong> aplicado neste consumo.
     </div>
+    <div class="field">
+      <label>Mesa (opcional)</label>
+      <input type="text" id="cart-mesa" placeholder="Ex.: M03 — deixe em branco se não estiver numa mesa" maxlength="10" autocomplete="off">
+    </div>
     <!-- Forma de pagamento -->
     <p style="font-size:.78rem;font-weight:700;margin-bottom:8px">Como vai pagar?</p>
     <div class="pay-grid">
-      <div class="pay-opt" data-action="select-pay" data-method="coin">
+      <div class="pay-opt" id="pay-coin" data-action="select-pay" data-method="coin">
         <span class="pay-icon">💜</span><div class="pay-name">Nuk-Coin</div>
         <div class="pay-sub" id="pay-coin-sub">Saldo: 0 Kz</div>
       </div>
@@ -584,22 +594,22 @@
     <div class="menu-section">
       <div class="menu-section-title">🛏️ Hospedagem</div>
       <div class="menu-grid">
-        <div class="menu-item" data-action="solicitar-servico" data-tipo="2 Horas" data-preco="8.000 Kz">
+        <div class="menu-item" data-action="solicitar-servico" data-categoria="HOSPEDAGEM" data-tipo="2 Horas" data-preco="8.000 Kz">
           <span class="menu-item-emoji">⏱️</span>
           <div class="menu-item-name">2 Horas</div>
           <div class="menu-item-price">8.000 Kz</div>
         </div>
-        <div class="menu-item" data-action="solicitar-servico" data-tipo="Pernoite" data-preco="15.000 Kz">
+        <div class="menu-item" data-action="solicitar-servico" data-categoria="HOSPEDAGEM" data-tipo="Pernoite" data-preco="15.000 Kz">
           <span class="menu-item-emoji">🌙</span>
           <div class="menu-item-name">Pernoite</div>
           <div class="menu-item-price">15.000 Kz</div>
         </div>
-        <div class="menu-item" data-action="solicitar-servico" data-tipo="Diária Completa" data-preco="25.000 Kz">
+        <div class="menu-item" data-action="solicitar-servico" data-categoria="HOSPEDAGEM" data-tipo="Diária Completa" data-preco="25.000 Kz">
           <span class="menu-item-emoji">📅</span>
           <div class="menu-item-name">Diária</div>
           <div class="menu-item-price">25.000 Kz</div>
         </div>
-        <div class="menu-item" data-action="solicitar-servico" data-tipo="Semana (7 dias)" data-preco="120.000 Kz">
+        <div class="menu-item" data-action="solicitar-servico" data-categoria="HOSPEDAGEM" data-tipo="Semana (7 dias)" data-preco="120.000 Kz">
           <span class="menu-item-emoji">🗓️</span>
           <div class="menu-item-name">Semana</div>
           <div class="menu-item-price">120.000 Kz</div>
@@ -609,32 +619,32 @@
     <div class="menu-section">
       <div class="menu-section-title">🏊 Lazer & Extras</div>
       <div class="menu-grid">
-        <div class="menu-item" data-action="solicitar-servico" data-tipo="Piscina" data-preco="5.000 Kz">
+        <div class="menu-item" data-action="solicitar-servico" data-categoria="SERVICO" data-tipo="Piscina" data-preco="5.000 Kz">
           <span class="menu-item-emoji">🏊</span>
           <div class="menu-item-name">Piscina</div>
           <div class="menu-item-price">5.000 Kz</div>
         </div>
-        <div class="menu-item" data-action="solicitar-servico" data-tipo="Sauna" data-preco="8.000 Kz">
+        <div class="menu-item" data-action="solicitar-servico" data-categoria="SERVICO" data-tipo="Sauna" data-preco="8.000 Kz">
           <span class="menu-item-emoji">🧖</span>
           <div class="menu-item-name">Sauna</div>
           <div class="menu-item-price">8.000 Kz</div>
         </div>
-        <div class="menu-item" data-action="solicitar-servico" data-tipo="Estacionamento VIP" data-preco="3.000 Kz">
+        <div class="menu-item" data-action="solicitar-servico" data-categoria="SERVICO" data-tipo="Estacionamento VIP" data-preco="3.000 Kz">
           <span class="menu-item-emoji">🅿️</span>
           <div class="menu-item-name">Estac. VIP</div>
           <div class="menu-item-price">3.000 Kz</div>
         </div>
-        <div class="menu-item" data-action="solicitar-servico" data-tipo="Lavandaria" data-preco="4.500 Kz">
+        <div class="menu-item" data-action="solicitar-servico" data-categoria="SERVICO" data-tipo="Lavandaria" data-preco="4.500 Kz">
           <span class="menu-item-emoji">👕</span>
           <div class="menu-item-name">Lavandaria</div>
           <div class="menu-item-price">4.500 Kz</div>
         </div>
-        <div class="menu-item" data-action="solicitar-servico" data-tipo="Transfer Aeroporto" data-preco="12.000 Kz">
+        <div class="menu-item" data-action="solicitar-servico" data-categoria="SERVICO" data-tipo="Transfer Aeroporto" data-preco="12.000 Kz">
           <span class="menu-item-emoji">✈️</span>
           <div class="menu-item-name">Transfer</div>
           <div class="menu-item-price">12.000 Kz</div>
         </div>
-        <div class="menu-item" data-action="solicitar-servico" data-tipo="Room Service" data-preco="Sob pedido">
+        <div class="menu-item" data-action="solicitar-servico" data-categoria="SERVICO" data-tipo="Room Service" data-preco="Sob pedido">
           <span class="menu-item-emoji">🍽️</span>
           <div class="menu-item-name">Room Service</div>
           <div class="menu-item-price">Sob pedido</div>
@@ -790,7 +800,7 @@
     <h2 id="sol-titulo">Solicitação enviada!</h2>
     <p class="sub" id="sol-msg">A nossa equipa entrará em contacto brevemente.</p>
     <button class="btn btn-primary" style="margin-top:16px" data-action="voltar-inicio">← Início</button>
-    <button class="btn btn-ghost" data-action="go" data-screen="s-cliente-menu" style="margin-top:8px" id="sol-btn-menu">Mais opções</button>
+    <button class="btn btn-ghost" data-action="voltar-de-servicos" style="margin-top:8px" id="sol-btn-menu">Mais opções</button>
   </div>
 </div>
 

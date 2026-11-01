@@ -99,6 +99,7 @@ function iniciarApp() {
 
   // WebSocket
   iniciarWebSocket();
+  actualizarBadgeSolicitacoes();
 
   // Relógio
   setInterval(actualizarHora, 1000);
@@ -139,6 +140,14 @@ function iniciarWebSocket() {
     toast(`🆕 Pedido do portal ${p.codigo || ''} — ${formatarMoeda(p.total)}`, 'aviso');
     actualizarBadgePedidos();
     if (['pedidos', 'dashboard', 'financeiro'].includes(NUK.moduloActual)) carregarModulo(NUK.moduloActual);
+  });
+
+  // Serviço, hospedagem ou evento pedido no portal: avisa a equipa e actualiza a caixa de entrada
+  NUK.socket.on('nova_solicitacao_portal', (s) => {
+    const rotulo = { HOSPEDAGEM: 'Hospedagem', SERVICO: 'Serviço', EVENTO: 'Evento' }[s.tipo] || 'Solicitação';
+    toast(`🔔 ${rotulo}: ${s.nome_servico} — ${s.nome_contacto} (${s.telefone_contacto})`, 'aviso', 8000);
+    actualizarBadgeSolicitacoes();
+    if (NUK.moduloActual === 'solicitacoes') carregarModulo('solicitacoes');
   });
 
   // Clientes novos e saldos Nuk-Coin alterados refrescam a lista de clientes
@@ -188,7 +197,7 @@ function carregarModulo(modulo) {
 
   const titulos = {
     dashboard: '📊 Dashboard', pedidos: '🍽️ Pedidos', mesas: '🪑 Mesas',
-    quartos: '🛏️ Quartos', produtos: '📋 Produtos', stock: '📦 Stock',
+    quartos: '🛏️ Quartos', solicitacoes: '🔔 Solicitações', produtos: '📋 Produtos', stock: '📦 Stock',
     financeiro: '💰 Financeiro', clientes: '👥 Clientes',
     funcionarios: '👨‍💼 Funcionários', configuracoes: '⚙️ Configurações',
   };
@@ -214,6 +223,15 @@ async function actualizarBadgePedidos() {
     const badge = document.getElementById('badge-pedidos');
     badge.textContent = pedidos.length;
     badge.style.display = pedidos.length > 0 ? 'inline-block' : 'none';
+  } catch {}
+}
+
+async function actualizarBadgeSolicitacoes() {
+  try {
+    const r = await api('GET', '/solicitacoes-portal/pendentes');
+    const badge = document.getElementById('badge-solicitacoes');
+    badge.textContent = r.pendentes;
+    badge.style.display = r.pendentes > 0 ? 'inline-block' : 'none';
   } catch {}
 }
 

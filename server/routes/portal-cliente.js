@@ -8,6 +8,7 @@ const express = require('express');
 const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const svc = require('../services/portal.service');
+const solicitacoes = require('../services/solicitacoes.service');
 const { authMiddleware, requerNivel, isUUID } = require('../middleware/auth');
 const { resolverTenantPublico } = require('../saas');
 
@@ -52,7 +53,7 @@ router.get('/eventos', ...pub, h(async (req, res) => res.json(await svc.eventos(
  *     security: []
  *     responses: { 200: { description: Cliente }, 401: { description: Credenciais inválidas }, 403: { description: Cliente sem PIN (sem_pin) } }
  */
-router.post('/login', ...pub, h(async (req, res) => res.json(await svc.login({ tenantId: req.tenantId, ...req.body }))));
+router.post('/login', ...pub, h(async (req, res) => res.json(await svc.login({ ...req.body, tenantId: req.tenantId }))));
 
 /**
  * @openapi
@@ -63,7 +64,7 @@ router.post('/login', ...pub, h(async (req, res) => res.json(await svc.login({ t
  *     security: []
  *     responses: { 200: { description: PIN definido }, 403: { description: PIN já definido } }
  */
-router.post('/definir-pin', ...pub, h(async (req, res) => res.json(await svc.definirPin({ tenantId: req.tenantId, ...req.body }))));
+router.post('/definir-pin', ...pub, h(async (req, res) => res.json(await svc.definirPin({ ...req.body, tenantId: req.tenantId }))));
 
 /**
  * @openapi
@@ -88,7 +89,7 @@ router.post('/reset-pin', authMiddleware, requerNivel(['ADMIN', 'GERENTE']), h(a
  *     security: []
  *     responses: { 201: { description: Cliente criado }, 409: { description: Telefone já cadastrado } }
  */
-router.post('/cadastrar', ...pub, h(async (req, res) => res.status(201).json(await svc.cadastrar({ tenantId: req.tenantId, ...req.body }))));
+router.post('/cadastrar', ...pub, h(async (req, res) => res.status(201).json(await svc.cadastrar({ ...req.body, tenantId: req.tenantId }))));
 
 /**
  * @openapi
@@ -105,15 +106,30 @@ router.post('/pedido-restaurante', ...pub, h(async (req, res) => {
   for (const it of Array.isArray(req.body.itens) ? req.body.itens : []) {
     if (!it || !isUUID(it.produto_id)) return res.status(400).json({ erro: 'produto_id inválido em item do pedido' });
   }
-  res.status(201).json(await svc.criarPedidoRestaurante({ tenantId: req.tenantId, ...req.body }));
+  res.status(201).json(await svc.criarPedidoRestaurante({ ...req.body, tenantId: req.tenantId }));
 }));
 
 router.post('/pedido-hospedagem', ...pub, h(async (req, res) => {
   if (req.body.cliente_id && !isUUID(req.body.cliente_id)) return res.status(400).json({ erro: 'cliente_id inválido' });
-  res.status(201).json(await svc.criarPedidoHospedagem({ tenantId: req.tenantId, ...req.body }));
+  res.status(201).json(await svc.criarPedidoHospedagem({ ...req.body, tenantId: req.tenantId }));
 }));
 
-router.post('/perfil', ...pub, h(async (req, res) => res.json(await svc.perfil({ tenantId: req.tenantId, ...req.body }))));
+/**
+ * @openapi
+ * /api/cliente/solicitacao:
+ *   post:
+ *     tags: [Portal cliente]
+ *     summary: Solicitação de hospedagem, serviço ou evento (chega ao POS em tempo real)
+ *     security: []
+ *     requestBody: { content: { application/json: { schema: { type: object, required: [tipo, nome_servico, nome, telefone], properties: { tipo: { type: string, enum: [HOSPEDAGEM, SERVICO, EVENTO] }, nome_servico: { type: string }, nome: { type: string }, telefone: { type: string }, observacoes: { type: string } } } } } }
+ *     responses: { 201: { description: Solicitação registada }, 400: { description: Dados inválidos } }
+ */
+router.post('/solicitacao', ...pub, h(async (req, res) => {
+  const { tipo, nome_servico, nome, telefone, observacoes } = req.body;
+  res.status(201).json(await solicitacoes.criar({ tenantId: req.tenantId, tipo, nome_servico, nome, telefone, observacoes }));
+}));
+
+router.post('/perfil', ...pub, h(async (req, res) => res.json(await svc.perfil({ ...req.body, tenantId: req.tenantId }))));
 
 /**
  * @openapi
