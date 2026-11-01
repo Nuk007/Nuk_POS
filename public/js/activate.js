@@ -21,7 +21,7 @@ async function loadLicense() {
   }
 
   try {
-    const r = await fetch(`/api/activate/${encodeURIComponent(key)}`);
+    const r = await fetch(`/api/saas/activate/${encodeURIComponent(key)}`);
     const data = await r.json();
 
     if (r.status === 409) {
@@ -158,7 +158,7 @@ document.getElementById('activation-form').addEventListener('submit', async func
   btnLabel.textContent = 'A activar…';
 
   try {
-    const r = await fetch(`/api/activate/${encodeURIComponent(key)}/confirmar`, {
+    const r = await fetch(`/api/saas/activate/${encodeURIComponent(key)}/confirmar`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

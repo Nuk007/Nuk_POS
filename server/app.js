@@ -183,6 +183,11 @@ app.get('*', (req, res) => {
   if (req.path === '/cliente' || req.path === '/cliente/') {
     return res.sendFile(path.join(__dirname, '..', 'public', 'cliente.html'));
   }
+  // Link de activação enviado por WhatsApp ao criar o tenant (server/saas.js: `${baseUrl}/activate/${licenseKey}`)
+  // — sem isto caía no índice (login do POS) e a activação de qualquer estabelecimento novo ficava impossível.
+  if (req.path === '/activate' || req.path.startsWith('/activate/')) {
+    return res.sendFile(path.join(__dirname, '..', 'public', 'activate.html'));
+  }
   res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 
