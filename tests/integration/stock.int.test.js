@@ -82,8 +82,10 @@ describe('stock.service — isolamento multi-tenant', () => {
     ).rejects.toMatchObject({ statusCode: 404 });
   });
 
-  test('constraint CHECK da categoria é aplicada pela DB', async () => {
-    await expect(novoItem(A.tenantId, { categoria: 'INEXISTENTE' })).rejects.toMatchObject({ code: '23514' });
+  test('categoria fora da lista do estabelecimento é recusada pela API (já não há CHECK fixo na BD)', async () => {
+    const r = await request(app).post('/api/stock').set('X-Forwarded-For', '10.77.0.1').set('Authorization', `Bearer ${A.token}`)
+      .send({ nome: 'X', categoria: 'INEXISTENTE', unidade: 'kg' });
+    expect(r.status).toBe(400);
   });
 });
 

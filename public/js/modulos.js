@@ -387,7 +387,15 @@ function modalQuarto(id, numero, tipo, status) {
   `);
 }
 
-const TIPOS_QUARTO = ['STANDARD','SUPERIOR','SUITE','SUITE_PRESIDENCIAL','VIP_EXECUTIVO'];
+// ── Listas configuráveis (tipos de quarto, categorias, unidades): opções activas + a actual mesmo se desactivada ──
+async function opcoesLista(lista, actual) {
+  const ops = await api('GET', `/listas/${lista}`) || [];
+  const valores = ops.filter(o => o.ativo).map(o => o.valor);
+  if (actual && !valores.includes(actual)) valores.unshift(actual);
+  return valores;
+}
+const htmlOpcoes = (valores, sel) => valores.map(v => `<option value="${esc(v)}" ${v === sel ? 'selected' : ''}>${esc(String(v).replace(/_/g, ' '))}</option>`).join('');
+
 
 async function modalFormQuarto(id) {
   let q = { numero: '', tipo: 'STANDARD', andar: 0, preco_2h: '', preco_pernoite: '', preco_diaria: '', descricao: '' };
@@ -395,11 +403,11 @@ async function modalFormQuarto(id) {
     const lista = await api('GET', '/quartos') || [];
     q = lista.find(x => x.id === id) || q;
   }
-  const esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  const tipos = await opcoesLista('TIPO_QUARTO', q.tipo);
   abrirModal(id ? `Editar quarto ${esc(q.numero)}` : 'Novo quarto', `
     <div class="campo"><label>Número / nome *</label><input type="text" id="qf-numero" maxlength="10" value="${esc(q.numero)}" placeholder="Ex.: 101"></div>
     <div class="campo"><label>Tipo *</label>
-      <select id="qf-tipo">${TIPOS_QUARTO.map(t => `<option value="${t}" ${t === q.tipo ? 'selected' : ''}>${t.replace(/_/g, ' ')}</option>`).join('')}</select>
+      <select id="qf-tipo">${htmlOpcoes(tipos, q.tipo)}</select>
     </div>
     <div class="campo"><label>Andar</label><input type="number" id="qf-andar" value="${esc(q.andar)}"></div>
     <div class="campo"><label>Preço 2 horas (Kz) *</label><input type="number" min="0" step="any" id="qf-p2h" value="${esc(q.preco_2h)}"></div>
@@ -644,12 +652,13 @@ async function guardarIngredientes(produtoId) {
   } catch (e) { toast(e.message, 'erro'); }
 }
 
-function modalNovoProduto() {
+async function modalNovoProduto() {
+  const cats = await opcoesLista('CATEGORIA_PRODUTO');
   abrirModal('Novo Produto', `
     <div class="campo"><label>Nome</label><input type="text" id="np-nome" placeholder="Nome do produto"></div>
     <div class="campo"><label>Categoria</label>
       <select id="np-cat">
-        ${['CHURRASCO','PEIXE','BEBIDA','SOBREMESA','ACOMPANHAMENTO','COCKTAIL','ENTRADA','SHISHA'].map(c => `<option value="${c}">${c}</option>`).join('')}
+        ${htmlOpcoes(cats)}
       </select>
     </div>
     <div class="campo"><label>Preço (Kz)</label><input type="number" id="np-preco" placeholder="0" min="0"></div>
@@ -672,12 +681,13 @@ async function guardarNovoProduto() {
   } catch (e) { toast(e.message, 'erro'); }
 }
 
-function modalEditarProduto(id, nome, preco, categoria, disponivel) {
+async function modalEditarProduto(id, nome, preco, categoria, disponivel) {
+  const cats = await opcoesLista('CATEGORIA_PRODUTO', categoria);
   abrirModal('Editar Produto', `
     <div class="campo"><label>Nome</label><input type="text" id="ep-nome" value="${nome}"></div>
     <div class="campo"><label>Categoria</label>
       <select id="ep-cat">
-        ${['CHURRASCO','PEIXE','BEBIDA','SOBREMESA','ACOMPANHAMENTO','COCKTAIL','ENTRADA','SHISHA'].map(c => `<option value="${c}" ${c === categoria ? 'selected' : ''}>${c}</option>`).join('')}
+        ${htmlOpcoes(cats, categoria)}
       </select>
     </div>
     <div class="campo"><label>Preço (Kz)</label><input type="number" id="ep-preco" value="${preco}" min="0"></div>
@@ -756,12 +766,14 @@ async function modulo_stock(el) {
   }
 }
 
-function modalNovoStockItem() {
+async function modalNovoStockItem() {
+  const cats = await opcoesLista('CATEGORIA_STOCK');
+  const uns = await opcoesLista('UNIDADE_STOCK');
   abrirModal('Novo Item de Stock', `
     <div class="campo"><label>Nome</label><input type="text" id="si-nome"></div>
     <div class="campo"><label>Categoria</label>
       <select id="si-cat">
-        ${['CARNE','PEIXE','VEGETAL','TEMPERO','BEBIDA','CARVAO','LIMPEZA','OUTRO'].map(c => `<option value="${c}">${c}</option>`).join('')}
+        ${htmlOpcoes(cats)}
       </select>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
@@ -769,7 +781,7 @@ function modalNovoStockItem() {
       <div class="campo"><label>Stock Mínimo</label><input type="number" id="si-min" value="0" min="0" step="0.001"></div>
     </div>
     <div class="campo"><label>Unidade</label>
-      <select id="si-un"><option>un</option><option>kg</option><option>g</option><option>L</option><option>ml</option></select>
+      <select id="si-un">${htmlOpcoes(uns)}</select>
     </div>
     <div class="campo"><label>Fornecedor</label><input type="text" id="si-forn" placeholder="Opcional"></div>
     <button class="btn-primario btn-bloco" data-on-click="guardarNovoStockItem()">Guardar</button>
@@ -1224,6 +1236,7 @@ async function modulo_configuracoes(el) {
     const cfg = await api('GET', '/configuracoes');
     const quartos = await api('GET', '/quartos') || [];
     const produtos = await api('GET', '/produtos') || [];
+    const listas = await api('GET', '/listas') || {};
 
     el.innerHTML = `
       <div class="secao-titulo">⚙️ Configurações</div>
@@ -1241,6 +1254,27 @@ async function modulo_configuracoes(el) {
           <input type="text" id="cfg-tz" value="${cfg.timezone || 'Africa/Luanda'}" readonly>
         </div>
         <button class="btn-primario" data-on-click="guardarConfiguracoes()">Guardar Configurações</button>
+      </div>
+
+      <div class="card mt-2" style="max-width:700px">
+        <div class="card-titulo mb-2">LISTAS (ADAPTE AO SEU ESTABELECIMENTO)</div>
+        <div class="muted" style="font-size:.82rem;margin-bottom:.75rem">Estas opções aparecem nos formulários de quartos, produtos e stock. Uma opção em uso não se apaga — oculte-a.</div>
+        ${Object.entries(listas).map(([lista, l]) => `
+          <div style="margin-bottom:1rem">
+            <div style="font-weight:600;margin-bottom:.4rem">${l.nome}</div>
+            <div style="display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:.5rem">
+              ${l.opcoes.map(o => `
+                <span class="status-badge ${o.ativo ? 'status-LIVRE' : 'status-FECHADO'}" style="display:inline-flex;align-items:center;gap:.35rem">
+                  ${esc(String(o.valor).replace(/_/g, ' '))}
+                  <button class="btn-secundario" style="padding:0 .35rem;font-size:.7rem" title="${o.ativo ? 'Ocultar' : 'Mostrar'}" data-on-click="alternarOpcaoLista('${lista}','${o.id}',${o.ativo})">${o.ativo ? '👁' : '🚫'}</button>
+                  <button class="btn-secundario" style="padding:0 .35rem;font-size:.7rem" title="Apagar" data-on-click="apagarOpcaoLista('${lista}','${o.id}')">✕</button>
+                </span>`).join('')}
+            </div>
+            <div style="display:flex;gap:.5rem">
+              <input type="text" id="lst-${lista}" maxlength="30" placeholder="Nova opção" style="flex:1">
+              <button class="btn-secundario" data-on-click="adicionarOpcaoLista('${lista}')">+ Adicionar</button>
+            </div>
+          </div>`).join('')}
       </div>
 
       <div class="card mt-2" style="max-width:500px">
@@ -1278,6 +1312,28 @@ async function modulo_configuracoes(el) {
   } catch (e) {
     el.innerHTML = `<div class="erro-msg">Erro: ${e.message}</div>`;
   }
+}
+
+async function adicionarOpcaoLista(lista) {
+  const campo = document.getElementById('lst-' + lista);
+  try {
+    await api('POST', `/listas/${lista}`, { nome: campo.value });
+    toast('Opção adicionada', 'sucesso');
+    carregarModulo('configuracoes');
+  } catch (e) { toast(e.message || 'Erro ao adicionar', 'erro'); }
+}
+async function alternarOpcaoLista(lista, id, ativo) {
+  try {
+    await api('PUT', `/listas/${lista}/${id}`, { ativo: !ativo });
+    carregarModulo('configuracoes');
+  } catch (e) { toast(e.message || 'Erro ao actualizar', 'erro'); }
+}
+async function apagarOpcaoLista(lista, id) {
+  try {
+    await api('DELETE', `/listas/${lista}/${id}`);
+    toast('Opção apagada', 'sucesso');
+    carregarModulo('configuracoes');
+  } catch (e) { toast(e.message || 'Erro ao apagar', 'erro'); }
 }
 
 async function guardarConfiguracoes() {

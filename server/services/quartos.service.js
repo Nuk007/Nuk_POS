@@ -5,8 +5,7 @@
 const { pool } = require('../db');
 const { broadcast } = require('../middleware/broadcast');
 const { erro } = require('./shared');
-
-const TIPOS = ['STANDARD', 'SUPERIOR', 'SUITE', 'SUITE_PRESIDENCIAL', 'VIP_EXECUTIVO'];
+const listas = require('./listas.service');
 
 function validar(d, parcial = false) {
   const out = {};
@@ -16,7 +15,7 @@ function validar(d, parcial = false) {
     out.numero = n;
   }
   if (!parcial || d.tipo !== undefined) {
-    if (!TIPOS.includes(d.tipo)) throw erro(400, 'Tipo de quarto inválido');
+    if (typeof d.tipo !== 'string' || !d.tipo) throw erro(400, 'Tipo de quarto obrigatório');
     out.tipo = d.tipo;
   }
   for (const c of ['preco_2h', 'preco_pernoite', 'preco_diaria']) {
@@ -38,6 +37,7 @@ function validar(d, parcial = false) {
 async function criarQuarto({ tenantId, dados }) {
   if (!tenantId) throw erro(400, 'Estabelecimento em falta');
   const d = validar(dados);
+  await listas.exigirValor(tenantId, 'TIPO_QUARTO', d.tipo, 'Tipo de quarto');
   try {
     const r = await pool.query(
       `INSERT INTO quartos (tenant_id, numero, tipo, andar, preco_2h, preco_pernoite, preco_diaria, descricao)
@@ -55,6 +55,11 @@ async function actualizarQuarto({ tenantId, id, dados }) {
   const d = validar(dados, true);
   const cols = Object.keys(d);
   if (!cols.length) throw erro(400, 'Nada para actualizar');
+  if (d.tipo !== undefined) {
+    // mantém-se o tipo actual mesmo que entretanto desactivado; só um tipo novo é validado
+    const actual = await pool.query(`SELECT tipo FROM quartos WHERE id=$1 AND tenant_id=$2`, [id, tenantId]);
+    if (actual.rows[0] && actual.rows[0].tipo !== d.tipo) await listas.exigirValor(tenantId, 'TIPO_QUARTO', d.tipo, 'Tipo de quarto');
+  }
   // colunas vêm de validar() (lista fixa), nunca do cliente
   const sets = cols.map((c, i) => `${c}=$${i + 1}`).join(', ');
   try {
@@ -81,4 +86,4 @@ async function removerQuarto({ tenantId, id }) {
   broadcast('quarto_atualizado', { quarto_id: id, removido: true }, tenantId);
 }
 
-module.exports = { criarQuarto, actualizarQuarto, removerQuarto, TIPOS };
+module.exports = { criarQuarto, actualizarQuarto, removerQuarto };

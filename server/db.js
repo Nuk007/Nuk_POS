@@ -197,15 +197,6 @@ async function initDB() {
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_produtos_tenant ON produtos(tenant_id)`);
     await client.query(`ALTER TABLE produtos ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE`);
-    // Migração: expandir categorias de produtos para incluir PRATO e OUTRO
-    await client.query(`
-      DO $$ BEGIN
-        ALTER TABLE produtos DROP CONSTRAINT IF EXISTS produtos_categoria_check;
-        ALTER TABLE produtos ADD CONSTRAINT produtos_categoria_check
-          CHECK (categoria IN ('CHURRASCO','PEIXE','BEBIDA','SOBREMESA','ACOMPANHAMENTO','COCKTAIL','ENTRADA','SHISHA','PRATO','OUTRO'));
-      EXCEPTION WHEN OTHERS THEN NULL; END $$
-    `);
-
     // Pedidos
     await client.query(`
       CREATE TABLE IF NOT EXISTS pedidos (
@@ -347,6 +338,30 @@ async function initDB() {
         criado_em TIMESTAMPTZ DEFAULT NOW(),
         atualizado_em TIMESTAMPTZ DEFAULT NOW()
       )
+    `);
+
+    // Listas configuráveis por estabelecimento — espelha a migração 1749100000000 (os CHECK fixos saem)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS listas_opcoes (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        lista VARCHAR(30) NOT NULL,
+        valor VARCHAR(30) NOT NULL,
+        ordem INTEGER NOT NULL DEFAULT 0,
+        ativo BOOLEAN NOT NULL DEFAULT true,
+        criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (tenant_id, lista, valor)
+      )
+    `);
+    await client.query(`
+      ALTER TABLE quartos DROP CONSTRAINT IF EXISTS quartos_tipo_check;
+      ALTER TABLE produtos DROP CONSTRAINT IF EXISTS produtos_categoria_check;
+      ALTER TABLE stock_items DROP CONSTRAINT IF EXISTS stock_items_categoria_check;
+      ALTER TABLE stock_items DROP CONSTRAINT IF EXISTS stock_items_unidade_check;
+      ALTER TABLE quartos ALTER COLUMN tipo TYPE VARCHAR(30);
+      ALTER TABLE produtos ALTER COLUMN categoria TYPE VARCHAR(30);
+      ALTER TABLE stock_items ALTER COLUMN categoria TYPE VARCHAR(30);
+      ALTER TABLE stock_items ALTER COLUMN unidade TYPE VARCHAR(10);
     `);
     // Migração: stock_items passa a ser isolado por tenant (tem de vir DEPOIS do CREATE TABLE)
     await client.query(`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE`);

@@ -82,9 +82,7 @@ describe('portal do cliente (cliente.html ↔ cliente.js)', () => {
     expect(js).toMatch(/if \(!\(await enviarSolicitacao\('EVENTO'/);
   });
   test('todas as categorias de produto do servidor têm secção e emoji no menu do portal', () => {
-    const db = fs.readFileSync(path.join(__dirname, '..', 'server', 'db.js'), 'utf8');
-    const m = db.match(/ADD CONSTRAINT produtos_categoria_check\s+CHECK \(categoria IN \(([^)]*)\)\)/);
-    const categorias = [...m[1].matchAll(/'([A-Z_]+)'/g)].map(x => x[1]);
+    const categorias = require('../server/services/listas.service').DEFAULTS.CATEGORIA_PRODUTO; // categorias padrão (cada estabelecimento pode acrescentar)
     expect(categorias.length).toBeGreaterThanOrEqual(10);
     const ctx = {}; vm.createContext(ctx);
     const corte = (de, ate) => js.slice(js.indexOf(de), js.indexOf(ate));

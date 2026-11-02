@@ -1,6 +1,7 @@
 'use strict';
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
+const listas = require('../services/listas.service');
 const router = express.Router();
 const { pool } = require('../db');
 const { authMiddleware, requerNivel, isUUID } = require('../middleware/auth');
@@ -31,6 +32,7 @@ router.post('/', authMiddleware, requerNivel(['ADMIN']), async (req, res) => {
   }
   const tenantId = req.tenantId;
   try {
+    await listas.exigirValor(tenantId, 'CATEGORIA_PRODUTO', categoria, 'Categoria');
     const r = await pool.query(
       `INSERT INTO produtos (id, tenant_id, nome, descricao, preco, categoria, disponivel, ativo, criado_em)
        VALUES ($1, $2, $3, $4, $5, $6, $7, true, NOW())
@@ -40,6 +42,7 @@ router.post('/', authMiddleware, requerNivel(['ADMIN']), async (req, res) => {
     );
     res.status(201).json(r.rows[0]);
   } catch (e) {
+    if (e.statusCode) return res.status(e.statusCode).json({ erro: e.message });
     res.status(500).json({ erro: 'Erro interno do servidor' });
   }
 });
@@ -51,6 +54,10 @@ router.put('/:id', authMiddleware, requerNivel(['ADMIN']), async (req, res) => {
   const { nome, descricao, preco, categoria, disponivel, ativo } = req.body;
   const tenantId = req.tenantId;
   try {
+    if (categoria) {
+      const at = await pool.query(`SELECT categoria FROM produtos WHERE id=$1 AND ($2::uuid IS NULL OR tenant_id=$2)`, [id, tenantId || null]);
+      if (!at.rows[0] || at.rows[0].categoria !== categoria) await listas.exigirValor(tenantId, 'CATEGORIA_PRODUTO', categoria, 'Categoria');
+    }
     const r = await pool.query(
       `UPDATE produtos SET
          nome = COALESCE($1, nome),
@@ -72,6 +79,7 @@ router.put('/:id', authMiddleware, requerNivel(['ADMIN']), async (req, res) => {
     if (!r.rows[0]) return res.status(404).json({ erro: 'Produto não encontrado' });
     res.json(r.rows[0]);
   } catch (e) {
+    if (e.statusCode) return res.status(e.statusCode).json({ erro: e.message });
     res.status(500).json({ erro: 'Erro interno do servidor' });
   }
 });

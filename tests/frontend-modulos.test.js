@@ -13,6 +13,8 @@ const prod = { id: '22222222-2222-2222-2222-222222222222', nome: "Cuca d'água",
 const dados = {
   '/configuracoes': { nome_estabelecimento: 'X', iva_padrao: 14, moeda: 'Kz', timezone: 'Africa/Luanda' },
   '/quartos': [q], '/produtos': [prod],
+  '/listas': { TIPO_QUARTO: { nome: 'Tipos de quarto', opcoes: [{ id: '33333333-3333-3333-3333-333333333333', valor: 'SUITE', ativo: true }] } },
+  '/listas/TIPO_QUARTO': [{ valor: 'SUITE', ativo: true }], '/listas/CATEGORIA_PRODUTO': [{ valor: 'BEBIDA', ativo: true }],
 };
 
 function carregar(utilizador) {
@@ -41,9 +43,24 @@ describe('módulos do POS renderizam sem erro', () => {
     expect(cfg).toContain("modalFormQuarto('')");
     expect(cfg).toContain('modalNovoProduto()');
     expect(cfg).toContain('modalIngredientes(');
+    expect(cfg).toContain("adicionarOpcaoLista('TIPO_QUARTO')");
     const quartos = await render(ctx, 'modulo_quartos');
     expect(quartos).not.toContain('modalFormQuarto');
     const produtos = await render(ctx, 'modulo_produtos');
     expect(produtos).not.toMatch(/modalNovoProduto|modalEditarProduto|modalIngredientes/);
+  });
+});
+
+describe('formulários usam as listas do estabelecimento', () => {
+  test('novo quarto e novo produto mostram as opções configuradas', async () => {
+    let html = '';
+    const ctx = carregar({ nivel_acesso: 'ADMIN' });
+    ctx.abrirModal = (t, h) => { html = h; };
+    await ctx.modalFormQuarto('');
+    expect(html).toContain('<option value="SUITE"');
+    expect(html).not.toContain('VIP_EXECUTIVO');
+    await ctx.modalNovoProduto();
+    expect(html).toContain('<option value="BEBIDA"');
+    expect(html).not.toContain('CHURRASCO');
   });
 });

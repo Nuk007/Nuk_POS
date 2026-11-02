@@ -5,6 +5,7 @@
 const { pool } = require('../db');
 const { broadcast } = require('../middleware/broadcast');
 const { erro } = require('./shared');
+const listas = require('./listas.service');
 
 async function listarStock({ tenantId, page = 1, limit = 200 }) {
   page  = Math.max(1, page);
@@ -34,6 +35,8 @@ async function criarItemStock({ tenantId, nome, categoria, stock_atual, stock_mi
     const err = new Error('Nome, categoria e unidade são obrigatórios');
     err.statusCode = 400; throw err;
   }
+  await listas.exigirValor(tenantId, 'CATEGORIA_STOCK', categoria, 'Categoria');
+  await listas.exigirValor(tenantId, 'UNIDADE_STOCK', unidade, 'Unidade');
 
   const r = await pool.query(
     `INSERT INTO stock_items (tenant_id, nome, categoria, stock_atual, stock_minimo, stock_ideal, unidade, custo_unitario, fornecedor)

@@ -4,6 +4,8 @@
  * Cobre: GET / (lista), POST / (criação), PUT /:id/ajuste (ajuste de stock)
  */
 
+// a validação contra as listas do estabelecimento tem testes próprios (integração); aqui isola-se
+jest.mock('../server/services/listas.service', () => ({ exigirValor: jest.fn().mockResolvedValue(undefined) }));
 const request = require('supertest');
 const jwt = require('jsonwebtoken');
 const { app } = require('../server/app');
