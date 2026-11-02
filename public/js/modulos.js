@@ -115,7 +115,7 @@ function renderPedidoCard(p) {
   const itensTexto = (p.itens || []).slice(0, 3).map(i => `${i.quantidade}x ${i.produto_nome}`).join(', ');
   const acoes = p.status === 'ABERTO' ? `
     <button class="btn-secundario" style="padding:.35rem .7rem;font-size:.8rem" data-on-click="mudarStatusPedido('${p.id}','EM_PREPARO')">Em Preparo</button>
-    <button class="btn-perigo" style="padding:.35rem .7rem;font-size:.8rem" data-on-click="mudarStatusPedido('${p.id}','CANCELADO')">Cancelar</button>` :
+    <button class="btn-perigo" style="padding:.35rem .7rem;font-size:.8rem" data-on-click="pedirCancelarPedido('${p.id}')">Cancelar</button>` :
   p.status === 'EM_PREPARO' ? `
     <button class="btn-sucesso" style="padding:.35rem .7rem;font-size:.8rem" data-on-click="mudarStatusPedido('${p.id}','PRONTO')">Pronto</button>` :
   p.status === 'PRONTO' ? `
@@ -137,6 +137,23 @@ function renderPedidoCard(p) {
       </div>
     </div>`;
 }
+
+// ── Confirmação obrigatória antes de apagar/cancelar/desactivar: nada destrutivo corre sem um "Sim" explícito ──
+// `funcao` é uma função global chamada com argumentos literais (a CSP não permite JS inline).
+function modalConfirmar(titulo, texto, funcao, ...args) {
+  const lit = args.map(a => `'${String(a).replace(/'/g, '')}'`).join(',');
+  abrirModal(titulo, `
+    <p style="margin-bottom:1rem">${texto}</p>
+    <div style="display:flex;gap:.5rem">
+      <button class="btn-perigo" style="flex:1" data-on-click="${funcao}(${lit})">Sim, confirmar</button>
+      <button class="btn-secundario" style="flex:1" data-on-click="fecharModal()">Não, voltar</button>
+    </div>`);
+}
+
+function pedirCancelarPedido(id) {
+  modalConfirmar('Cancelar pedido', 'Tem a certeza que quer <b>cancelar este pedido</b>? O stock é devolvido e, se foi pago com Nuk-Coin, o valor é estornado. Não pode ser desfeito.', 'cancelarPedidoConfirmado', id);
+}
+function cancelarPedidoConfirmado(id) { fecharModal(); mudarStatusPedido(id, 'CANCELADO'); }
 
 async function mudarStatusPedido(id, status) {
   try {
@@ -418,7 +435,7 @@ async function modalFormQuarto(id) {
       <button class="btn-primario" style="flex:1" data-on-click="guardarQuarto('${id}')">Guardar</button>
       <button class="btn-secundario" data-on-click="fecharModal()">Cancelar</button>
     </div>
-    ${id ? `<button class="btn-secundario btn-bloco" style="margin-top:.75rem;color:var(--c-erro,#e55)" data-on-click="apagarQuarto('${id}')">🗑 Apagar quarto</button>` : ''}
+    ${id ? `<button class="btn-secundario btn-bloco" style="margin-top:.75rem;color:var(--c-erro,#e55)" data-on-click="pedirApagarQuarto('${id}')">🗑 Apagar quarto</button>` : ''}
   `);
 }
 
@@ -438,7 +455,12 @@ async function guardarQuarto(id) {
   }
 }
 
+function pedirApagarQuarto(id) {
+  modalConfirmar('Apagar quarto', 'Tem a certeza que quer <b>apagar este quarto</b>? Não pode ser desfeito.', 'apagarQuarto', id);
+}
+
 async function apagarQuarto(id) {
+  fecharModal();
   try {
     await api('DELETE', `/quartos/${id}`);
     toast('Quarto apagado', 'sucesso');
@@ -1091,7 +1113,7 @@ function linhaSolicitacao(s) {
     <td>${esc(s.telefone_contacto)}</td>
     <td>${badgeStatus(s.status)}</td>
     <td>${porTratar
-      ? `<button class="btn-primario" data-on-click="actualizarSolicitacao('${esc(s.id)}','CONFIRMADA')">Confirmar</button> <button class="btn-secundario" data-on-click="actualizarSolicitacao('${esc(s.id)}','CANCELADA')">Cancelar</button>`
+      ? `<button class="btn-primario" data-on-click="actualizarSolicitacao('${esc(s.id)}','CONFIRMADA')">Confirmar</button> <button class="btn-secundario" data-on-click="pedirCancelarSolicitacao('${esc(s.id)}')">Cancelar</button>`
       : ''}</td>
   </tr>`;
 }
@@ -1100,6 +1122,11 @@ function filtrarSolicitacoes(estado) {
   NUK.filtroSolicitacoes = estado;
   carregarModulo('solicitacoes');
 }
+
+function pedirCancelarSolicitacao(id) {
+  modalConfirmar('Cancelar solicitação', 'Tem a certeza que quer <b>cancelar esta solicitação</b>?', 'cancelarSolicitacaoConfirmada', id);
+}
+function cancelarSolicitacaoConfirmada(id) { fecharModal(); actualizarSolicitacao(id, 'CANCELADA'); }
 
 async function actualizarSolicitacao(id, status) {
   try {
@@ -1139,7 +1166,7 @@ async function modulo_funcionarios(el) {
                 <td class="muted">${f.ultimo_acesso ? formatarData(f.ultimo_acesso) : 'Nunca'}</td>
                 <td><div class="row-acoes">
                   <button class="btn-secundario" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="modalEditarFuncionario('${f.id}','${f.nome.replace(/'/g,"\\'")}','${f.cargo||''}','${f.nivel_acesso}',${f.salario||0},${f.ativo})">Editar</button>
-                  <button class="btn-${f.ativo ? 'perigo' : 'sucesso'}" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="toggleActivarFunc('${f.id}',${f.ativo})">${f.ativo ? 'Desactivar' : 'Activar'}</button>
+                  <button class="btn-${f.ativo ? 'perigo' : 'sucesso'}" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="${f.ativo ? `pedirDesactivarFunc('${f.id}')` : `toggleActivarFunc('${f.id}',false)`}">${f.ativo ? 'Desactivar' : 'Activar'}</button>
                 </div></td>
               </tr>`).join('')}
           </tbody>
@@ -1216,6 +1243,11 @@ async function salvarEdicaoFuncionario(id) {
   } catch (e) { toast(e.message, 'erro'); }
 }
 
+function pedirDesactivarFunc(id) {
+  modalConfirmar('Desactivar funcionário', 'Tem a certeza que quer <b>desactivar este funcionário</b>? Deixa de poder entrar no sistema.', 'desactivarFuncConfirmado', id);
+}
+function desactivarFuncConfirmado(id) { fecharModal(); toggleActivarFunc(id, true); }
+
 async function toggleActivarFunc(id, ativo) {
   try {
     await api('PUT', `/funcionarios/${id}`, { ativo: !ativo });
@@ -1267,7 +1299,7 @@ async function modulo_configuracoes(el) {
                 <span class="status-badge ${o.ativo ? 'status-LIVRE' : 'status-FECHADO'}" style="display:inline-flex;align-items:center;gap:.35rem">
                   ${esc(String(o.valor).replace(/_/g, ' '))}
                   <button class="btn-secundario" style="padding:0 .35rem;font-size:.7rem" title="${o.ativo ? 'Ocultar' : 'Mostrar'}" data-on-click="alternarOpcaoLista('${lista}','${o.id}',${o.ativo})">${o.ativo ? '👁' : '🚫'}</button>
-                  <button class="btn-secundario" style="padding:0 .35rem;font-size:.7rem" title="Apagar" data-on-click="apagarOpcaoLista('${lista}','${o.id}')">✕</button>
+                  <button class="btn-secundario" style="padding:0 .35rem;font-size:.7rem" title="Apagar" data-on-click="pedirApagarOpcaoLista('${lista}','${o.id}')">✕</button>
                 </span>`).join('')}
             </div>
             <div style="display:flex;gap:.5rem">
@@ -1328,7 +1360,11 @@ async function alternarOpcaoLista(lista, id, ativo) {
     carregarModulo('configuracoes');
   } catch (e) { toast(e.message || 'Erro ao actualizar', 'erro'); }
 }
+function pedirApagarOpcaoLista(lista, id) {
+  modalConfirmar('Apagar opção', 'Tem a certeza que quer <b>apagar esta opção</b> da lista? Não pode ser desfeito.', 'apagarOpcaoLista', lista, id);
+}
 async function apagarOpcaoLista(lista, id) {
+  fecharModal();
   try {
     await api('DELETE', `/listas/${lista}/${id}`);
     toast('Opção apagada', 'sucesso');

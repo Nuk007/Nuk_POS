@@ -64,3 +64,22 @@ describe('formulários usam as listas do estabelecimento', () => {
     expect(html).not.toContain('CHURRASCO');
   });
 });
+
+describe('acções destrutivas pedem confirmação', () => {
+  test('nenhum botão apaga/cancela/desactiva directamente: passa por pedirXxx → modalConfirmar', () => {
+    const botoes = [...codigo.matchAll(/data-on-click="([^"]*)"/g)].map(m => m[1]);
+    const directos = botoes.filter(b => /^(apagarQuarto|apagarOpcaoLista|cancelarPedidoConfirmado|cancelarSolicitacaoConfirmada|desactivarFuncConfirmado)\(/.test(b)
+      || /mudarStatusPedido\([^)]*CANCELADO/.test(b) || /actualizarSolicitacao\([^)]*CANCELADA/.test(b));
+    // só o botão «Sim, confirmar» do modalConfirmar (construído com ${funcao}) pode chamá-las
+    expect(directos).toEqual([]);
+  });
+  test('modalConfirmar mostra o texto e o botão de confirmação com a função pedida', () => {
+    let html = '';
+    const ctx = carregar({ nivel_acesso: 'ADMIN' });
+    ctx.abrirModal = (t, h) => { html = h; };
+    ctx.pedirApagarQuarto('abc');
+    expect(html).toContain('apagarQuarto(\'abc\')');
+    expect(html).toContain('Sim, confirmar');
+    expect(html).toContain('fecharModal()');
+  });
+});
