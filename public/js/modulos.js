@@ -334,7 +334,6 @@ async function salvarStatusMesa(id) {
 async function modulo_quartos(el) {
   try {
     const quartos = await api('GET', '/quartos') || [];
-    const produtos = await api('GET', '/produtos') || [];
     const tipos = [...new Set(quartos.map(q => q.tipo))].sort();
 
     el.innerHTML = `
@@ -1224,6 +1223,7 @@ async function modulo_configuracoes(el) {
   try {
     const cfg = await api('GET', '/configuracoes');
     const quartos = await api('GET', '/quartos') || [];
+    const produtos = await api('GET', '/produtos') || [];
 
     el.innerHTML = `
       <div class="secao-titulo">⚙️ Configurações</div>
