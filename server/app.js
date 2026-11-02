@@ -1,10 +1,10 @@
 // Nuk_POS — Servidor Principal (refactored)
 // Stack: Node.js + Express + PostgreSQL + Socket.io
 // SaaS multi-tenant: cada empresa tem tenant_id em todas as operações
-// v2026.11.02.6-titular
+// v2026.11.02.7-pwa
 
 require('dotenv').config();
-console.log('[NukPOS] server/app.js v2026.11.02.6-titular a arrancar');
+console.log('[NukPOS] server/app.js v2026.11.02.7-pwa a arrancar');
 
 const express = require('express');
 const http = require('http');
@@ -72,6 +72,8 @@ app.use(helmet({
       connectSrc: ["'self'", "ws:", "wss:"],
       imgSrc: ["'self'", "data:"],
       fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      manifestSrc: ["'self'"],
+      workerSrc: ["'self'"],
     },
   },
 }));
@@ -104,6 +106,8 @@ app.use((req, res, next) => {
   }
   next();
 });
+// PWA: /sw.js (com versão) e manifesto do portal por estabelecimento — antes do estático
+app.use(require('./routes/pwa'));
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // ── Documentação da API (Swagger UI) ─────────────────────────

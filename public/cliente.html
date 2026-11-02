@@ -5,6 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="claude:viewport-fit-sides" content="cover">
   <title>Nuk_POS — Portal</title>
+  <meta name="theme-color" content="#0d1117">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="Nuk_POS">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" sizes="180x180" href="/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="/css/pwa.css">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap">
   <style>
     /* ── TOKENS ── */
@@ -290,7 +298,6 @@
     }
   </style>
 <link rel="icon" type="image/png" href="/img/favicon.png">
-<link rel="apple-touch-icon" href="/img/icon-192.png">
 <link rel="stylesheet" href="/css/marca.css">
 </head>
 <body>
@@ -806,6 +813,7 @@
 
 <div id="toast"></div>
 
-<script src="/js/cliente.js"></script>
+<script src="/js/pwa.js" defer></script>
+  <script src="/js/cliente.js"></script>
 </body>
 </html>

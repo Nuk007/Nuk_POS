@@ -1,0 +1,30 @@
+/* Instalação da app (PWA) e ajustes para telemóveis — Android e iOS */
+.pwa-instalar {
+  position: fixed; z-index: 9000; left: 0; right: 0;
+  bottom: 0; padding: 12px max(16px, env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left));
+  display: flex; justify-content: center; pointer-events: none;
+}
+.pwa-instalar[hidden] { display: none; }
+.pwa-instalar__caixa {
+  pointer-events: auto; width: 100%; max-width: 30rem; box-sizing: border-box;
+  background: #161b22; color: #e6edf3; border: 1px solid #3d4451; border-radius: 14px;
+  box-shadow: 0 8px 30px rgba(0,0,0,.5), 0 0 0 1px rgba(232,101,10,.25);
+  padding: 14px 16px; display: flex; gap: 12px; align-items: center; font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+.pwa-instalar__caixa img { width: 44px; height: 44px; border-radius: 10px; flex: none; }
+.pwa-instalar__texto { flex: 1; min-width: 0; }
+.pwa-instalar__texto b { display: block; font-size: 15px; }
+.pwa-instalar__texto span { color: #aab3be; font-size: 13px; }
+.pwa-instalar__botoes { display: flex; flex-direction: column; gap: 6px; flex: none; }
+.pwa-instalar button { font: inherit; font-weight: 600; border-radius: 9px; padding: 8px 14px; border: 0; cursor: pointer; touch-action: manipulation; }
+.pwa-instalar .pwa-sim { background: #E8650A; color: #fff; }
+.pwa-instalar .pwa-nao { background: transparent; color: #aab3be; padding: 4px 8px; font-weight: 500; font-size: 13px; }
+
+/* iOS/Android: sem zoom automático ao tocar nos campos e sem atraso no toque */
+@media (pointer: coarse) {
+  input, select, textarea { font-size: 16px; }
+  button, a, [data-on-click], [data-action] { touch-action: manipulation; }
+}
+html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
+/* app instalada: sem "puxar para actualizar" acidental a meio de uma venda */
+@media (display-mode: standalone) { html, body { overscroll-behavior-y: none; } }
