@@ -351,6 +351,30 @@ async function initDB() {
       )
     `);
 
+    // Itens do dashboard configuráveis — espelha a migração 1749300000000
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS dashboard_itens (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        nome VARCHAR(80) NOT NULL,
+        fonte VARCHAR(20) NOT NULL,
+        ref VARCHAR(80),
+        ordem INTEGER NOT NULL DEFAULT 0,
+        ativo BOOLEAN NOT NULL DEFAULT true,
+        criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_dashboard_itens_tenant ON dashboard_itens(tenant_id, ordem);
+      CREATE TABLE IF NOT EXISTS dashboard_registos (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        item_id UUID NOT NULL REFERENCES dashboard_itens(id) ON DELETE CASCADE,
+        evento VARCHAR(10) NOT NULL CHECK (evento IN ('MAIS','MENOS','ABRIR','TRATAR')),
+        funcionario_id UUID REFERENCES funcionarios(id) ON DELETE SET NULL,
+        criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_dashboard_registos_item ON dashboard_registos(tenant_id, item_id, criado_em);
+    `);
+
     // Listas configuráveis por estabelecimento — espelha a migração 1749100000000 (os CHECK fixos saem)
     await client.query(`
       CREATE TABLE IF NOT EXISTS listas_opcoes (

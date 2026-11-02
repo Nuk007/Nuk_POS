@@ -486,3 +486,23 @@ tr:hover td { background: rgba(255,255,255,.02); }
   .kpi-grid { grid-template-columns: 1fr 1fr; }
   .modal-box { max-width: 100%; }
 }
+
+/* ── Dashboard: comparação hoje / ontem / dia homólogo ── */
+.cmp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
+.cmp-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 12px; padding: .9rem 1rem; min-width: 0; }
+.cmp-card--grande { grid-column: 1 / -1; }
+.cmp-titulo { font-weight: 700; margin-bottom: .15rem; }
+.cmp-sub { color: var(--c-muted); font-size: .78rem; margin-bottom: .6rem; }
+.cmp-linha { display: grid; grid-template-columns: 6.6rem 1fr auto; align-items: center; gap: .5rem; margin: .3rem 0; font-size: .8rem; }
+.cmp-linha .cmp-rot { color: var(--c-muted); white-space: nowrap; }
+.cmp-linha .cmp-num { font-variant-numeric: tabular-nums; text-align: right; min-width: 4.5rem; }
+.cmp-barra { height: 10px; border-radius: 6px; background: rgba(255,255,255,.07); overflow: hidden; }
+.cmp-barra > i { display: block; height: 100%; border-radius: 6px; background: #6b7280; }
+.cmp-linha--hoje .cmp-barra > i { background: linear-gradient(90deg, var(--c-primary-dark), var(--c-primary-light)); transition: width .6s ease; }
+.cmp-linha--hoje .cmp-rot, .cmp-linha--hoje .cmp-num { color: var(--c-text); font-weight: 700; }
+.cmp-var { font-size: .78rem; margin-top: .4rem; display: flex; gap: .9rem; flex-wrap: wrap; }
+.cmp-var .sobe { color: var(--c-success); } .cmp-var .desce { color: var(--c-danger); } .cmp-var .igual { color: var(--c-muted); }
+.cmp-grande-num { font-size: 1.5rem; font-weight: 800; color: var(--c-primary-light); }
+.cmp-acoes { display: flex; gap: .4rem; margin-top: .6rem; flex-wrap: wrap; }
+.cmp-acoes button { padding: .35rem .8rem; font-size: .8rem; }
+@media (prefers-reduced-motion: reduce) { .cmp-linha--hoje .cmp-barra > i { transition: none; } }

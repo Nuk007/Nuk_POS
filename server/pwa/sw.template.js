@@ -4,7 +4,7 @@
  * imagens: cache primeiro. Sem funcionalidades que o iOS não suporte (sem background sync nem push). */
 const VERSAO = '__VERSAO__';
 const CACHE = 'nukpos-' + VERSAO;
-const BASE = ['/offline.html', '/css/nukpos.css', '/css/marca.css', '/css/pwa.css', '/img/icon-192.png', '/img/logo-nukpos-texto.png'];
+const BASE = ['/socket.io/socket.io.js', '/offline.html', '/css/nukpos.css', '/css/marca.css', '/css/pwa.css', '/img/icon-192.png', '/img/logo-nukpos-texto.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => Promise.all(BASE.map(u => c.add(u).catch(() => {})))).then(() => self.skipWaiting()));

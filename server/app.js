@@ -1,10 +1,10 @@
 // Nuk_POS — Servidor Principal (refactored)
 // Stack: Node.js + Express + PostgreSQL + Socket.io
 // SaaS multi-tenant: cada empresa tem tenant_id em todas as operações
-// v2026.11.02.7-pwa
+// v2026.11.02.8-dashboard-itens
 
 require('dotenv').config();
-console.log('[NukPOS] server/app.js v2026.11.02.7-pwa a arrancar');
+console.log('[NukPOS] server/app.js v2026.11.02.8-dashboard-itens a arrancar');
 
 const express = require('express');
 const http = require('http');
@@ -65,7 +65,7 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       // B-02 fix: removido 'unsafe-inline' de scriptSrc; os handlers onclick= foram migrados para addEventListener
-      scriptSrc: ["'self'", "https://cdn.socket.io"],
+      scriptSrc: ["'self'"],
       scriptSrcAttr: ["'none'"],
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       styleSrcElem: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],

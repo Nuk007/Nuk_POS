@@ -13,6 +13,12 @@ const prod = { id: '22222222-2222-2222-2222-222222222222', nome: "Cuca d'água",
 const dados = {
   '/configuracoes': { nome_estabelecimento: 'X', iva_padrao: 14, moeda: 'Kz', timezone: 'Africa/Luanda' },
   '/quartos': [q], '/produtos': [prod],
+  '/dashboard': { resumo_hoje: { receita_hoje: 0, fechados: 0 }, mesas: [], quartos: [], alertas_stock: 0, pedidos_abertos: [], top_produtos: [] },
+  '/dashboard/comparativo': { dias: { hoje: '2026-11-02', ontem: '2026-11-01', homologo: '2026-10-26' }, facturacao: { valor: { hoje: 100, ontem: 200, homologo: 50 } }, itens: [
+    { id: 'i1', nome: 'Shishas', fonte: 'PRODUTO', unidade: 'un', quantidade: { hoje: 2, ontem: 5, homologo: 4 }, valor: { hoje: 1, ontem: 2, homologo: 3 } },
+    { id: 'i2', nome: 'Piscina', fonte: 'CONTADOR', unidade: 'registos', quantidade: { hoje: 3, ontem: 0, homologo: 1 }, valor: null, agora: 2 },
+    { id: 'i3', nome: 'Reclamações', fonte: 'PENDENCIA', unidade: 'registos', quantidade: { hoje: 1, ontem: 1, homologo: 0 }, valor: null, em_aberto: 1, tratadas: { hoje: 0, ontem: 1, homologo: 0 } } ] },
+  '/dashboard/itens': { itens: [{ id: 'i1', nome: 'Shishas', fonte: 'PRODUTO', ref: '22222222-2222-2222-2222-222222222222', ativo: true }], servicos: { QUARTOS: 'Quartos' } },
   '/listas': { TIPO_QUARTO: { nome: 'Tipos de quarto', opcoes: [{ id: '33333333-3333-3333-3333-333333333333', valor: 'SUITE', ativo: true }] } },
   '/listas/TIPO_QUARTO': [{ valor: 'SUITE', ativo: true }], '/listas/CATEGORIA_PRODUTO': [{ valor: 'BEBIDA', ativo: true }],
 };
@@ -32,7 +38,7 @@ const render = async (ctx, fn) => { const el = { innerHTML: '' }; await ctx[fn](
 
 describe('módulos do POS renderizam sem erro', () => {
   const admin = { nivel_acesso: 'ADMIN' };
-  test.each(['modulo_configuracoes', 'modulo_quartos', 'modulo_produtos'])('%s (ADMIN)', async fn => {
+  test.each(['modulo_configuracoes', 'modulo_quartos', 'modulo_produtos', 'modulo_dashboard'])('%s (ADMIN)', async fn => {
     const html = await render(carregar(admin), fn);
     expect(html).not.toMatch(/erro-msg/);
     expect(html.length).toBeGreaterThan(50);
@@ -68,7 +74,7 @@ describe('formulários usam as listas do estabelecimento', () => {
 describe('acções destrutivas pedem confirmação', () => {
   test('nenhum botão apaga/cancela/desactiva directamente: passa por pedirXxx → modalConfirmar', () => {
     const botoes = [...codigo.matchAll(/data-on-click="([^"]*)"/g)].map(m => m[1]);
-    const directos = botoes.filter(b => /^(apagarQuarto|apagarOpcaoLista|cancelarPedidoConfirmado|cancelarSolicitacaoConfirmada|desactivarFuncConfirmado)\(/.test(b)
+    const directos = botoes.filter(b => /^(apagarQuarto|apagarOpcaoLista|cancelarPedidoConfirmado|cancelarSolicitacaoConfirmada|desactivarFuncConfirmado|removerItemDashboard)\(/.test(b)
       || /mudarStatusPedido\([^)]*CANCELADO/.test(b) || /actualizarSolicitacao\([^)]*CANCELADA/.test(b));
     // só o botão «Sim, confirmar» do modalConfirmar (construído com ${funcao}) pode chamá-las
     expect(directos).toEqual([]);

@@ -6,9 +6,68 @@
 // ════════════════════════════════════════════════════════════
 // DASHBOARD
 // ════════════════════════════════════════════════════════════
+// ── Dashboard: comparação hoje / ontem / dia homólogo (barras; só a de hoje cresce com a facturação) ──
+const _fmtDia = d => { const [a, m, dd] = d.split('-'); return `${dd}/${m}`; };
+const _diaSemana = d => new Date(d + 'T12:00:00').toLocaleDateString('pt-PT', { weekday: 'short' });
+
+function htmlBarras(v, dias, fmt) {
+  const max = Math.max(v.hoje, v.ontem, v.homologo, 1);
+  const linha = (cls, rot, val) => `<div class="cmp-linha ${cls}"><span class="cmp-rot">${rot}</span><span class="cmp-barra"><i style="width:${Math.round((val / max) * 100)}%"></i></span><span class="cmp-num">${fmt(val)}</span></div>`;
+  return linha('cmp-linha--hoje', 'Hoje', v.hoje)
+    + linha('', `Ontem <small>${_fmtDia(dias.ontem)}</small>`, v.ontem)
+    + linha('', `${_diaSemana(dias.homologo)} <small>${_fmtDia(dias.homologo)}</small>`, v.homologo);
+}
+function htmlVariacao(v) {
+  const f = (ref, nome) => {
+    if (!ref) return `<span class="igual">${nome}: —</span>`;
+    const p = Math.round(((v.hoje - ref) / ref) * 100);
+    return `<span class="${p > 0 ? 'sobe' : p < 0 ? 'desce' : 'igual'}">${nome}: ${p > 0 ? '▲' : p < 0 ? '▼' : '='} ${Math.abs(p)}%</span>`;
+  };
+  return `<div class="cmp-var">${f(v.ontem, 'vs ontem')}${f(v.homologo, 'vs semana passada')}</div>`;
+}
+function htmlCartaoItem(it, dias) {
+  const n = x => String(x);
+  let topo = `<div class="cmp-sub">${it.unidade === 'un' ? 'unidades vendidas' : it.unidade === 'vendas' ? 'vendas' : it.unidade === 'pedidos' ? 'pedidos' : 'registos'} hoje</div>`;
+  let extra = '';
+  if (it.fonte === 'CONTADOR') {
+    topo = `<div class="cmp-grande-num">${it.agora}</div><div class="cmp-sub">agora · entradas de hoje comparadas abaixo</div>`;
+    extra = `<div class="cmp-acoes"><button class="btn-primario" data-on-click="registarDashboard('${esc(it.id)}','MAIS')">＋ Entrou</button><button class="btn-secundario" data-on-click="registarDashboard('${esc(it.id)}','MENOS')">－ Saiu</button></div>`;
+  } else if (it.fonte === 'PENDENCIA') {
+    topo = `<div class="cmp-grande-num">${it.em_aberto} <small style="font-size:.8rem;color:var(--c-muted)">em aberto</small></div><div class="cmp-sub">tratadas: hoje ${it.tratadas.hoje} · ontem ${it.tratadas.ontem} · ${_diaSemana(dias.homologo)} ${it.tratadas.homologo}</div>`;
+    extra = `<div class="cmp-acoes"><button class="btn-primario" data-on-click="registarDashboard('${esc(it.id)}','ABRIR')">＋ Nova</button><button class="btn-secundario" data-on-click="registarDashboard('${esc(it.id)}','TRATAR')">✓ Tratada</button></div>`;
+  } else if (it.valor) {
+    topo = `<div class="cmp-grande-num">${n(it.quantidade.hoje)}</div><div class="cmp-sub">${it.unidade === 'un' ? 'unidades' : 'vendas'} hoje · ${formatarMoeda(it.valor.hoje)}</div>`;
+  } else {
+    topo = `<div class="cmp-grande-num">${n(it.quantidade.hoje)}</div>${topo.replace(/<div class="cmp-sub">.*?<\/div>/, '<div class="cmp-sub">hoje</div>')}`;
+  }
+  return `<div class="cmp-card"><div class="cmp-titulo">${esc(it.nome)}</div>${topo}${htmlBarras(it.quantidade, dias, x => String(x))}${htmlVariacao(it.quantidade)}${extra}</div>`;
+}
+function htmlComparativo(c) {
+  if (!c) return '';
+  const f = c.facturacao;
+  const itens = c.itens.map(it => htmlCartaoItem(it, c.dias)).join('');
+  return `
+    <div class="cmp-grid">
+      <div class="cmp-card cmp-card--grande">
+        <div class="cmp-titulo">Facturação — hoje, ontem e ${_diaSemana(c.dias.homologo)} passada</div>
+        <div class="cmp-sub">Pedidos fechados + quartos vendidos. A barra de hoje cresce ao longo do dia; as outras são o total do dia.</div>
+        ${htmlBarras(f.valor, c.dias, formatarMoeda)}
+        ${htmlVariacao(f.valor)}
+      </div>
+      ${itens}
+    </div>`;
+}
+
+async function registarDashboard(id, evento) {
+  try {
+    await api('POST', `/dashboard/itens/${id}/registos`, { evento });
+    carregarModulo('dashboard');
+  } catch (e) { toast(e.message || 'Erro ao registar', 'erro'); }
+}
+
 async function modulo_dashboard(el) {
   try {
-    const d = await api('GET', '/dashboard');
+    const [d, cmp] = await Promise.all([api('GET', '/dashboard'), api('GET', '/dashboard/comparativo').catch(() => null)]);
     const mesasLivres = d.mesas.find(m => m.status === 'LIVRE')?.total || 0;
     const mesasOcupadas = d.mesas.find(m => m.status === 'OCUPADA')?.total || 0;
     const quartosDisp = d.quartos.find(q => q.status === 'DISPONIVEL')?.total || 0;
@@ -43,6 +102,8 @@ async function modulo_dashboard(el) {
           <div class="kpi-sub"><button class="btn-primario" style="padding:.3rem .75rem;font-size:.78rem" data-on-click="carregarModulo('stock')">Ver stock</button></div>
         </div>` : ''}
       </div>
+
+      ${htmlComparativo(cmp)}
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
         <div class="card">
@@ -1302,6 +1363,8 @@ async function modulo_configuracoes(el) {
     const quartos = await api('GET', '/quartos') || [];
     const produtos = await api('GET', '/produtos') || [];
     const listas = await api('GET', '/listas') || {};
+    const dsh = await api('GET', '/dashboard/itens') || { itens: [], servicos: {} };
+    window._cfgDash = { produtos, categorias: (listas.CATEGORIA_PRODUTO?.opcoes || []).filter(o => o.ativo).map(o => o.valor), servicos: dsh.servicos };
 
     el.innerHTML = `
       <div class="secao-titulo">⚙️ Configurações</div>
@@ -1319,6 +1382,31 @@ async function modulo_configuracoes(el) {
           <input type="text" id="cfg-tz" value="${cfg.timezone || 'Africa/Luanda'}" readonly>
         </div>
         <button class="btn-primario" data-on-click="guardarConfiguracoes()">Guardar Configurações</button>
+      </div>
+
+      <div class="card mt-2" style="max-width:700px">
+        <div class="card-titulo mb-2">DASHBOARD — ITENS A CONTROLAR</div>
+        <div class="muted" style="font-size:.82rem;margin-bottom:.75rem">Cada item aparece no Dashboard com a comparação de hoje, ontem e do mesmo dia da semana passada. Pode controlar um produto, uma categoria, vendas de quartos ou criar contadores manuais (ex.: pessoas na piscina) e pendências (ex.: reclamações).</div>
+        ${dsh.itens.length ? dsh.itens.map(i => `
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;padding:.35rem 0;border-bottom:1px solid var(--c-border)">
+            <div style="min-width:0"><b>${esc(i.nome)}</b> <span class="muted" style="font-size:.78rem">${esc(descreverItemDashboard(i, dsh.servicos, produtos))}</span></div>
+            <div class="row-acoes">
+              <button class="btn-secundario" style="padding:.25rem .6rem;font-size:.78rem" data-on-click="alternarItemDashboard('${esc(i.id)}',${i.ativo})">${i.ativo ? 'Ocultar' : 'Mostrar'}</button>
+              <button class="btn-secundario" style="padding:.25rem .6rem;font-size:.78rem" data-on-click="pedirRemoverItemDashboard('${esc(i.id)}')">✕</button>
+            </div>
+          </div>`).join('') : '<div class="muted" style="margin-bottom:.5rem">Ainda não há itens. Acrescente o primeiro abaixo.</div>'}
+        <div style="margin-top:.9rem">
+          <div class="campo"><label>Nome do item</label><input type="text" id="dsh-nome" maxlength="80" placeholder="Ex.: Venda de Shishas"></div>
+          <div class="campo"><label>O que controlar</label><select id="dsh-fonte" data-on-change="actualizarRefDashboard()">
+            <option value="PRODUTO">Um produto</option>
+            <option value="CATEGORIA">Uma categoria de produtos</option>
+            <option value="SERVICO">Vendas de quartos / pedidos do portal</option>
+            <option value="CONTADOR">Contador manual (ex.: pessoas na piscina)</option>
+            <option value="PENDENCIA">Pendências (ex.: reclamações abertas e tratadas)</option>
+          </select></div>
+          <div class="campo"><select id="dsh-ref">${htmlOpcoesDashboard('PRODUTO')}</select></div>
+          <button class="btn-secundario" data-on-click="adicionarItemDashboard()">+ Adicionar ao Dashboard</button>
+        </div>
       </div>
 
       <div class="card mt-2" style="max-width:700px">
@@ -1377,6 +1465,48 @@ async function modulo_configuracoes(el) {
   } catch (e) {
     el.innerHTML = `<div class="erro-msg">Erro: ${e.message}</div>`;
   }
+}
+
+function descreverItemDashboard(i, servicos, produtos) {
+  if (i.fonte === 'PRODUTO') return 'produto: ' + ((produtos.find(p => p.id === i.ref) || {}).nome || '?');
+  if (i.fonte === 'CATEGORIA') return 'categoria: ' + String(i.ref).replace(/_/g, ' ');
+  if (i.fonte === 'SERVICO') return servicos[i.ref] || i.ref;
+  return i.fonte === 'CONTADOR' ? 'contador manual' : 'pendências (abertas/tratadas)';
+}
+function htmlOpcoesDashboard(fonte) {
+  const c = window._cfgDash || { produtos: [], categorias: [], servicos: {} };
+  if (fonte === 'PRODUTO') return c.produtos.map(p => `<option value="${esc(p.id)}">${esc(p.nome)}</option>`).join('') || '<option value="">Sem produtos</option>';
+  if (fonte === 'CATEGORIA') return c.categorias.map(v => `<option value="${esc(v)}">${esc(String(v).replace(/_/g, ' '))}</option>`).join('');
+  if (fonte === 'SERVICO') return Object.entries(c.servicos).map(([k, v]) => `<option value="${esc(k)}">${esc(v)}</option>`).join('');
+  return '<option value="">—</option>';
+}
+function actualizarRefDashboard() {
+  const f = document.getElementById('dsh-fonte').value;
+  const ref = document.getElementById('dsh-ref');
+  ref.innerHTML = htmlOpcoesDashboard(f);
+  ref.style.display = (f === 'CONTADOR' || f === 'PENDENCIA') ? 'none' : '';
+}
+async function adicionarItemDashboard() {
+  const nome = document.getElementById('dsh-nome').value;
+  const fonte = document.getElementById('dsh-fonte').value;
+  const ref = document.getElementById('dsh-ref').value || null;
+  try {
+    await api('POST', '/dashboard/itens', { nome, fonte, ref });
+    toast('Item adicionado ao Dashboard', 'sucesso');
+    carregarModulo('configuracoes');
+  } catch (e) { toast(e.message || 'Erro ao adicionar', 'erro'); }
+}
+async function alternarItemDashboard(id, ativo) {
+  try { await api('PUT', `/dashboard/itens/${id}`, { ativo: !ativo }); carregarModulo('configuracoes'); }
+  catch (e) { toast(e.message || 'Erro ao actualizar', 'erro'); }
+}
+function pedirRemoverItemDashboard(id) {
+  modalConfirmar('Remover item do Dashboard', 'Tem a certeza que quer <b>remover este item</b> e o seu histórico de registos manuais? Não pode ser desfeito. (Para o esconder sem perder dados, use «Ocultar».)', 'removerItemDashboard', id);
+}
+async function removerItemDashboard(id) {
+  fecharModal();
+  try { await api('DELETE', `/dashboard/itens/${id}`); toast('Item removido', 'sucesso'); carregarModulo('configuracoes'); }
+  catch (e) { toast(e.message || 'Erro ao remover', 'erro'); }
 }
 
 async function adicionarOpcaoLista(lista) {
