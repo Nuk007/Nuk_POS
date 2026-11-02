@@ -1,96 +1,79 @@
 'use strict';
 const express = require('express');
 const router = express.Router();
-const { pool } = require('../db');
 const { authMiddleware, requerNivel, validarUUID } = require('../middleware/auth');
-const { broadcast } = require('../middleware/broadcast');
 const svc = require('../services/quartos.service');
 
-// GET /api/quartos
-router.get('/', authMiddleware, async (req, res) => {
-  const tenantId = req.tenantId;
-  try {
-    const r = await pool.query(`
-      SELECT q.*,
-        (SELECT json_agg(json_build_object('id',r.id,'checkin',r.checkin,'checkout',r.checkout,'status',r.status,'nome_hospede',r.nome_hospede,'fracao',r.fracao))
-         FROM reservas r WHERE r.quarto_id = q.id AND r.status IN ('CONFIRMADA','CHECKIN')
-         AND r.checkout > NOW()) as reservas_activas
-      FROM quartos q
-      WHERE ($1::uuid IS NULL OR q.tenant_id = $1)
-      ORDER BY q.tipo, q.numero
-    `, [tenantId || null]);
-    res.json(r.rows);
-  } catch (e) {
-    console.error('GET /api/quartos:', e.message);
-    res.status(500).json({ erro: 'Erro interno do servidor' });
-  }
+const falha = (res, next) => e => e.statusCode ? res.status(e.statusCode).json({ erro: e.message, ...(e.codigo ? { codigo: e.codigo } : {}) }) : next(e);
+const vendas = require('../services/quartos-vendas.service');
+const ctx = req => ({ tenantId: req.tenantId, userId: req.user.id });
+
+/**
+ * @openapi
+ * /api/quartos:
+ *   get:
+ *     tags: [Quartos]
+ *     summary: Lista os quartos com ocupação, hora em que ficam livres, estrela de reserva e arrumação pendente
+ * /api/quartos/{id}/vender:
+ *   post:
+ *     tags: [Quartos]
+ *     summary: Vende o quarto agora (Hora/Noite/Diária) — exige o perfil «Vender quartos»
+ *     requestBody: { content: { application/json: { schema: { type: object, required: [fracao], properties: { fracao: { type: string, enum: [DUAS_HORAS, PERNOITE, DIARIA] }, nome_hospede: { type: string }, observacoes: { type: string } } } } } }
+ *     responses: { 201: { description: Venda registada }, 403: { description: Sem perfil }, 409: { description: Quarto indisponível ou estrela vermelha } }
+ * /api/quartos/{id}/reservar:
+ *   post:
+ *     tags: [Quartos]
+ *     summary: Reserva um período futuro compatível — exige o perfil «Vender quartos»
+ *     responses: { 201: { description: Reserva criada }, 409: { description: Período incompatível } }
+ * /api/quartos/{id}/abrir:
+ *   post:
+ *     tags: [Quartos]
+ *     summary: Abre o quarto (cliente saiu antes da hora) e manda arrumar
+ *     responses: { 200: { description: Quarto aberto, arrumação com prazo de 30 min } }
+ * /api/quartos/{id}/limpo:
+ *   post:
+ *     tags: [Quartos]
+ *     summary: Dá o quarto como limpo e disponível (arrumadores no prazo; chefia depois do prazo)
+ *     responses: { 200: { description: Quarto disponível, com o atraso em minutos } }
+ * /api/quartos/reservas/{id}/entrada:
+ *   post:
+ *     tags: [Quartos]
+ *     summary: Dá entrada a uma reserva (na última hora antes do início)
+ *     responses: { 200: { description: Reserva em curso } }
+ * /api/quartos/reservas/{id}/cancelar:
+ *   post:
+ *     tags: [Quartos]
+ *     summary: Cancela uma reserva por iniciar
+ *     responses: { 200: { description: Reserva cancelada } }
+ */
+router.get('/', authMiddleware, async (req, res, next) => {
+  try { res.json(await vendas.listar({ tenantId: req.tenantId })); } catch (e) { falha(res, next)(e); }
+});
+router.post('/:id/vender', authMiddleware, validarUUID('id'), async (req, res, next) => {
+  try { res.status(201).json(await vendas.vender({ ...ctx(req), quartoId: req.params.id, ...req.body })); } catch (e) { falha(res, next)(e); }
+});
+router.post('/:id/reservar', authMiddleware, validarUUID('id'), async (req, res, next) => {
+  try { res.status(201).json(await vendas.reservar({ ...ctx(req), quartoId: req.params.id, ...req.body })); } catch (e) { falha(res, next)(e); }
+});
+router.post('/:id/abrir', authMiddleware, validarUUID('id'), async (req, res, next) => {
+  try { res.json(await vendas.abrirQuarto({ ...ctx(req), quartoId: req.params.id })); } catch (e) { falha(res, next)(e); }
+});
+router.post('/:id/limpo', authMiddleware, validarUUID('id'), async (req, res, next) => {
+  try { res.json(await vendas.marcarLimpo({ ...ctx(req), quartoId: req.params.id })); } catch (e) { falha(res, next)(e); }
+});
+router.post('/reservas/:rid/entrada', authMiddleware, validarUUID('rid'), async (req, res, next) => {
+  try { res.json(await vendas.darEntrada({ ...ctx(req), reservaId: req.params.rid })); } catch (e) { falha(res, next)(e); }
+});
+router.post('/reservas/:rid/cancelar', authMiddleware, validarUUID('rid'), async (req, res, next) => {
+  try { res.json(await vendas.cancelarReserva({ ...ctx(req), reservaId: req.params.rid })); } catch (e) { falha(res, next)(e); }
 });
 
-// POST /api/quartos/reserva
-router.post('/reserva', authMiddleware, async (req, res) => {
-  const { quarto_id, nome_hospede, fracao, checkin, checkout, cliente_id, observacoes } = req.body;
-  if (!quarto_id || !fracao || !checkin || !checkout) {
-    return res.status(400).json({ erro: 'Quarto, fracção, check-in e check-out são obrigatórios' });
-  }
-  const tenantId = req.tenantId;
-
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-
-    const q = await client.query(
-      `SELECT id, status, preco_2h, preco_pernoite, preco_diaria FROM quartos
-       WHERE id=$1 AND ($2::uuid IS NULL OR tenant_id = $2) FOR UPDATE NOWAIT`,
-      [quarto_id, tenantId || null]
-    );
-    if (!q.rows[0]) throw new Error('Quarto não encontrado');
-
-    const conflito = await client.query(`
-      SELECT id FROM reservas
-      WHERE quarto_id=$1 AND status IN ('CONFIRMADA','CHECKIN')
-      AND NOT (checkout <= $2 OR checkin >= $3)
-    `, [quarto_id, checkin, checkout]);
-    if (conflito.rows.length) throw new Error('Quarto já reservado neste período');
-
-    const precos = { DUAS_HORAS: q.rows[0].preco_2h, PERNOITE: q.rows[0].preco_pernoite, DIARIA: q.rows[0].preco_diaria };
-    const valor_total = precos[fracao] || 0;
-
-    const r = await client.query(`
-      INSERT INTO reservas (tenant_id, quarto_id, cliente_id, nome_hospede, fracao, checkin, checkout, valor_total, observacoes)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *
-    `, [tenantId || null, quarto_id, cliente_id || null, nome_hospede || null, fracao, checkin, checkout, valor_total, observacoes || null]);
-
-    await client.query(`UPDATE quartos SET status='OCUPADO', atualizado_em=NOW() WHERE id=$1`, [quarto_id]);
-
-    await client.query('COMMIT');
-    broadcast('quarto_atualizado', { quarto_id, status: 'OCUPADO' }, tenantId || null);
-    res.status(201).json(r.rows[0]);
-  } catch (e) {
-    await client.query('ROLLBACK');
-    res.status(400).json({ erro: e.message });
-  } finally {
-    client.release();
-  }
-});
-
-// PATCH /api/quartos/:id/status
-router.patch('/:id/status', authMiddleware, validarUUID('id'), requerNivel(['ADMIN','GERENTE']), async (req, res) => {
+// PATCH /api/quartos/:id/status — estado manual pela chefia (manutenção, bloqueio…)
+router.patch('/:id/status', authMiddleware, validarUUID('id'), requerNivel(['ADMIN','GERENTE']), async (req, res, next) => {
   const STATUSES_VALIDOS = ['DISPONIVEL','OCUPADO','LIMPEZA','MANUTENCAO','BLOQUEADO'];
   const { status } = req.body;
   if (!STATUSES_VALIDOS.includes(status)) return res.status(400).json({ erro: 'Status inválido' });
-  const tenantId = req.tenantId;
-  try {
-    const r = await pool.query(
-      `UPDATE quartos SET status=$1, atualizado_em=NOW()
-       WHERE id=$2 AND ($3::uuid IS NULL OR tenant_id = $3) RETURNING *`,
-      [status, req.params.id, tenantId || null]
-    );
-    if (!r.rows[0]) return res.status(404).json({ erro: 'Quarto não encontrado' });
-    broadcast('quarto_atualizado', { quarto_id: req.params.id, status }, tenantId);
-    res.json(r.rows[0]);
-  } catch (e) {
-    res.status(500).json({ erro: 'Erro interno do servidor' });
-  }
+  try { res.json(await vendas.mudarEstado({ ...ctx(req), quartoId: req.params.id, status })); } catch (e) { falha(res, next)(e); }
 });
 
 /**
@@ -112,7 +95,6 @@ router.patch('/:id/status', authMiddleware, validarUUID('id'), requerNivel(['ADM
  *     responses: { 204: { description: Apagado }, 409: { description: Ocupado ou com reservas } }
  */
 const gestor = [authMiddleware, requerNivel(['ADMIN'])]; // configuração = só no painel de Configurações (ADMIN)
-const falha = (res, next) => e => e.statusCode ? res.status(e.statusCode).json({ erro: e.message }) : next(e);
 
 router.post('/', ...gestor, async (req, res, next) => {
   try { res.status(201).json(await svc.criarQuarto({ tenantId: req.tenantId, dados: req.body || {} })); }

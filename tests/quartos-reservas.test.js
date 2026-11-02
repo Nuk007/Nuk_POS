@@ -65,16 +65,19 @@ function reservaRow(overrides = {}) {
 // ─── GET /api/quartos ────────────────────────────────────────────────────────
 
 describe('GET /api/quartos', () => {
-  it('retorna lista de quartos autenticado', async () => {
-    mockPool.query.mockResolvedValueOnce({ rows: [quartoRow(), quartoRow({ numero: '102' })] });
+  it('retorna lista de quartos autenticado (com ocupação, ★ e arrumação calculadas)', async () => {
+    mockPool.query
+      .mockResolvedValueOnce({ rows: [quartoRow(), quartoRow({ id: 'q2', numero: '102' })] }) // quartos
+      .mockResolvedValueOnce({ rows: [] })                                                    // reservas activas
+      .mockResolvedValueOnce({ rows: [] });                                                   // arrumações abertas
 
     const res = await request(app)
       .get('/api/quartos')
       .set('Authorization', `Bearer ${adminToken}`);
 
     expect(res.status).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
     expect(res.body).toHaveLength(2);
+    expect(res.body[0]).toMatchObject({ estrela: null, ocupacao: null, limpeza: null, livre_as: null });
   });
 
   it('retorna 401 sem token', async () => {
@@ -83,77 +86,62 @@ describe('GET /api/quartos', () => {
   });
 });
 
-// ─── POST /api/quartos/reserva ───────────────────────────────────────────────
+// ─── POST /api/quartos/:id/vender (contrato com a UI dos botões) ──────────────
 
-describe('POST /api/quartos/reserva', () => {
-  const payload = {
-    quarto_id:   QUARTO_ID,
-    nome_hospede:'João Silva',
-    fracao:      'PERNOITE',
-    checkin:     '2026-11-01T14:00:00Z',
-    checkout:    '2026-11-02T12:00:00Z',
-  };
-
-  it('cria reserva com sucesso (transacção)', async () => {
-    mockClient.query
-      .mockResolvedValueOnce({ rows: [] })                                              // BEGIN
-      .mockResolvedValueOnce({ rows: [{ id: QUARTO_ID, status: 'DISPONIVEL',
-        preco_2h: '5000.00', preco_pernoite: '12000.00', preco_diaria: '18000.00' }] }) // SELECT quarto FOR UPDATE
-      .mockResolvedValueOnce({ rows: [] })                                              // SELECT conflito
-      .mockResolvedValueOnce({ rows: [reservaRow()] })                                 // INSERT reserva
-      .mockResolvedValueOnce({ rows: [] })                                              // UPDATE quarto status OCUPADO
-      .mockResolvedValueOnce({ rows: [] });                                             // COMMIT
+describe('POST /api/quartos/:id/vender', () => {
+  it('recusa quem não tem o perfil «vender quartos» (403)', async () => {
+    mockPool.query.mockResolvedValueOnce({ rows: [{ v: false }] }); // temPerfil
 
     const res = await request(app)
-      .post('/api/quartos/reserva')
+      .post(`/api/quartos/${QUARTO_ID}/vender`)
       .set('Authorization', `Bearer ${operadorToken}`)
-      .send(payload);
+      .send({ fracao: 'DUAS_HORAS' });
 
-    expect(res.status).toBe(201);
-    expect(res.body).toHaveProperty('id', RESERVA_ID);
-    expect(res.body.valor_total).toBe('12000.00');
+    expect(res.status).toBe(403);
+    expect(res.body.erro).toMatch(/Vender quartos/);
   });
 
-  it('retorna 400 quando há conflito de datas', async () => {
-    mockClient.query
-      .mockResolvedValueOnce({ rows: [] })                                              // BEGIN
-      .mockResolvedValueOnce({ rows: [{ id: QUARTO_ID, status: 'OCUPADO',
-        preco_2h: '5000.00', preco_pernoite: '12000.00', preco_diaria: '18000.00' }] }) // SELECT quarto
-      .mockResolvedValueOnce({ rows: [{ id: RESERVA_ID }] })                           // conflito encontrado
-      .mockResolvedValueOnce({ rows: [] });                                             // ROLLBACK
+  it('exige o serviço Hora/Noite/Diária (400)', async () => {
+    mockPool.query.mockResolvedValueOnce({ rows: [{ v: true }] });
 
     const res = await request(app)
-      .post('/api/quartos/reserva')
+      .post(`/api/quartos/${QUARTO_ID}/vender`)
       .set('Authorization', `Bearer ${operadorToken}`)
-      .send(payload);
+      .send({});
 
     expect(res.status).toBe(400);
-    expect(res.body.erro).toMatch(/reservado/i);
   });
 
-  it('retorna 400 quando faltam campos obrigatórios', async () => {
-    const res = await request(app)
-      .post('/api/quartos/reserva')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ quarto_id: QUARTO_ID }); // sem fracao/checkin/checkout
+  it('retorna 400 com UUID inválido e 401 sem token', async () => {
+    expect((await request(app).post('/api/quartos/xx/vender').set('Authorization', `Bearer ${operadorToken}`).send({ fracao: 'DUAS_HORAS' })).status).toBe(400);
+    expect((await request(app).post(`/api/quartos/${QUARTO_ID}/vender`).send({ fracao: 'DUAS_HORAS' })).status).toBe(401);
+  });
 
-    expect(res.status).toBe(400);
+  it('a rota antiga POST /quartos/reserva já não existe', async () => {
+    const res = await request(app).post('/api/quartos/reserva').set('Authorization', `Bearer ${adminToken}`).send({});
+    expect([400, 404]).toContain(res.status);
   });
 });
 
 // ─── PATCH /api/quartos/:id/status ──────────────────────────────────────────
 
 describe('PATCH /api/quartos/:id/status', () => {
-  it('actualiza quarto para LIMPEZA (ADMIN)', async () => {
-    mockPool.query.mockResolvedValueOnce({ rows: [quartoRow({ status: 'LIMPEZA' })] });
+  it('actualiza quarto para MANUTENCAO (ADMIN)', async () => {
+    mockPool.query.mockResolvedValueOnce({ rows: [{ status: 'DISPONIVEL' }] }); // estado actual
+    mockClient.query
+      .mockResolvedValueOnce({ rows: [] })                                               // BEGIN
+      .mockResolvedValueOnce({ rows: [{ id: QUARTO_ID, numero: '101', status: 'DISPONIVEL' }] } ) // FOR UPDATE
+      .mockResolvedValueOnce({ rows: [quartoRow({ status: 'MANUTENCAO' })] })            // UPDATE
+      .mockResolvedValueOnce({ rows: [] })                                               // fecha arrumações abertas
+      .mockResolvedValueOnce({ rows: [] });                                              // COMMIT
 
     const res = await request(app)
       .patch(`/api/quartos/${QUARTO_ID}/status`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ status: 'LIMPEZA' });
+      .send({ status: 'MANUTENCAO' });
 
     expect(res.status).toBe(200);
-    expect(res.body.status).toBe('LIMPEZA');
+    expect(res.body.status).toBe('MANUTENCAO');
   });
 
   it('retorna 403 para OPERADOR', async () => {

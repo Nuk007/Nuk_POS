@@ -412,57 +412,192 @@ async function salvarStatusMesa(id) {
 async function modulo_quartos(el) {
   try {
     const quartos = await api('GET', '/quartos') || [];
+    window._quartos = quartos;
     const tipos = [...new Set(quartos.map(q => q.tipo))].sort();
+    const u = NUK.utilizador || {};
+    const chefia = ['ADMIN', 'GERENTE'].includes(u.nivel_acesso);
+    const porArrumar = quartos.filter(q => q.status === 'LIMPEZA');
+    const meus = porArrumar.filter(q => (q.limpeza && q.limpeza.escalado) ? chefia : (u.arruma_quartos || (!q.limpeza && chefia)));
 
     el.innerHTML = `
       <div class="toolbar">
         <span class="secao-titulo">🛏️ Quartos</span>
-        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-          <button class="btn-primario" data-on-click="modalNovaReserva()">+ Nova Reserva</button>
-        </div>
+        <span class="quartos-legenda muted texto-pequeno"><span class="estrela amarela">★</span> reservado &nbsp; <span class="estrela vermelha">★</span> reserva em menos de 1 h (vendas bloqueadas)</span>
       </div>
+      ${meus.length ? `<div class="quartos-aviso">🧹 ${meus.length === 1 ? 'Um quarto por arrumar' : meus.length + ' quartos por arrumar'}: ${meus.map(q => `<b>${esc(q.numero)}</b>`).join(', ')} — toque no quarto para o dar como limpo.</div>` : ''}
       ${quartos.length ? '' : '<div class="muted" style="padding:2rem;text-align:center">Ainda não há quartos. Um Administrador pode criá-los em <b>⚙️ Configurações → Quartos e preços</b>.</div>'}
       ${tipos.map(tipo => {
         const qs = quartos.filter(q => q.tipo === tipo);
         return `
           <div class="mb-2">
-            <div class="secao-titulo" style="font-size:.8rem;color:var(--c-muted);margin-bottom:.5rem">${tipo.replace(/_/g,' ')} (${qs.length})</div>
-            <div class="grid-cards">
-              ${qs.map(q => `
-                <div class="quarto-card ${q.status}" data-on-click="modalQuarto('${q.id}','${q.numero}','${q.tipo}','${q.status}')">
-                  <div class="card-numero">${q.numero}</div>
-                  <div class="card-tipo">${q.tipo.replace(/_/g,' ')}</div>
-                  <div class="status-badge status-${q.status}" style="font-size:.7rem;margin-top:.3rem">${q.status}</div>
-                  <div style="font-size:.7rem;color:var(--c-primary);margin-top:.2rem">${formatarMoeda(q.preco_2h)}/2h</div>
-                </div>`).join('')}
-            </div>
+            <div class="secao-titulo" style="font-size:.8rem;color:var(--c-muted);margin-bottom:.5rem">${esc(tipo.replace(/_/g,' '))} (${qs.length})</div>
+            <div class="grid-cards">${qs.map(htmlBotaoQuarto).join('')}</div>
           </div>`;
       }).join('')}
     `;
   } catch (e) {
-    el.innerHTML = `<div class="erro-msg">Erro: ${e.message}</div>`;
+    el.innerHTML = `<div class="erro-msg">Erro: ${esc(e.message)}</div>`;
   }
 }
 
-function modalQuarto(id, numero, tipo, status) {
-  const statuses = ['DISPONIVEL','OCUPADO','LIMPEZA','MANUTENCAO','BLOQUEADO'];
-  abrirModal(`Quarto ${numero} — ${tipo.replace(/_/g,' ')}`, `
-    <p class="muted mb-2">Estado: ${badgeStatus(status)}</p>
-    <div class="campo">
-      <label>Alterar estado</label>
-      <select id="novo-status-quarto">
-        ${statuses.map(s => `<option value="${s}" ${s === status ? 'selected' : ''}>${s}</option>`).join('')}
-      </select>
+// Hora local (HH:MM; com dd/mm quando não é hoje)
+function horaQuarto(x) {
+  const d = new Date(x), h = d.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
+  return d.toDateString() === new Date().toDateString() ? h : `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')} ${h}`;
+}
+const NOME_ESTADO_QUARTO = { DISPONIVEL: 'Disponível', OCUPADO: 'Ocupado', LIMPEZA: 'A arrumar', MANUTENCAO: 'Em manutenção', BLOQUEADO: 'Bloqueado' };
+function textoEstadoQuarto(q) {
+  if (q.status === 'OCUPADO' && q.livre_as) return `Ocupado · livre às ${horaQuarto(q.livre_as)}`;
+  if (q.status === 'LIMPEZA' && q.limpeza) return q.limpeza.escalado ? 'A arrumar · prazo excedido' : `A arrumar · até ${horaQuarto(q.livre_as)}`;
+  return NOME_ESTADO_QUARTO[q.status] || q.status;
+}
+function htmlBotaoQuarto(q) {
+  const estrela = q.estrela ? `<div class="estrela ${q.estrela === 'VERMELHA' ? 'vermelha' : 'amarela'}" title="${q.estrela === 'VERMELHA' ? 'Reserva em menos de 1 hora: vendas bloqueadas' : 'Reservado para um período'}">★ reservado</div>` : '<div class="estrela vazia">&nbsp;</div>';
+  return `
+    <div class="quarto-card ${esc(q.status)} ${q.limpeza && q.limpeza.escalado ? 'escalado' : ''}" data-on-click="modalQuarto('${esc(q.id)}')">
+      <div class="card-numero">${esc(q.numero)}</div>
+      <div class="card-tipo">${esc(q.tipo.replace(/_/g, ' '))}</div>
+      <div class="quarto-estado">${esc(textoEstadoQuarto(q))}</div>
+      ${estrela}
+    </div>`;
+}
+
+const FRACOES_QUARTO = { DUAS_HORAS: ['Hora', '2 h', 'preco_2h'], PERNOITE: ['Noite', '12 h', 'preco_pernoite'], DIARIA: ['Diária', '24 h', 'preco_diaria'] };
+const quartoPorId = id => (window._quartos || []).find(q => q.id === id);
+
+// Clique no botão do quarto: estado, serviço (Hora/Noite/Diária) e as acções Vender / Reservar / Abrir Quarto
+function modalQuarto(id) {
+  const q = quartoPorId(id);
+  if (!q) return;
+  const u = NUK.utilizador || {};
+  const chefia = ['ADMIN', 'GERENTE'].includes(u.nivel_acesso);
+  window._quartoSel = { id, fracao: null };
+  const vende = !!u.pode_vender_quartos;
+  const bloqueio = q.venda_bloqueada || (q.status !== 'DISPONIVEL' ? NOME_ESTADO_QUARTO[q.status] : null);
+  const podeVender = vende && q.status === 'DISPONIVEL' && !q.venda_bloqueada;
+  const podeReservar = vende && !['MANUTENCAO', 'BLOQUEADO'].includes(q.status);
+  const podeAbrir = vende && q.status === 'OCUPADO';
+
+  const escalado = q.limpeza && q.limpeza.escalado;
+  const podeLimpar = q.status === 'LIMPEZA' && (q.limpeza ? (escalado ? chefia : !!u.arruma_quartos) : (chefia || !!u.arruma_quartos));
+  const reservas = (q.reservas_futuras || []).map(r => {
+    const perto = new Date(r.checkin) - Date.now() <= 3600e3;
+    return `<div class="quarto-reserva">
+      <div><b>${horaQuarto(r.checkin)}</b> → ${horaQuarto(r.checkout)} · ${esc(FRACOES_QUARTO[r.fracao][0])}${r.nome_hospede ? ' · ' + esc(r.nome_hospede) : ''}</div>
+      ${vende ? `<div class="row-acoes">
+        ${perto && q.status === 'DISPONIVEL' ? `<button class="btn-primario" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="entradaReservaQuarto('${esc(r.id)}')">Dar entrada</button>` : ''}
+        <button class="btn-secundario" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="pedirCancelarReservaQuarto('${esc(r.id)}')">Cancelar</button>
+      </div>` : ''}
+    </div>`;
+  }).join('');
+
+  abrirModal(`Quarto ${q.numero} — ${q.tipo.replace(/_/g, ' ')}`, `
+    <p class="mb-2">${badgeStatus(q.status)} <span class="muted">${esc(textoEstadoQuarto(q))}</span></p>
+    ${q.ocupacao ? `<p class="muted texto-pequeno mb-2">Em curso: ${horaQuarto(q.ocupacao.checkin)} → ${horaQuarto(q.ocupacao.checkout)} · ${esc(FRACOES_QUARTO[q.ocupacao.fracao][0])}${q.ocupacao.nome_hospede ? ' · ' + esc(q.ocupacao.nome_hospede) : ''}</p>` : ''}
+    ${q.status === 'LIMPEZA' ? `<div class="quartos-aviso">${escalado ? '⚠️ O prazo de arrumação terminou: só um gerente ou supervisor pode abrir este quarto.' : `🧹 Arrumar até às ${horaQuarto(q.livre_as)}.`}
+      ${podeLimpar ? '<button class="btn-primario btn-bloco" style="margin-top:.5rem" data-on-click="pedirQuartoLimpo()">Dar como limpo e disponível</button>' : '<div class="muted texto-pequeno" style="margin-top:.4rem">Só quem tem o perfil de arrumação o pode dar como limpo.</div>'}</div>` : ''}
+    <div class="campo"><label>Serviço</label>
+      <div class="servicos-quarto">
+        ${Object.entries(FRACOES_QUARTO).map(([k, [nome, dur, col]]) => `
+          <button type="button" class="servico-quarto" id="srv-${k}" data-on-click="escolherServicoQuarto('${k}')"><b>${nome}</b><span>${dur}</span><span>${formatarMoeda(q[col])}</span></button>`).join('')}
+      </div>
     </div>
-    <div style="display:flex;gap:.5rem;margin-top:.5rem">
-      <button class="btn-primario" style="flex:1" data-on-click="salvarStatusQuarto('${id}')">Actualizar</button>
-      <button class="btn-secundario" data-on-click="fecharModal()">Cancelar</button>
+    ${!vende ? '<p class="muted texto-pequeno mb-2">Não tem o perfil «Vender quartos». O Administrador activa-o na sua ficha de funcionário.</p>' : (bloqueio && !podeReservar ? `<p class="muted texto-pequeno mb-2">${esc(bloqueio)}</p>` : '')}
+    ${vende && q.venda_bloqueada ? `<p class="aviso-vermelho mb-2">★ ${esc(q.venda_bloqueada)}</p>` : ''}
+    <div class="acoes-quarto">
+      <button class="btn-primario" ${podeVender ? '' : 'disabled'} data-on-click="passoQuarto('VENDER')">Vender</button>
+      <button class="btn-secundario" ${podeReservar ? '' : 'disabled'} data-on-click="passoQuarto('RESERVAR')">Reservar</button>
+      <button class="btn-secundario" ${podeAbrir ? '' : 'disabled'} data-on-click="passoQuarto('ABRIR')" title="O cliente saiu antes da hora">Abrir Quarto</button>
     </div>
-    <hr style="border-color:var(--c-border);margin:1rem 0">
-    <button class="btn-primario btn-bloco" data-on-click="novaReservaNoQuarto('${id}')">
-      + Reservar este quarto
-    </button>
+    <div id="passo-quarto"></div>
+    ${reservas ? `<div class="campo" style="margin-top:1rem"><label>Reservas</label>${reservas}</div>` : ''}
+    ${chefia ? `<details style="margin-top:1rem"><summary class="muted texto-pequeno">Estado manual (manutenção / bloqueio)</summary>
+      <div class="campo" style="margin-top:.5rem"><select id="novo-status-quarto">${['DISPONIVEL', 'MANUTENCAO', 'BLOQUEADO'].map(s => `<option value="${s}" ${s === q.status ? 'selected' : ''}>${NOME_ESTADO_QUARTO[s]}</option>`).join('')}</select></div>
+      <button class="btn-secundario" data-on-click="salvarStatusQuarto('${esc(q.id)}')">Actualizar estado</button></details>` : ''}
   `);
+}
+
+function escolherServicoQuarto(fracao) {
+  if (!window._quartoSel) return;
+  window._quartoSel.fracao = fracao;
+  Object.keys(FRACOES_QUARTO).forEach(k => document.getElementById(`srv-${k}`)?.classList.toggle('activo', k === fracao));
+}
+
+// Passo seguinte depois de escolher o serviço e a acção
+function passoQuarto(acao) {
+  const sel = window._quartoSel, q = sel && quartoPorId(sel.id), alvo = document.getElementById('passo-quarto');
+  if (!q || !alvo) return;
+  if (acao === 'ABRIR') {
+    alvo.innerHTML = `<div class="quartos-aviso"><b>Abrir o quarto ${esc(q.numero)}?</b> O cliente sai antes da hora: o quarto passa a «a arrumar» e a equipa de arrumação é avisada (30 min para o dar como limpo).
+      <div style="display:flex;gap:.5rem;margin-top:.6rem"><button class="btn-perigo" style="flex:1" data-on-click="confirmarAbrirQuarto()">Sim, abrir</button><button class="btn-secundario" style="flex:1" data-on-click="fecharPassoQuarto()">Não, voltar</button></div></div>`;
+    return;
+  }
+  if (!sel.fracao) { toast('Escolha primeiro o serviço: Hora, Noite ou Diária', 'aviso'); return; }
+  const [nome, dur, col] = FRACOES_QUARTO[sel.fracao];
+  const inicio = acao === 'RESERVAR' ? `<div class="campo"><label>Início da reserva *</label><input type="datetime-local" id="pq-inicio" value="${horaLocalInput(new Date(Date.now() + 3600e3 * 3))}"></div>` : '';
+  alvo.innerHTML = `<div class="quartos-passo">
+    <div class="mb-2"><b>${acao === 'VENDER' ? 'Vender' : 'Reservar'} · ${nome} (${dur})</b> — <span style="color:var(--c-primary);font-weight:700">${formatarMoeda(q[col])}</span></div>
+    ${inicio}
+    <div class="campo"><label>Nome do hóspede</label><input type="text" id="pq-nome" maxlength="200" placeholder="Opcional"></div>
+    <div class="campo"><label>Observações</label><input type="text" id="pq-obs" maxlength="300"></div>
+    <div style="display:flex;gap:.5rem"><button class="btn-primario" style="flex:1" data-on-click="confirmarPassoQuarto('${acao}')">Confirmar ${acao === 'VENDER' ? 'venda' : 'reserva'}</button><button class="btn-secundario" data-on-click="fecharPassoQuarto()">Voltar</button></div></div>`;
+}
+const horaLocalInput = d => { const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
+function fecharPassoQuarto() { const a = document.getElementById('passo-quarto'); if (a) a.innerHTML = ''; }
+
+async function confirmarPassoQuarto(acao) {
+  const sel = window._quartoSel;
+  if (!sel) return;
+  const corpo = { fracao: sel.fracao, nome_hospede: document.getElementById('pq-nome').value.trim() || undefined, observacoes: document.getElementById('pq-obs').value.trim() || undefined };
+  try {
+    if (acao === 'RESERVAR') {
+      const v = document.getElementById('pq-inicio').value;
+      if (!v) { toast('Indique o início da reserva', 'erro'); return; }
+      corpo.inicio = new Date(v).toISOString();
+    }
+    await api('POST', `/quartos/${sel.id}/${acao === 'VENDER' ? 'vender' : 'reservar'}`, corpo);
+    toast(acao === 'VENDER' ? 'Venda registada' : 'Reserva registada', 'sucesso');
+    fecharModal();
+    carregarModulo('quartos');
+  } catch (e) { toast(e.message, 'erro'); carregarModulo('quartos'); }
+}
+
+async function confirmarAbrirQuarto() {
+  const sel = window._quartoSel;
+  try {
+    await api('POST', `/quartos/${sel.id}/abrir`);
+    toast('Quarto aberto — equipa de arrumação avisada', 'sucesso');
+    fecharModal();
+    carregarModulo('quartos');
+  } catch (e) { toast(e.message, 'erro'); }
+}
+
+function pedirQuartoLimpo() {
+  const q = quartoPorId(window._quartoSel && window._quartoSel.id);
+  if (q) modalConfirmar('Dar quarto como limpo', `O quarto <b>${esc(q.numero)}</b> fica <b>limpo e disponível</b> para venda. Confirma?`, 'confirmarQuartoLimpo', q.id);
+}
+async function confirmarQuartoLimpo(id) {
+  fecharModal();
+  try {
+    const r = await api('POST', `/quartos/${id}/limpo`);
+    toast(r && r.atraso_min ? `Quarto disponível (atraso de ${r.atraso_min} min registado)` : 'Quarto limpo e disponível', 'sucesso');
+  } catch (e) { toast(e.message, 'erro'); }
+  carregarModulo('quartos');
+}
+
+async function entradaReservaQuarto(id) {
+  try { await api('POST', `/quartos/reservas/${id}/entrada`); toast('Entrada registada', 'sucesso'); fecharModal(); }
+  catch (e) { toast(e.message, 'erro'); }
+  carregarModulo('quartos');
+}
+function pedirCancelarReservaQuarto(id) {
+  modalConfirmar('Cancelar reserva', 'Tem a certeza que quer <b>cancelar esta reserva</b>?', 'cancelarReservaQuarto', id);
+}
+async function cancelarReservaQuarto(id) {
+  fecharModal();
+  try { await api('POST', `/quartos/reservas/${id}/cancelar`); toast('Reserva cancelada', 'sucesso'); }
+  catch (e) { toast(e.message, 'erro'); }
+  carregarModulo('quartos');
 }
 
 // ── Listas configuráveis (tipos de quarto, categorias, unidades): opções activas + a actual mesmo se desactivada ──
@@ -541,97 +676,7 @@ async function salvarStatusQuarto(id) {
     toast(e.message || 'Erro ao actualizar estado', 'erro');
   }
   fecharModal();
-  carregarModulo('configuracoes');
-}
-
-async function modalNovaReserva() {
-  const quartos = await api('GET', '/quartos') || [];
-  const disponiveis = quartos.filter(q => q.status === 'DISPONIVEL');
-
-  abrirModal('Nova Reserva de Quarto', `
-    <div class="campo">
-      <label>Quarto</label>
-      <select id="res-quarto" data-on-change="actualizarPrecosReserva(this.value)">
-        <option value="">— Seleccionar —</option>
-        ${disponiveis.map(q => `<option value="${q.id}" data-p2h="${q.preco_2h}" data-pp="${q.preco_pernoite}" data-pd="${q.preco_diaria}">${q.numero} — ${q.tipo.replace(/_/g,' ')}</option>`).join('')}
-      </select>
-    </div>
-    <div id="precos-quarto" class="mb-2"></div>
-    <div class="campo">
-      <label>Fracção</label>
-      <select id="res-fracao" data-on-change="actualizarPrecosReserva()">
-        <option value="DUAS_HORAS">2 Horas</option>
-        <option value="PERNOITE">Pernoite</option>
-        <option value="DIARIA">Diária</option>
-      </select>
-    </div>
-    <div class="campo">
-      <label>Nome do Hóspede</label>
-      <input type="text" id="res-hospede" placeholder="Nome completo">
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
-      <div class="campo">
-        <label>Check-in</label>
-        <input type="datetime-local" id="res-checkin">
-      </div>
-      <div class="campo">
-        <label>Check-out</label>
-        <input type="datetime-local" id="res-checkout">
-      </div>
-    </div>
-    <div class="campo">
-      <label>Observações</label>
-      <textarea id="res-obs" rows="2"></textarea>
-    </div>
-    <div id="valor-reserva" style="text-align:right;font-weight:700;color:var(--c-primary);margin-bottom:1rem"></div>
-    <button class="btn-primario btn-bloco" data-on-click="confirmarReserva()">Confirmar Reserva</button>
-  `);
-
-  // Pré-preencher datas
-  const agora = new Date();
-  const daqui2h = new Date(agora.getTime() + 2 * 3600000);
-  document.getElementById('res-checkin').value = agora.toISOString().slice(0,16);
-  document.getElementById('res-checkout').value = daqui2h.toISOString().slice(0,16);
-
-  window._quartosDisponiveis = disponiveis;
-  if (window._quartoPreSelecionado) {
-    document.getElementById('res-quarto').value = window._quartoPreSelecionado;
-    actualizarPrecosReserva(window._quartoPreSelecionado);
-    window._quartoPreSelecionado = null;
-  }
-}
-
-function actualizarPrecosReserva(quartoId) {
-  const el = document.getElementById('precos-quarto');
-  const id = quartoId || document.getElementById('res-quarto')?.value;
-  if (!id || !window._quartosDisponiveis) return;
-  const q = window._quartosDisponiveis.find(x => x.id === id);
-  if (!q) return;
-  const fracao = document.getElementById('res-fracao')?.value || 'DUAS_HORAS';
-  const precos = { DUAS_HORAS: q.preco_2h, PERNOITE: q.preco_pernoite, DIARIA: q.preco_diaria };
-  el.innerHTML = `<div style="background:var(--c-bg);border-radius:6px;padding:.5rem .75rem;font-size:.85rem;display:flex;gap:1rem">
-    <span>2h: <b>${formatarMoeda(q.preco_2h)}</b></span>
-    <span>Pernoite: <b>${formatarMoeda(q.preco_pernoite)}</b></span>
-    <span>Diária: <b>${formatarMoeda(q.preco_diaria)}</b></span>
-  </div>`;
-  document.getElementById('valor-reserva').textContent = 'Valor: ' + formatarMoeda(precos[fracao] || 0);
-}
-
-async function confirmarReserva() {
-  const quarto_id = document.getElementById('res-quarto').value;
-  const fracao = document.getElementById('res-fracao').value;
-  const nome_hospede = document.getElementById('res-hospede').value;
-  const checkin = document.getElementById('res-checkin').value;
-  const checkout = document.getElementById('res-checkout').value;
-  const observacoes = document.getElementById('res-obs').value;
-
-  if (!quarto_id || !checkin || !checkout) { toast('Preencha quarto e datas', 'erro'); return; }
-  try {
-    await api('POST', '/quartos/reserva', { quarto_id, fracao, nome_hospede, checkin: new Date(checkin).toISOString(), checkout: new Date(checkout).toISOString(), observacoes });
-    toast('Reserva confirmada!', 'sucesso');
-    fecharModal();
-    carregarModulo('configuracoes');
-  } catch (e) { toast(e.message, 'erro'); }
+  carregarModulo('quartos');
 }
 
 // ════════════════════════════════════════════════════════════
@@ -1553,4 +1598,3 @@ function carrinhoMenos(i) { const it = window._carrinhoItens[i]; if (it) { it.qu
 function carrinhoMais(i) { const it = window._carrinhoItens[i]; if (it) { it.quantidade++; renderCarrinho(); } }
 function carrinhoRemover(i) { window._carrinhoItens.splice(i, 1); renderCarrinho(); }
 function novoPedidoNaMesa(id) { fecharModal(); window._mesaPreSelecionada = id; modalNovoPedido(); }
-function novaReservaNoQuarto(id) { fecharModal(); window._quartoPreSelecionado = id; modalNovaReserva(); }

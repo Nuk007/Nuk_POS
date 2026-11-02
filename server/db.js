@@ -375,6 +375,31 @@ async function initDB() {
       CREATE INDEX IF NOT EXISTS idx_dashboard_registos_item ON dashboard_registos(tenant_id, item_id, criado_em);
     `);
 
+    // Vendas de quartos e arrumação — espelha a migração 1749400000000
+    await client.query(`
+      ALTER TABLE reservas ADD COLUMN IF NOT EXISTS criado_por UUID REFERENCES funcionarios(id) ON DELETE SET NULL;
+      ALTER TABLE reservas ADD COLUMN IF NOT EXISTS saida_em TIMESTAMPTZ;
+      ALTER TABLE reservas ADD COLUMN IF NOT EXISTS aviso_fim_em TIMESTAMPTZ;
+      CREATE INDEX IF NOT EXISTS idx_reservas_estado_checkout ON reservas(status, checkout);
+      CREATE TABLE IF NOT EXISTS quarto_limpezas (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        quarto_id UUID NOT NULL REFERENCES quartos(id) ON DELETE CASCADE,
+        reserva_id UUID REFERENCES reservas(id) ON DELETE SET NULL,
+        origem VARCHAR(12) NOT NULL CHECK (origem IN ('ABERTO','FIM_TEMPO')),
+        aviso_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        prazo_em TIMESTAMPTZ NOT NULL,
+        escalado_em TIMESTAMPTZ,
+        limpo_em TIMESTAMPTZ,
+        limpo_por UUID REFERENCES funcionarios(id) ON DELETE SET NULL,
+        atraso_min INTEGER NOT NULL DEFAULT 0,
+        criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_limpeza_aberta ON quarto_limpezas(quarto_id) WHERE limpo_em IS NULL;
+      CREATE INDEX IF NOT EXISTS idx_limpezas_prazo ON quarto_limpezas(prazo_em) WHERE limpo_em IS NULL AND escalado_em IS NULL;
+      CREATE INDEX IF NOT EXISTS idx_limpezas_tenant_dia ON quarto_limpezas(tenant_id, prazo_em);
+    `);
+
     // Listas configuráveis por estabelecimento — espelha a migração 1749100000000 (os CHECK fixos saem)
     await client.query(`
       CREATE TABLE IF NOT EXISTS listas_opcoes (

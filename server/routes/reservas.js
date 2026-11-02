@@ -32,16 +32,18 @@ router.patch('/:id/status', authMiddleware, validarUUID('id'), async (req, res) 
   const tenantId = req.tenantId;
   try {
     const r = await pool.query(
-      `UPDATE reservas rv SET status=$1, atualizado_em=NOW()
+      `WITH antes AS (SELECT status FROM reservas WHERE id = $2)
+       UPDATE reservas rv SET status=$1, atualizado_em=NOW()
        FROM quartos q
        WHERE rv.id=$2 AND rv.quarto_id = q.id
          AND ($3::uuid IS NULL OR q.tenant_id = $3)
-       RETURNING rv.*`,
+       RETURNING rv.*, (SELECT status FROM antes) AS status_anterior`,
       [status, req.params.id, tenantId || null]
     );
     if (!r.rows[0]) return res.status(404).json({ erro: 'Reserva não encontrada' });
 
-    if (['CHECKOUT', 'CANCELADA'].includes(status)) {
+    // Cancelar uma reserva por iniciar não mexe no quarto; só o fim de uma ocupação o manda arrumar
+    if (status === 'CHECKOUT' || (status === 'CANCELADA' && r.rows[0].status_anterior === 'CHECKIN')) {
       const outrasReservas = await pool.query(
         `SELECT id FROM reservas WHERE quarto_id=$1 AND status IN ('CONFIRMADA','CHECKIN') AND id != $2`,
         [r.rows[0].quarto_id, req.params.id]

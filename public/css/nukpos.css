@@ -506,3 +506,28 @@ tr:hover td { background: rgba(255,255,255,.02); }
 .cmp-acoes { display: flex; gap: .4rem; margin-top: .6rem; flex-wrap: wrap; }
 .cmp-acoes button { padding: .35rem .8rem; font-size: .8rem; }
 @media (prefers-reduced-motion: reduce) { .cmp-linha--hoje .cmp-barra > i { transition: none; } }
+
+/* ── QUARTOS: botões de venda, ★ de reserva e arrumação ───────── */
+.quarto-card { min-height: 8.2rem; display: flex; flex-direction: column; justify-content: flex-start; }
+.quarto-estado { font-size: .74rem; font-weight: 600; margin-top: .35rem; line-height: 1.25; }
+.quarto-card.DISPONIVEL .quarto-estado { color: var(--c-success); }
+.quarto-card.OCUPADO .quarto-estado { color: var(--c-primary); }
+.quarto-card.LIMPEZA .quarto-estado { color: var(--c-warning); }
+.quarto-card.escalado { border-color: var(--c-danger); animation: quarto-pulsa 1.6s ease-in-out infinite; }
+.quarto-card.escalado .quarto-estado { color: var(--c-danger); }
+.quarto-card .estrela { margin-top: auto; padding-top: .35rem; font-size: .75rem; font-weight: 700; }
+.estrela.amarela { color: #f5b301; }
+.estrela.vermelha { color: #e5392b; }
+.quartos-legenda { margin-left: auto; }
+.quartos-aviso { background: rgba(245,179,1,.12); border: 1px solid rgba(245,179,1,.45); border-radius: var(--radius); padding: .6rem .8rem; margin-bottom: 1rem; font-size: .85rem; }
+.aviso-vermelho { color: #e5392b; font-weight: 600; font-size: .85rem; }
+.servicos-quarto { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; }
+.servico-quarto { display: flex; flex-direction: column; gap: .1rem; align-items: center; padding: .6rem .3rem; background: var(--c-surface); color: inherit; border: 2px solid var(--c-border); border-radius: var(--radius); cursor: pointer; font: inherit; font-size: .75rem; }
+.servico-quarto b { font-size: .95rem; }
+.servico-quarto.activo { border-color: var(--c-primary); background: rgba(232,101,10,.12); }
+.acoes-quarto { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; margin-bottom: .75rem; }
+.acoes-quarto button:disabled { opacity: .4; cursor: not-allowed; }
+.quartos-passo { border-top: 1px solid var(--c-border); padding-top: .75rem; }
+.quarto-reserva { display: flex; justify-content: space-between; align-items: center; gap: .5rem; flex-wrap: wrap; padding: .45rem 0; border-bottom: 1px solid var(--c-border); font-size: .82rem; }
+@keyframes quarto-pulsa { 50% { box-shadow: 0 0 0 3px rgba(229,57,43,.35); } }
+@media (prefers-reduced-motion: reduce) { .quarto-card.escalado { animation: none; } }

@@ -57,6 +57,67 @@ describe('módulos do POS renderizam sem erro', () => {
   });
 });
 
+describe('Quartos: venda directa pelos botões', () => {
+  const agora = Date.now();
+  const rooms = [
+    { ...q, id: 'a1111111-1111-1111-1111-111111111111', numero: '101', estrela: null, reservas_futuras: [] },
+    { ...q, id: 'b1111111-1111-1111-1111-111111111111', numero: '102', status: 'OCUPADO', livre_as: new Date(agora + 3600e3).toISOString(), estrela: 'AMARELA',
+      ocupacao: { checkin: new Date(agora - 3600e3).toISOString(), checkout: new Date(agora + 1800e3).toISOString(), fracao: 'DUAS_HORAS' },
+      reservas_futuras: [{ id: 'c1111111-1111-1111-1111-111111111111', checkin: new Date(agora + 7200e3).toISOString(), checkout: new Date(agora + 14400e3).toISOString(), fracao: 'DUAS_HORAS' }] },
+    { ...q, id: 'd1111111-1111-1111-1111-111111111111', numero: '103', estrela: 'VERMELHA', venda_bloqueada: 'Reserva às 15:00: vendas bloqueadas', reservas_futuras: [] },
+    { ...q, id: 'e1111111-1111-1111-1111-111111111111', numero: '104', status: 'LIMPEZA', livre_as: new Date(agora + 600e3).toISOString(), limpeza: { escalado: false }, estrela: null },
+  ];
+  const comQuartos = u => { const ctx = carregar(u); dados['/quartos'] = rooms; return ctx; };
+  afterAll(() => { dados['/quartos'] = [q]; });
+
+  test('já não há «+ Nova Reserva»; cada botão mostra número, tipo, estado e ★ reservado', async () => {
+    const html = await render(comQuartos({ nivel_acesso: 'OPERADOR', pode_vender_quartos: true }), 'modulo_quartos');
+    expect(html).not.toMatch(/Nova Reserva|modalNovaReserva/);
+    expect(html).toContain('>101<');
+    expect(html).toMatch(/Disponível/);
+    expect(html).toMatch(/Ocupado · livre às/);
+    expect(html).toMatch(/A arrumar · até/);
+    expect(html).toMatch(/estrela amarela[^>]*>★ reservado/);
+    expect(html).toMatch(/estrela vermelha[^>]*>★ reservado/);
+    expect(html).toContain("modalQuarto('a1111111-1111-1111-1111-111111111111')");
+  });
+  const abrir = async (u, id) => {
+    let html = '';
+    const ctx = comQuartos(u); ctx.abrirModal = (t, h) => { html = h; };
+    await render(ctx, 'modulo_quartos'); ctx.modalQuarto(id);
+    return html;
+  };
+  test('com o perfil: serviços Hora/Noite/Diária e botões Vender / Reservar / Abrir Quarto', async () => {
+    const html = await abrir({ nivel_acesso: 'OPERADOR', pode_vender_quartos: true }, rooms[0].id);
+    ['Hora', 'Noite', 'Diária', 'Vender', 'Reservar', 'Abrir Quarto'].forEach(t => expect(html).toContain(t));
+    expect(html).toMatch(/passoQuarto\('VENDER'\)"/);
+    expect(html).not.toMatch(/passoQuarto\('VENDER'\)" disabled/);
+    expect(html).toMatch(/disabled data-on-click="passoQuarto\('ABRIR'\)"/); // quarto livre: não há o que abrir
+  });
+  test('sem o perfil não vende: botões desactivados e explicação', async () => {
+    const html = await abrir({ nivel_acesso: 'ADMIN', pode_vender_quartos: false }, rooms[0].id);
+    expect(html).toMatch(/<button class="btn-primario" disabled data-on-click="passoQuarto\('VENDER'\)"/);
+    expect(html).toContain('Não tem o perfil');
+  });
+  test('★ vermelha bloqueia a venda mas deixa reservar; quarto ocupado permite abrir', async () => {
+    const u = { nivel_acesso: 'OPERADOR', pode_vender_quartos: true };
+    const verm = await abrir(u, rooms[2].id);
+    expect(verm).toMatch(/disabled data-on-click="passoQuarto\('VENDER'\)"/);
+    expect(verm).not.toMatch(/disabled data-on-click="passoQuarto\('RESERVAR'\)"/);
+    const ocup = await abrir(u, rooms[1].id);
+    expect(ocup).not.toMatch(/disabled data-on-click="passoQuarto\('ABRIR'\)"/);
+    expect(ocup).toContain('pedirCancelarReservaQuarto(');
+  });
+  test('arrumação: só arrumadores (ou a chefia depois do prazo) vêem «Dar como limpo»', async () => {
+    expect(await abrir({ nivel_acesso: 'OPERADOR', arruma_quartos: true }, rooms[3].id)).toContain('pedirQuartoLimpo()');
+    expect(await abrir({ nivel_acesso: 'GERENTE' }, rooms[3].id)).not.toContain('pedirQuartoLimpo()');
+    rooms[3].limpeza = { escalado: true };
+    expect(await abrir({ nivel_acesso: 'GERENTE' }, rooms[3].id)).toContain('pedirQuartoLimpo()');
+    expect(await abrir({ nivel_acesso: 'OPERADOR', arruma_quartos: true }, rooms[3].id)).not.toContain('pedirQuartoLimpo()');
+    rooms[3].limpeza = { escalado: false };
+  });
+});
+
 describe('formulários usam as listas do estabelecimento', () => {
   test('novo quarto e novo produto mostram as opções configuradas', async () => {
     let html = '';

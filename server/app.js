@@ -1,10 +1,10 @@
 // Nuk_POS — Servidor Principal (refactored)
 // Stack: Node.js + Express + PostgreSQL + Socket.io
 // SaaS multi-tenant: cada empresa tem tenant_id em todas as operações
-// v2026.11.02.8-dashboard-itens
+// v2026.11.02.9-quartos-vendas
 
 require('dotenv').config();
-console.log('[NukPOS] server/app.js v2026.11.02.8-dashboard-itens a arrancar');
+console.log('[NukPOS] server/app.js v2026.11.02.9-quartos-vendas a arrancar');
 
 const express = require('express');
 const http = require('http');
@@ -230,6 +230,7 @@ if (executadoDirectamente || executadoPeloStart) {
     initDB()
       .then(() => {
         logger.info('✅ Base de dados pronta');
+        require('./jobs/quartos-scheduler').iniciar(); // avisos de arrumação e escalada (30 s)
       })
       .catch((err) => {
         logger.error({ err }, '❌ Falha ao inicializar base de dados — verifique DATABASE_URL');

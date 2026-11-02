@@ -167,6 +167,27 @@ function iniciarWebSocket() {
     if (NUK.moduloActual === 'quartos') carregarModulo('quartos');
   });
 
+  // A hora «livre às», a ★ vermelha e o prazo de arrumação mudam com o tempo: refresca a cada minuto (sem interromper um modal aberto)
+  if (!NUK._timerQuartos) {
+    NUK._timerQuartos = setInterval(() => {
+      const ov = document.getElementById('modal-overlay');
+      if (NUK.moduloActual === 'quartos' && !(ov && ov.style.display === 'flex')) carregarModulo('quartos');
+    }, 60000);
+  }
+
+  // Arrumação: só os funcionários com o perfil «arrumar quartos» são avisados; passado o prazo, só a chefia
+  NUK.socket.on('quarto_arrumar', (d) => {
+    if (!NUK.utilizador || !NUK.utilizador.arruma_quartos) return;
+    const hora = new Date(d.prazo_em).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
+    toast(`🧹 Quarto ${d.numero}: arrumar até às ${hora}`, 'aviso', 10000);
+    if (NUK.moduloActual === 'quartos') carregarModulo('quartos');
+  });
+  NUK.socket.on('quarto_escalado', (d) => {
+    if (!NUK.utilizador || !['ADMIN', 'GERENTE'].includes(NUK.utilizador.nivel_acesso)) return;
+    toast(`⚠️ Quarto ${d.numero}: o prazo de arrumação terminou — só a chefia o pode abrir`, 'erro', 12000);
+    if (NUK.moduloActual === 'quartos') carregarModulo('quartos');
+  });
+
   NUK.socket.on('alerta_stock', (dados) => {
     toast(`⚠️ Stock baixo: ${dados.item.nome}`, 'aviso');
     document.getElementById('badge-stock').style.display = 'inline-block';

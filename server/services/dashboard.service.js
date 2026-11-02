@@ -16,6 +16,7 @@ const SERVICOS = {
   QUARTO_HORA: 'Quartos — Hora',
   QUARTO_NOITE: 'Quartos — Noite',
   QUARTO_DIARIA: 'Quartos — Diária',
+  QUARTO_ATRASO: 'Quartos — atraso na abertura (minutos além dos 30 min de arrumação)',
   SOLIC_HOSPEDAGEM: 'Solicitações de hospedagem (portal)',
   SOLIC_SERVICO: 'Solicitações de serviços (portal)',
   SOLIC_EVENTO: 'Solicitações de eventos (portal)',
@@ -146,6 +147,16 @@ async function calcularItem(tenantId, it, j) {
     return { ...base, unidade: 'un', quantidade: tres(m, j.dias, 'q'), valor: tres(m, j.dias, 'v') };
   }
   if (it.fonte === 'SERVICO') {
+    if (it.ref === 'QUARTO_ATRASO') {
+      // minutos de atraso por dia do prazo; as arrumações ainda por fazer contam até agora
+      const r = await pool.query(
+        `SELECT to_char((prazo_em AT TIME ZONE 'Africa/Luanda')::date,'YYYY-MM-DD') AS dia,
+                SUM(CASE WHEN limpo_em IS NULL THEN CEIL(EXTRACT(EPOCH FROM (NOW() - prazo_em)) / 60) ELSE atraso_min END)::int AS q
+         FROM quarto_limpezas
+         WHERE tenant_id = $1 AND prazo_em >= $2 AND prazo_em < $3 AND ((limpo_em IS NULL AND prazo_em < NOW()) OR atraso_min > 0)
+         GROUP BY 1`, [tenantId, j.lo, j.hi]);
+      return { ...base, unidade: 'min de atraso', quantidade: tres(mapa(r.rows), j.dias, 'q'), valor: null };
+    }
     if (SOLIC[it.ref]) {
       const r = await pool.query(
         `SELECT to_char((criado_em AT TIME ZONE 'Africa/Luanda')::date,'YYYY-MM-DD') AS dia, COUNT(*)::int AS q
