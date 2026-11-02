@@ -5,6 +5,7 @@
 const bcrypt = require('bcryptjs');
 const { pool } = require('../db');
 const { gerarToken } = require('../middleware/auth');
+const { efectivas } = require('./acessos');
 
 async function login({ email, password }) {
   if (!email || !password) {
@@ -41,6 +42,7 @@ async function login({ email, password }) {
     tenantId: funcionario.tenant_id,
     tenantSlug: funcionario.tenant_slug,
     tenantNome: funcionario.tenant_nome,
+    permissoes: efectivas(funcionario),
   };
 
   return {
@@ -55,13 +57,14 @@ async function login({ email, password }) {
       titular: !!funcionario.titular,
       pode_vender_quartos: !!funcionario.pode_vender_quartos,
       arruma_quartos: !!funcionario.arruma_quartos,
+      permissoes: efectivas(funcionario),
     },
   };
 }
 
 async function obterPerfil({ userId }) {
   const r = await pool.query(
-    `SELECT f.id, f.nome, f.email, f.nivel_acesso, f.tenant_id, f.titular, f.pode_vender_quartos, f.arruma_quartos,
+    `SELECT f.id, f.nome, f.email, f.nivel_acesso, f.tenant_id, f.titular, f.pode_vender_quartos, f.arruma_quartos, f.permissoes,
             t.slug as tenant_slug, t.nome as tenant_nome
      FROM funcionarios f
      LEFT JOIN tenants t ON f.tenant_id = t.id
@@ -71,7 +74,8 @@ async function obterPerfil({ userId }) {
   if (!r.rows[0]) {
     const err = new Error('Funcionário não encontrado'); err.statusCode = 404; throw err;
   }
-  return r.rows[0];
+  const { permissoes, ...resto } = r.rows[0];
+  return { ...resto, permissoes: efectivas(r.rows[0]) };
 }
 
 module.exports = { login, obterPerfil };

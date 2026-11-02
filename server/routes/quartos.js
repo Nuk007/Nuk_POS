@@ -1,5 +1,6 @@
 'use strict';
 const express = require('express');
+const { exigirModulo } = require('../middleware/modulos');
 const router = express.Router();
 const { authMiddleware, requerNivel, validarUUID } = require('../middleware/auth');
 const svc = require('../services/quartos.service');
@@ -94,7 +95,7 @@ router.patch('/:id/status', authMiddleware, validarUUID('id'), requerNivel(['ADM
  *     summary: Apagar quarto sem histórico de reservas (ADMIN)
  *     responses: { 204: { description: Apagado }, 409: { description: Ocupado ou com reservas } }
  */
-const gestor = [authMiddleware, requerNivel(['ADMIN'])]; // configuração = só no painel de Configurações (ADMIN)
+const gestor = [authMiddleware, requerNivel(['ADMIN']), exigirModulo('configuracoes')]; // configuração = só no painel de Configurações (ADMIN)
 
 router.post('/', ...gestor, async (req, res, next) => {
   try { res.status(201).json(await svc.criarQuarto({ tenantId: req.tenantId, dados: req.body || {} })); }

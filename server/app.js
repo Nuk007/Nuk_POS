@@ -1,10 +1,10 @@
 // Nuk_POS — Servidor Principal (refactored)
 // Stack: Node.js + Express + PostgreSQL + Socket.io
 // SaaS multi-tenant: cada empresa tem tenant_id em todas as operações
-// v2026.11.02.9-quartos-vendas
+// v2026.11.02.10-acessos-delegados
 
 require('dotenv').config();
-console.log('[NukPOS] server/app.js v2026.11.02.9-quartos-vendas a arrancar');
+console.log('[NukPOS] server/app.js v2026.11.02.10-acessos-delegados a arrancar');
 
 const express = require('express');
 const http = require('http');
@@ -18,6 +18,7 @@ const { router: saasRouter, verificarLicencaTenant, resolverTenant } = require('
 const broadcast = require('./middleware/broadcast');
 const { initWebSocket } = require('./websocket');
 const { logger, initSentry, sentryErrorHandler } = require('./monitoring');
+const { exigirModulo } = require('./middleware/modulos');
 const { globalLimiter, apiWriteLimiter } = require('./middleware/rateLimiters');
 
 // ── Protecção global ─────────────────────────────────────────
@@ -143,7 +144,7 @@ app.use('/api/saas', saasRouter);
 // depois verificarLicencaTenant valida a licença usando esse tenantId.
 app.use('/api/auth',           require('./routes/auth'));
 app.use('/api/dashboard',      resolverTenant, verificarLicencaTenant, require('./routes/dashboard'));
-app.use('/api/funcionarios',   resolverTenant, verificarLicencaTenant, require('./routes/funcionarios'));
+app.use('/api/funcionarios',   resolverTenant, verificarLicencaTenant, exigirModulo('funcionarios'), require('./routes/funcionarios'));
 app.use('/api/mesas',          resolverTenant, verificarLicencaTenant, require('./routes/mesas'));
 app.use('/api/produtos',       resolverTenant, verificarLicencaTenant, require('./routes/produtos'));
 app.use('/api/pedidos',        resolverTenant, verificarLicencaTenant, require('./routes/pedidos'));
@@ -152,9 +153,9 @@ app.use('/api/listas',         resolverTenant, verificarLicencaTenant, require('
 app.use('/api/reservas',       resolverTenant, verificarLicencaTenant, require('./routes/reservas'));
 app.use('/api/solicitacoes-hospedagem', resolverTenant, verificarLicencaTenant, require('./routes/solicitacoes'));
 app.use('/api/solicitacoes-portal', resolverTenant, verificarLicencaTenant, require('./routes/solicitacoes-portal'));
-app.use('/api/stock',          resolverTenant, verificarLicencaTenant, require('./routes/stock'));
-app.use('/api/financeiro',     resolverTenant, verificarLicencaTenant, require('./routes/financeiro'));
-app.use('/api/clientes',       resolverTenant, verificarLicencaTenant, require('./routes/clientes'));
+app.use('/api/stock',          resolverTenant, verificarLicencaTenant, exigirModulo('stock'), require('./routes/stock'));
+app.use('/api/financeiro',     resolverTenant, verificarLicencaTenant, exigirModulo('financeiro'), require('./routes/financeiro'));
+app.use('/api/clientes',       resolverTenant, verificarLicencaTenant, exigirModulo('clientes'), require('./routes/clientes'));
 app.use('/api/chamadas',       resolverTenant, verificarLicencaTenant, require('./routes/chamadas'));
 app.use('/api/configuracoes',  resolverTenant, verificarLicencaTenant, require('./routes/configuracoes'));
 app.use('/api/qrcode',         resolverTenant, verificarLicencaTenant, require('./routes/qrcode'));

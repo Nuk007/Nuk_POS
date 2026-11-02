@@ -118,6 +118,33 @@ describe('Quartos: venda directa pelos botões', () => {
   });
 });
 
+describe('Acessos delegados nos formulários de funcionários', () => {
+  const meta = (titular, limite) => ({ modulos: ['pedidos', 'financeiro', 'funcionarios'], capacidades: ['vender_quartos'], rotulos: { pedidos: 'Pedidos', financeiro: 'Financeiro', funcionarios: 'Funcionários', vender_quartos: 'Atribuir «vender quartos»' },
+    padrao: { OPERADOR: ['pedidos'], GERENTE: ['pedidos', 'financeiro'], ADMIN: ['pedidos', 'financeiro', 'funcionarios', 'vender_quartos'] }, meu_limite: limite, sou_titular: titular });
+  test('administrador não titular: o que está fora do limite fica desactivado e lerAcessos só devolve o que pode dar', () => {
+    const ctx = carregar({ nivel_acesso: 'ADMIN', titular: false });
+    ctx.window._acessosMeta = meta(false, ['pedidos', 'funcionarios']);
+    const html = ctx.htmlAcessos('nf', ['pedidos'], 'OPERADOR', false);
+    expect(html).toMatch(/id="nf-ac-pedidos" checked >/);
+    expect(html).toMatch(/id="nf-ac-financeiro" +disabled/);
+    expect(html).not.toContain('vender_quartos'); // capacidades só aparecem ao definir administradores
+    expect(html).toContain('titular lhe delegou');
+  });
+  test('titular a definir um administrador vê também as capacidades que ele poderá atribuir', () => {
+    const ctx = carregar({ nivel_acesso: 'ADMIN', titular: true });
+    ctx.window._acessosMeta = meta(true, ['pedidos', 'financeiro', 'funcionarios', 'vender_quartos']);
+    const html = ctx.htmlAcessos('ef', ['pedidos', 'vender_quartos'], 'ADMIN', false);
+    expect(html).toContain('id="ef-ac-vender_quartos" checked');
+    expect(html).toContain('limite do administrador');
+    expect(html).not.toMatch(/disabled/);
+  });
+  test('acessos acima do limite: a caixa fica toda bloqueada', () => {
+    const ctx = carregar({ nivel_acesso: 'ADMIN', titular: false });
+    ctx.window._acessosMeta = meta(false, ['pedidos']);
+    expect(ctx.htmlAcessos('ef', ['pedidos', 'financeiro'], 'OPERADOR', true)).toContain('só o titular os pode alterar');
+  });
+});
+
 describe('formulários usam as listas do estabelecimento', () => {
   test('novo quarto e novo produto mostram as opções configuradas', async () => {
     let html = '';

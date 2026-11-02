@@ -1253,6 +1253,7 @@ async function modulo_funcionarios(el) {
   try {
     const lista = await api('GET', '/funcionarios') || [];
     window._funcionarios = lista;
+    window._acessosMeta = await api('GET', '/funcionarios/acessos').catch(() => null);
 
     el.innerHTML = `
       <div class="toolbar">
@@ -1272,8 +1273,8 @@ async function modulo_funcionarios(el) {
                 <td>${f.ativo ? '<span class="status-badge status-LIVRE">Activo</span>' : '<span class="status-badge status-FECHADO">Inactivo</span>'}</td>
                 <td class="muted">${f.ultimo_acesso ? formatarData(f.ultimo_acesso) : 'Nunca'}</td>
                 <td><div class="row-acoes">
-                  <button class="btn-secundario" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="modalEditarFuncionario('${f.id}')">Editar</button>
-                  ${f.titular ? (NUK.utilizador.titular ? '<button class="btn-secundario" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="modalTransferirTitularidade()">Transferir titularidade</button>' : '') : `<button class="btn-${f.ativo ? 'perigo' : 'sucesso'}" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="${f.ativo ? `pedirDesactivarFunc('${f.id}')` : `toggleActivarFunc('${f.id}',false)`}">${f.ativo ? 'Desactivar' : 'Activar'}</button>`}
+                  ${(f.nivel_acesso === 'ADMIN' && !NUK.utilizador.titular) ? '' : `<button class="btn-secundario" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="modalEditarFuncionario('${f.id}')">Editar</button>`}
+                  ${(f.nivel_acesso === 'ADMIN' && !NUK.utilizador.titular) ? '' : f.titular ? (NUK.utilizador.titular ? '<button class="btn-secundario" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="modalTransferirTitularidade()">Transferir titularidade</button>' : '') : `<button class="btn-${f.ativo ? 'perigo' : 'sucesso'}" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="${f.ativo ? `pedirDesactivarFunc('${f.id}')` : `toggleActivarFunc('${f.id}',false)`}">${f.ativo ? 'Desactivar' : 'Activar'}</button>`}
                 </div></td>
               </tr>`).join('')}
           </tbody>
@@ -1285,6 +1286,29 @@ async function modulo_funcionarios(el) {
   }
 }
 
+
+// ── Acessos delegados: o titular fixa o limite dos administradores; estes atribuem dentro desse limite ──
+function htmlAcessos(prefixo, seleccionados, nivel, bloqueado) {
+  const m = window._acessosMeta;
+  if (!m) return '';
+  const caixa = k => `<label><input type="checkbox" id="${prefixo}-ac-${k}" ${seleccionados.includes(k) ? 'checked' : ''} ${bloqueado || !m.meu_limite.includes(k) ? 'disabled' : ''}> ${esc(m.rotulos[k] || k)}</label>`;
+  return `<div class="campo" id="${prefixo}-wrap"><label>${nivel === 'ADMIN' ? 'Acessos (limite do administrador)' : 'Acessos'}</label>
+    <div class="acessos-grid" id="${prefixo}-acessos">${m.modulos.map(caixa).join('')}${nivel === 'ADMIN' ? m.capacidades.map(caixa).join('') : ''}</div>
+    <div class="muted texto-pequeno" style="margin-top:.3rem">${bloqueado ? 'Este funcionário tem acessos acima do seu limite: só o titular os pode alterar.' : m.sou_titular ? 'Como titular, define o que cada administrador pode dar aos restantes funcionários.' : 'Só pode atribuir os acessos que o titular lhe delegou (os restantes estão desactivados).'}</div></div>`;
+}
+function lerAcessos(prefixo) {
+  const m = window._acessosMeta;
+  if (!m || !document.getElementById(`${prefixo}-acessos`)) return undefined;
+  return [...m.modulos, ...m.capacidades].filter(k => { const c = document.getElementById(`${prefixo}-ac-${k}`); return c && c.checked && !c.disabled; });
+}
+// Ao mudar o nível, propõe os acessos predefinidos desse nível dentro do limite de quem atribui
+function actualizarAcessosForm(prefixo) {
+  const m = window._acessosMeta, nivel = document.getElementById(`${prefixo}-nivel`).value;
+  if (!m) return;
+  const alvo = document.getElementById(`${prefixo}-wrap`);
+  if (alvo) alvo.outerHTML = htmlAcessos(prefixo, (m.padrao[nivel] || []).filter(k => m.meu_limite.includes(k)), nivel, false);
+}
+
 function modalNovoFuncionario() {
   abrirModal('Novo Funcionário', `
     <div class="campo"><label>Nome</label><input type="text" id="nf-nome"></div>
@@ -1292,12 +1316,13 @@ function modalNovoFuncionario() {
     <div class="campo"><label>Senha</label><input type="password" id="nf-senha" placeholder="Mínimo 8 caracteres"></div>
     <div class="campo"><label>Cargo</label><input type="text" id="nf-cargo" placeholder="Ex: Empregado de Mesa"></div>
     <div class="campo"><label>Nível de Acesso</label>
-      <select id="nf-nivel">
+      <select id="nf-nivel" data-on-change="actualizarAcessosForm('nf')">
         <option value="OPERADOR">Operador</option>
         <option value="GERENTE">Gerente</option>
-        <option value="ADMIN">Admin</option>
+        ${window._acessosMeta && !window._acessosMeta.sou_titular ? '' : '<option value="ADMIN">Admin</option>'}
       </select>
     </div>
+    ${htmlAcessos('nf', window._acessosMeta ? window._acessosMeta.padrao.OPERADOR.filter(k => window._acessosMeta.meu_limite.includes(k)) : [], 'OPERADOR', false)}
     <div class="campo"><label>Salário (Kz)</label><input type="number" id="nf-sal" value="200000" min="0"></div>
     <div class="campo"><label><input type="checkbox" id="nf-vq"> Pode vender/reservar/abrir quartos</label></div>
     <div class="campo"><label><input type="checkbox" id="nf-aq"> Arruma quartos (recebe os avisos de limpeza)</label></div>
@@ -1315,7 +1340,7 @@ async function guardarNovoFuncionario() {
   if (!nome || !email || !password || password.length < 8) { toast('Preencha todos os campos (senha ≥ 8 chars)', 'erro'); return; }
   try {
     await api('POST', '/funcionarios', { nome, email, password, cargo, nivel_acesso, salario,
-      pode_vender_quartos: document.getElementById('nf-vq').checked, arruma_quartos: document.getElementById('nf-aq').checked });
+      pode_vender_quartos: document.getElementById('nf-vq').checked, arruma_quartos: document.getElementById('nf-aq').checked, permissoes: lerAcessos('nf') });
     toast('Funcionário criado!', 'sucesso');
     fecharModal();
     carregarModulo('funcionarios');
@@ -1327,7 +1352,7 @@ function modalEditarFuncionario(id) {
   if (!f) return;
   const campoNivel = f.titular
     ? '<div class="campo"><label>Nível</label><input type="text" value="ADMIN (titular)" disabled><div class="muted texto-pequeno">O titular mantém-se Administrador. Para mudar, transfira a titularidade.</div></div><input type="hidden" id="ef-nivel" value="ADMIN">'
-    : `<div class="campo"><label>Nível</label><select id="ef-nivel">${['OPERADOR','GERENTE','ADMIN'].map(n => `<option value="${n}" ${n===f.nivel_acesso?'selected':''}>${n}</option>`).join('')}</select></div>`;
+    : `<div class="campo"><label>Nível</label><select id="ef-nivel" ${window._acessosMeta && !window._acessosMeta.sou_titular ? 'disabled' : ''} data-on-change="actualizarAcessosForm('ef')">${['OPERADOR','GERENTE','ADMIN'].map(n => `<option value="${n}" ${n===f.nivel_acesso?'selected':''}>${n}</option>`).join('')}</select></div>`;
   abrirModal('Editar Funcionário', `
     <div class="campo"><label>Nome</label><input type="text" id="ef-nome" value="${esc(f.nome)}"></div>
     <div class="campo"><label>Cargo</label><input type="text" id="ef-cargo" value="${esc(f.cargo || '')}"></div>
@@ -1335,6 +1360,7 @@ function modalEditarFuncionario(id) {
     <div class="campo"><label>Salário (Kz)</label><input type="number" id="ef-sal" value="${esc(f.salario || 0)}" min="0"></div>
     <div class="campo"><label><input type="checkbox" id="ef-vq" ${f.pode_vender_quartos ? 'checked' : ''}> Pode vender/reservar/abrir quartos</label></div>
     <div class="campo"><label><input type="checkbox" id="ef-aq" ${f.arruma_quartos ? 'checked' : ''}> Arruma quartos (recebe os avisos de limpeza)</label></div>
+    ${f.titular ? '' : htmlAcessos('ef', f.acessos || [], f.nivel_acesso, !!window._acessosMeta && !window._acessosMeta.sou_titular && (f.acessos || []).some(k => !window._acessosMeta.meu_limite.includes(k)))}
     <div class="campo"><label>Nova Senha (deixar vazio para não alterar)</label><input type="password" id="ef-senha" placeholder="Mínimo 8 caracteres"></div>
     <button class="btn-primario btn-bloco" data-on-click="salvarEdicaoFuncionario('${id}')">Guardar</button>
   `);
@@ -1374,6 +1400,8 @@ async function salvarEdicaoFuncionario(id) {
   const dados = { nome, cargo, nivel_acesso, salario,
     pode_vender_quartos: document.getElementById('ef-vq').checked, arruma_quartos: document.getElementById('ef-aq').checked };
   if (password) dados.password = password;
+  const acessos = lerAcessos('ef');
+  if (acessos) dados.permissoes = acessos;
   try {
     await api('PUT', `/funcionarios/${id}`, dados);
     toast('Funcionário actualizado!', 'sucesso');

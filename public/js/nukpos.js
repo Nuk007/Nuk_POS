@@ -97,6 +97,8 @@ function iniciarApp() {
     el.style.display = isAdmin ? 'flex' : 'none';
   });
 
+  aplicarAcessos();
+
   // WebSocket
   iniciarWebSocket();
   actualizarBadgeSolicitacoes();
@@ -106,7 +108,7 @@ function iniciarApp() {
   actualizarHora();
 
   // Módulo inicial
-  carregarModulo('dashboard');
+  carregarModulo(moduloPermitido('dashboard'));
 }
 
 // ── WebSocket ─────────────────────────────────────────────────
@@ -322,6 +324,21 @@ function badgeStatus(status) {
   return `<span class="status-badge status-${status}">${status.replace(/_/g,' ')}</span>`;
 }
 
+// ── Acessos delegados: esconde os módulos a que a conta não tem acesso (o servidor também os recusa) ──
+function moduloPermitido(m) {
+  const p = NUK.utilizador && NUK.utilizador.permissoes;
+  if (!Array.isArray(p) || p.includes(m)) return m;
+  const primeiro = [...document.querySelectorAll('.nav-item[data-modulo]')].map(e => e.dataset.modulo).find(x => p.includes(x));
+  return primeiro || m;
+}
+function aplicarAcessos() {
+  const p = NUK.utilizador && NUK.utilizador.permissoes;
+  if (!Array.isArray(p)) return;
+  document.querySelectorAll('.nav-item[data-modulo]').forEach(el => {
+    if (!p.includes(el.dataset.modulo)) el.style.display = 'none';
+  });
+}
+
 // ── Splash de arranque ───────────────────────────────────────
 // Puramente decorativo: nunca atrasa nem bloqueia o login/app por baixo, só desaparece sozinho.
 window.addEventListener('DOMContentLoaded', () => {
@@ -338,6 +355,7 @@ window.addEventListener('DOMContentLoaded', () => {
       const novo = p && (p.funcionario || p);
       if (novo && novo.id) {
         NUK.utilizador = { ...NUK.utilizador, ...novo };
+        aplicarAcessos();
         try { localStorage.setItem('nukpos_user', JSON.stringify(NUK.utilizador)); } catch (e) { /* ignorar */ }
       }
     }).catch(() => {});

@@ -86,9 +86,9 @@ describe('POST /api/funcionarios', () => {
   };
 
   it('cria funcionário como ADMIN', async () => {
-    // 1ª query: verificar email existente (rows vazio = não existe)
-    // 2ª query: INSERT
+    // 1ª query: quem cria (titular) · 2ª: email existente (rows vazio = não existe) · 3ª: INSERT
     mockPool.query
+      .mockResolvedValueOnce({ rows: [{ id: ADMIN_ID, nivel_acesso: 'ADMIN', titular: true, permissoes: null }] })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [funcRow({ ...payload, id: FUNC_ID })] });
 
@@ -103,7 +103,7 @@ describe('POST /api/funcionarios', () => {
   });
 
   it('retorna 409 quando email já está registado', async () => {
-    mockPool.query.mockResolvedValueOnce({ rows: [{ id: FUNC_ID }] }); // email existe
+    mockPool.query.mockResolvedValueOnce({ rows: [{ id: ADMIN_ID, nivel_acesso: 'ADMIN', titular: true, permissoes: null }] }).mockResolvedValueOnce({ rows: [{ id: FUNC_ID }] }); // quem cria + email existe
 
     const res = await request(app)
       .post('/api/funcionarios')
@@ -147,7 +147,10 @@ describe('POST /api/funcionarios', () => {
 
 describe('PUT /api/funcionarios/:id', () => {
   it('actualiza nome e nível de acesso', async () => {
-    mockPool.query.mockResolvedValueOnce({ rows: [funcRow({ nome: 'Pedro Actualizado', nivel_acesso: 'GERENTE' })] });
+    mockPool.query
+      .mockResolvedValueOnce({ rows: [{ id: ADMIN_ID, nivel_acesso: 'ADMIN', titular: true, permissoes: null }] })                                  // quem edita
+      .mockResolvedValueOnce({ rows: [funcRow()] })                          // o alvo
+      .mockResolvedValueOnce({ rows: [funcRow({ nome: 'Pedro Actualizado', nivel_acesso: 'GERENTE' })] });
 
     const res = await request(app)
       .put(`/api/funcionarios/${FUNC_ID}`)
@@ -159,7 +162,7 @@ describe('PUT /api/funcionarios/:id', () => {
   });
 
   it('retorna 404 quando funcionário não existe', async () => {
-    mockPool.query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [] }); // UPDATE sem linhas + confirmação de existência
+    mockPool.query.mockResolvedValueOnce({ rows: [{ id: ADMIN_ID, nivel_acesso: 'ADMIN', titular: true, permissoes: null }] }).mockResolvedValueOnce({ rows: [] }); // quem edita + alvo inexistente
 
     const res = await request(app)
       .put(`/api/funcionarios/${FUNC_ID}`)

@@ -531,3 +531,9 @@ tr:hover td { background: rgba(255,255,255,.02); }
 .quarto-reserva { display: flex; justify-content: space-between; align-items: center; gap: .5rem; flex-wrap: wrap; padding: .45rem 0; border-bottom: 1px solid var(--c-border); font-size: .82rem; }
 @keyframes quarto-pulsa { 50% { box-shadow: 0 0 0 3px rgba(229,57,43,.35); } }
 @media (prefers-reduced-motion: reduce) { .quarto-card.escalado { animation: none; } }
+
+/* ── Funcionários: lista de acessos delegados ─────────────────── */
+.acessos-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: .4rem .75rem; }
+.campo .acessos-grid label { display: flex; gap: .45rem; align-items: center; margin: 0; font-size: .85rem; font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--c-text); cursor: pointer; }
+.campo .acessos-grid input[type=checkbox] { width: auto; margin: 0; }
+.campo .acessos-grid input:disabled + * , .campo .acessos-grid label:has(input:disabled) { opacity: .45; cursor: not-allowed; }

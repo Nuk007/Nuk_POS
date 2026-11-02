@@ -1,5 +1,6 @@
 'use strict';
 const express = require('express');
+const { exigirModulo } = require('../middleware/modulos');
 const router = express.Router();
 const { authMiddleware, requerNivel, validarUUID } = require('../middleware/auth');
 const svc = require('../services/listas.service');
@@ -39,13 +40,13 @@ router.get('/', authMiddleware, async (req, res, next) => {
 router.get('/:lista', authMiddleware, async (req, res, next) => {
   try { res.json(await svc.listar({ tenantId: req.tenantId, lista: req.params.lista })); } catch (e) { falha(res, next)(e); }
 });
-router.post('/:lista', authMiddleware, requerNivel(['ADMIN']), async (req, res, next) => {
+router.post('/:lista', authMiddleware, requerNivel(['ADMIN']), exigirModulo('configuracoes'), async (req, res, next) => {
   try { res.status(201).json(await svc.criar({ tenantId: req.tenantId, lista: req.params.lista, nome: (req.body || {}).nome })); } catch (e) { falha(res, next)(e); }
 });
-router.put('/:lista/:id', authMiddleware, requerNivel(['ADMIN']), validarUUID('id'), async (req, res, next) => {
+router.put('/:lista/:id', authMiddleware, requerNivel(['ADMIN']), exigirModulo('configuracoes'), validarUUID('id'), async (req, res, next) => {
   try { res.json(await svc.actualizar({ tenantId: req.tenantId, lista: req.params.lista, id: req.params.id, ativo: (req.body || {}).ativo, ordem: (req.body || {}).ordem })); } catch (e) { falha(res, next)(e); }
 });
-router.delete('/:lista/:id', authMiddleware, requerNivel(['ADMIN']), validarUUID('id'), async (req, res, next) => {
+router.delete('/:lista/:id', authMiddleware, requerNivel(['ADMIN']), exigirModulo('configuracoes'), validarUUID('id'), async (req, res, next) => {
   try { await svc.remover({ tenantId: req.tenantId, lista: req.params.lista, id: req.params.id }); res.status(204).end(); } catch (e) { falha(res, next)(e); }
 });
 

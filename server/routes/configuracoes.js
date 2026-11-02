@@ -1,5 +1,6 @@
 'use strict';
 const express = require('express');
+const { exigirModulo } = require('../middleware/modulos');
 const router = express.Router();
 const { pool } = require('../db');
 const { authMiddleware, requerNivel } = require('../middleware/auth');
@@ -34,7 +35,7 @@ router.get('/', authMiddleware, async (req, res) => {
 });
 
 // PUT /api/configuracoes
-router.put('/', authMiddleware, requerNivel(['ADMIN']), async (req, res) => {
+router.put('/', authMiddleware, requerNivel(['ADMIN']), exigirModulo('configuracoes'), async (req, res) => {
   const chavesDesconhecidas = Object.keys(req.body).filter(k => !CHAVES_PERMITIDAS.includes(k));
   if (chavesDesconhecidas.length > 0) {
     return res.status(400).json({ erro: `Chaves não permitidas: ${chavesDesconhecidas.join(', ')}` });

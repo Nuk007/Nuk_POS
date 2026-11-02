@@ -57,7 +57,12 @@ describe('Titular do estabelecimento', () => {
     expect(novo.nivel_acesso).toBe('ADMIN');
     expect(l.filter(f => f.titular)).toHaveLength(1);
     expect((await op(A, 'put', `/api/funcionarios/${outroId}`, { ativo: false })).status).toBe(403);
-    expect((await op(A, 'put', `/api/funcionarios/${titularId}`, { ativo: false })).status).toBe(200);
+    // o antigo titular já é um administrador comum: não se auto-desactiva nem mexe noutros administradores…
+    expect((await op(A, 'put', `/api/funcionarios/${titularId}`, { ativo: false })).status).toBe(403);
+    // …quem o pode desactivar é o novo titular
+    const jwt = require('jsonwebtoken');
+    const novoTitular = { token: jwt.sign({ id: outroId, email: 'g1@it-titular-a.ao', nivel_acesso: 'ADMIN', tenantId: A.tenantId }, process.env.JWT_SECRET, { expiresIn: '1h' }) };
+    expect((await op(novoTitular, 'put', `/api/funcionarios/${titularId}`, { ativo: false })).status).toBe(200);
   });
   test('um único titular por estabelecimento (índice único)', async () => {
     await expect(pool.query(`UPDATE funcionarios SET titular = true WHERE id = $1`, [titularId])).rejects.toMatchObject({ code: '23505' });

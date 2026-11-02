@@ -1,5 +1,6 @@
 'use strict';
 const express = require('express');
+const { exigirModulo } = require('../middleware/modulos');
 const { v4: uuidv4 } = require('uuid');
 const listas = require('../services/listas.service');
 const router = express.Router();
@@ -21,7 +22,7 @@ router.get('/', authMiddleware, async (req, res) => {
 });
 
 // POST /api/produtos
-router.post('/', authMiddleware, requerNivel(['ADMIN']), async (req, res) => {
+router.post('/', authMiddleware, requerNivel(['ADMIN']), exigirModulo('configuracoes'), async (req, res) => {
   const { nome, descricao, preco, categoria, disponivel } = req.body;
   if (!nome || preco === undefined) {
     return res.status(400).json({ erro: 'nome e preco são obrigatórios' });
@@ -48,7 +49,7 @@ router.post('/', authMiddleware, requerNivel(['ADMIN']), async (req, res) => {
 });
 
 // PUT /api/produtos/:id
-router.put('/:id', authMiddleware, requerNivel(['ADMIN']), async (req, res) => {
+router.put('/:id', authMiddleware, requerNivel(['ADMIN']), exigirModulo('configuracoes'), async (req, res) => {
   const { id } = req.params;
   if (!isUUID(id)) return res.status(400).json({ erro: 'id inválido' });
   const { nome, descricao, preco, categoria, disponivel, ativo } = req.body;
@@ -108,7 +109,7 @@ router.get('/:id/ingredientes', authMiddleware, (req, res, next) => {
   if (!isUUID(req.params.id)) return res.status(400).json({ erro: 'id inválido' });
   comErros(r => stockSvc.obterIngredientes({ tenantId: r.tenantId, produtoId: r.params.id }))(req, res, next);
 });
-router.put('/:id/ingredientes', authMiddleware, requerNivel(['ADMIN']), (req, res, next) => {
+router.put('/:id/ingredientes', authMiddleware, requerNivel(['ADMIN']), exigirModulo('configuracoes'), (req, res, next) => {
   if (!isUUID(req.params.id)) return res.status(400).json({ erro: 'id inválido' });
   comErros(r => stockSvc.definirIngredientes({ tenantId: r.tenantId, produtoId: r.params.id, ingredientes: r.body.ingredientes }))(req, res, next);
 });

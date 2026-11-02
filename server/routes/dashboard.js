@@ -1,5 +1,6 @@
 'use strict';
 const express = require('express');
+const { exigirModulo } = require('../middleware/modulos');
 const router = express.Router();
 const { pool } = require('../db');
 const { authMiddleware, requerNivel, validarUUID } = require('../middleware/auth');
@@ -93,16 +94,16 @@ router.get('/', authMiddleware, async (req, res) => {
 router.get('/comparativo', authMiddleware, async (req, res, next) => {
   try { res.json(await svc.comparativo({ tenantId: req.tenantId })); } catch (e) { falha(res, next)(e); }
 });
-router.get('/itens', authMiddleware, requerNivel(['ADMIN']), async (req, res, next) => {
+router.get('/itens', authMiddleware, requerNivel(['ADMIN']), exigirModulo('configuracoes'), async (req, res, next) => {
   try { res.json({ itens: await svc.listarItens({ tenantId: req.tenantId }), servicos: svc.SERVICOS }); } catch (e) { falha(res, next)(e); }
 });
-router.post('/itens', authMiddleware, requerNivel(['ADMIN']), async (req, res, next) => {
+router.post('/itens', authMiddleware, requerNivel(['ADMIN']), exigirModulo('configuracoes'), async (req, res, next) => {
   try { res.status(201).json(await svc.criarItem({ ...req.body, tenantId: req.tenantId })); } catch (e) { falha(res, next)(e); }
 });
-router.put('/itens/:id', authMiddleware, requerNivel(['ADMIN']), validarUUID('id'), async (req, res, next) => {
+router.put('/itens/:id', authMiddleware, requerNivel(['ADMIN']), exigirModulo('configuracoes'), validarUUID('id'), async (req, res, next) => {
   try { res.json(await svc.actualizarItem({ ...req.body, tenantId: req.tenantId, id: req.params.id })); } catch (e) { falha(res, next)(e); }
 });
-router.delete('/itens/:id', authMiddleware, requerNivel(['ADMIN']), validarUUID('id'), async (req, res, next) => {
+router.delete('/itens/:id', authMiddleware, requerNivel(['ADMIN']), exigirModulo('configuracoes'), validarUUID('id'), async (req, res, next) => {
   try { await svc.removerItem({ tenantId: req.tenantId, id: req.params.id }); res.status(204).end(); } catch (e) { falha(res, next)(e); }
 });
 router.post('/itens/:id/registos', authMiddleware, validarUUID('id'), async (req, res, next) => {

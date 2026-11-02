@@ -15,7 +15,7 @@ const falha = (res, next) => e => e.statusCode ? res.status(e.statusCode).json({
  *     responses: { 200: { description: Lista de funcionários } }
  *   post:
  *     tags: [Funcionários]
- *     summary: Criar funcionário (ADMIN). Perfis opcionais pode_vender_quartos e arruma_quartos
+ *     summary: Criar funcionário (ADMIN). Só o titular cria administradores; os outros administradores só atribuem acessos dentro do seu limite (`permissoes`). Perfis opcionais pode_vender_quartos e arruma_quartos
  *     responses: { 201: { description: Criado }, 409: { description: Email já registado } }
  * /api/funcionarios/{id}:
  *   put:
@@ -33,6 +33,10 @@ router.get('/', authMiddleware, requerNivel(['ADMIN', 'GERENTE']), async (req, r
   try { res.json(await svc.listar({ tenantId: req.tenantId })); } catch (e) { falha(res, next)(e); }
 });
 
+router.get('/acessos', authMiddleware, requerNivel(['ADMIN', 'GERENTE']), async (req, res, next) => {
+  try { res.json(await svc.metadadosAcessos({ tenantId: req.tenantId, actorId: req.user.id })); } catch (e) { falha(res, next)(e); }
+});
+
 router.post('/transferir-titularidade', authMiddleware, requerNivel(['ADMIN']), async (req, res, next) => {
   try {
     const b = req.body || {};
@@ -41,12 +45,12 @@ router.post('/transferir-titularidade', authMiddleware, requerNivel(['ADMIN']), 
 });
 
 router.post('/', authMiddleware, requerNivel(['ADMIN']), async (req, res, next) => {
-  try { res.status(201).json(await svc.criar({ ...req.body, tenantId: req.tenantId })); } catch (e) { falha(res, next)(e); }
+  try { res.status(201).json(await svc.criar({ ...req.body, tenantId: req.tenantId, actorId: req.user.id })); } catch (e) { falha(res, next)(e); }
 });
 
 router.put('/:id', authMiddleware, requerNivel(['ADMIN']), async (req, res, next) => {
   if (!isUUID(req.params.id)) return res.status(400).json({ erro: 'id inválido' });
-  try { res.json(await svc.actualizar({ ...req.body, tenantId: req.tenantId, id: req.params.id })); } catch (e) { falha(res, next)(e); }
+  try { res.json(await svc.actualizar({ ...req.body, tenantId: req.tenantId, actorId: req.user.id, id: req.params.id })); } catch (e) { falha(res, next)(e); }
 });
 
 module.exports = router;
