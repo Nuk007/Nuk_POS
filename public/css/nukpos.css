@@ -537,3 +537,6 @@ tr:hover td { background: rgba(255,255,255,.02); }
 .campo .acessos-grid label { display: flex; gap: .45rem; align-items: center; margin: 0; font-size: .85rem; font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--c-text); cursor: pointer; }
 .campo .acessos-grid input[type=checkbox] { width: auto; margin: 0; }
 .campo .acessos-grid input:disabled + * , .campo .acessos-grid label:has(input:disabled) { opacity: .45; cursor: not-allowed; }
+
+.quarto-livre { font-size: .72rem; min-height: 1em; margin-top: .1rem; color: var(--c-muted); }
+.quarto-card.escalado .quarto-livre { color: var(--c-danger); font-weight: 600; }

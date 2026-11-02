@@ -451,13 +451,20 @@ function textoEstadoQuarto(q) {
   if (q.status === 'LIMPEZA' && q.limpeza) return q.limpeza.escalado ? 'A arrumar · prazo excedido' : `A arrumar · até ${horaQuarto(q.livre_as)}`;
   return NOME_ESTADO_QUARTO[q.status] || q.status;
 }
+// Segunda linha do botão, por baixo do estado: a hora a que o quarto fica livre / o prazo de arrumação
+function subtextoLivreQuarto(q) {
+  if (q.status === 'OCUPADO' && q.livre_as) return `livre às ${horaQuarto(q.livre_as)}`;
+  if (q.status === 'LIMPEZA' && q.limpeza) return q.limpeza.escalado ? 'prazo excedido' : `livre às ${horaQuarto(q.livre_as)}`;
+  return '';
+}
 function htmlBotaoQuarto(q) {
   const estrela = q.estrela ? `<div class="estrela ${q.estrela === 'VERMELHA' ? 'vermelha' : 'amarela'}" title="${q.estrela === 'VERMELHA' ? 'Reserva em menos de 1 hora: vendas bloqueadas' : 'Reservado para um período'}">★ reservado</div>` : '<div class="estrela vazia">&nbsp;</div>';
   return `
     <div class="quarto-card ${esc(q.status)} ${q.limpeza && q.limpeza.escalado ? 'escalado' : ''}" data-on-click="modalQuarto('${esc(q.id)}')">
       <div class="card-numero">${esc(q.numero)}</div>
       <div class="card-tipo">${esc(q.tipo.replace(/_/g, ' '))}</div>
-      <div class="quarto-estado">${esc(textoEstadoQuarto(q))}</div>
+      <div class="quarto-estado">${esc(NOME_ESTADO_QUARTO[q.status] || q.status)}</div>
+      <div class="quarto-livre">${esc(subtextoLivreQuarto(q))}</div>
       ${estrela}
     </div>`;
 }

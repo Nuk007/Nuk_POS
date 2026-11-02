@@ -75,8 +75,8 @@ describe('Quartos: venda directa pelos botões', () => {
     expect(html).not.toMatch(/Nova Reserva|modalNovaReserva/);
     expect(html).toContain('>101<');
     expect(html).toMatch(/Disponível/);
-    expect(html).toMatch(/Ocupado · livre às/);
-    expect(html).toMatch(/A arrumar · até/);
+    expect(html).toMatch(/quarto-estado">Ocupado<\/div>\s*<div class="quarto-livre">livre às/);
+    expect(html).toMatch(/quarto-estado">A arrumar<\/div>\s*<div class="quarto-livre">livre às/);
     expect(html).toMatch(/estrela amarela[^>]*>★ reservado/);
     expect(html).toMatch(/estrela vermelha[^>]*>★ reservado/);
     expect(html).toContain("modalQuarto('a1111111-1111-1111-1111-111111111111')");
