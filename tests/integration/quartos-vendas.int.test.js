@@ -240,3 +240,49 @@ describe('Estado manual pela chefia', () => {
     expect((await com(gerente, 'patch', `/api/quartos/${q}/status`, { status: 'DISPONIVEL' })).status).toBe(403);
   });
 });
+
+describe('Migração de dados antigos (quartos e perfil do único utilizador)', () => {
+  const mig = require('../../migrations/1749600000000_quartos-dados-antigos');
+  const correr = () => mig.up({ sql: q => pool.query(q) });
+  const hora = min => new Date(Date.now() + min * MIN);
+  const antigo = async (T, numero, status, ini, fim) => {
+    const id = await quarto(T, numero);
+    await pool.query(`UPDATE quartos SET status='OCUPADO' WHERE id=$1`, [id]); // como o fluxo antigo deixava
+    await pool.query(`INSERT INTO reservas (tenant_id, quarto_id, fracao, checkin, checkout, status, valor_total) VALUES ($1,$2,'DUAS_HORAS',$3,$4,$5,15000)`, [T.tenantId, id, hora(ini), hora(fim), status]);
+    return id;
+  };
+  test('reserva em curso do fluxo antigo passa a ocupação com hora de libertação; terminada manda arrumar; futura liberta o quarto com ★', async () => {
+    const curso = await antigo(A, 'MG1', 'CONFIRMADA', -30, 90);
+    const velha = await antigo(A, 'MG2', 'CONFIRMADA', -300, -180);
+    const futura = await antigo(A, 'MG3', 'CONFIRMADA', 180, 300);
+    const semDados = await quarto(A, 'MG4'); await pool.query(`UPDATE quartos SET status='OCUPADO' WHERE id=$1`, [semDados]);
+    await correr();
+    const e1 = await estado(A, curso);
+    expect(e1.status).toBe('OCUPADO');
+    expect(new Date(e1.livre_as) - new Date(e1.ocupacao.checkout)).toBe(30 * MIN);
+    const e2 = await estado(A, velha);
+    expect(e2.status).toBe('LIMPEZA');
+    expect(e2.limpeza.escalado).toBe(false);
+    const e3 = await estado(A, futura);
+    expect(e3.status).toBe('DISPONIVEL');
+    expect(e3.estrela).toBe('AMARELA');
+    expect((await estado(A, semDados)).status).toBe('OCUPADO'); // sem dados: não se adivinha
+    expect((await com(vendedor, 'post', `/api/quartos/${semDados}/abrir`)).status).toBe(200); // mas pode abrir-se
+    expect((await estado(A, semDados)).status).toBe('LIMPEZA');
+  });
+  test('é idempotente', async () => { await correr(); await correr(); });
+  test('o único utilizador do estabelecimento (titular) recebe os perfis; com mais utilizadores não se mexe', async () => {
+    const S = await criarTenantFixture({ slug: 'it-qv-solo' });
+    await pool.query(`UPDATE funcionarios SET titular = true WHERE id = $1`, [S.userId]);
+    const antes = (await pool.query(`SELECT pode_vender_quartos v, arruma_quartos a FROM funcionarios WHERE id=$1`, [S.userId])).rows[0];
+    expect(antes).toEqual({ v: false, a: false });
+    await correr();
+    expect((await pool.query(`SELECT pode_vender_quartos v, arruma_quartos a FROM funcionarios WHERE id=$1`, [S.userId])).rows[0]).toEqual({ v: true, a: true });
+    const r = await com(S, 'post', `/api/quartos/${await quarto(S, 'S1')}/vender`, { fracao: 'DUAS_HORAS' });
+    expect(r.status).toBe(201);
+    // estabelecimento A tem vários utilizadores: o titular (A) continua sem perfil
+    await pool.query(`UPDATE funcionarios SET titular = true WHERE id = $1`, [A.userId]);
+    await correr();
+    expect((await pool.query(`SELECT pode_vender_quartos v FROM funcionarios WHERE id=$1`, [A.userId])).rows[0].v).toBe(false);
+  });
+});

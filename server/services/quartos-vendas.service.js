@@ -188,11 +188,12 @@ async function abrirQuarto({ tenantId, userId, quartoId }) {
   const aviso = await withTx(async c => {
     const q = await bloquearQuarto(c, tenantId, quartoId);
     const rv = (await c.query(`SELECT id FROM reservas WHERE quarto_id = $1 AND status = 'CHECKIN' ORDER BY checkin DESC LIMIT 1 FOR UPDATE`, [quartoId])).rows[0];
-    if (q.status !== 'OCUPADO' || !rv) throw erro(409, 'Só se abre um quarto que está ocupado.');
+    if (q.status !== 'OCUPADO') throw erro(409, 'Só se abre um quarto que está ocupado.');
     const agora = new Date();
-    await c.query(`UPDATE reservas SET status = 'CHECKOUT', saida_em = $2, atualizado_em = NOW() WHERE id = $1`, [rv.id, agora]);
+    // quarto marcado OCUPADO sem ocupação registada (dados antigos): também se pode abrir
+    if (rv) await c.query(`UPDATE reservas SET status = 'CHECKOUT', saida_em = $2, atualizado_em = NOW() WHERE id = $1`, [rv.id, agora]);
     await c.query(`UPDATE quartos SET status = 'LIMPEZA', atualizado_em = NOW() WHERE id = $1`, [quartoId]);
-    return abrirArrumacao(c, { tenantId, quartoId, numero: q.numero, reservaId: rv.id, origem: 'ABERTO', prazo: mais(agora, LIMPEZA_MIN), agora });
+    return abrirArrumacao(c, { tenantId, quartoId, numero: q.numero, reservaId: rv ? rv.id : null, origem: 'ABERTO', prazo: mais(agora, LIMPEZA_MIN), agora });
   });
   broadcast('quarto_atualizado', { quarto_id: quartoId, status: 'LIMPEZA' }, tenantId);
   avisarArrumar(aviso);

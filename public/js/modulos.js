@@ -453,7 +453,7 @@ function textoEstadoQuarto(q) {
 }
 // Segunda linha do botão, por baixo do estado: a hora a que o quarto fica livre / o prazo de arrumação
 function subtextoLivreQuarto(q) {
-  if (q.status === 'OCUPADO' && q.livre_as) return `livre às ${horaQuarto(q.livre_as)}`;
+  if (q.status === 'OCUPADO') return q.livre_as ? `livre às ${horaQuarto(q.livre_as)}` : 'hora por definir';
   if (q.status === 'LIMPEZA' && q.limpeza) return q.limpeza.escalado ? 'prazo excedido' : `livre às ${horaQuarto(q.livre_as)}`;
   return '';
 }
