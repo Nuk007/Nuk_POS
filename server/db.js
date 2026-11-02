@@ -128,6 +128,17 @@ async function initDB() {
       )
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_func_tenant ON funcionarios(tenant_id)`);
+    // Titular e perfis de quartos — espelha a migração 1749200000000
+    await client.query(`
+      ALTER TABLE funcionarios ADD COLUMN IF NOT EXISTS titular BOOLEAN NOT NULL DEFAULT false;
+      ALTER TABLE funcionarios ADD COLUMN IF NOT EXISTS pode_vender_quartos BOOLEAN NOT NULL DEFAULT false;
+      ALTER TABLE funcionarios ADD COLUMN IF NOT EXISTS arruma_quartos BOOLEAN NOT NULL DEFAULT false;
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_funcionarios_titular ON funcionarios(tenant_id) WHERE titular;
+      UPDATE funcionarios f SET titular = true
+      WHERE f.nivel_acesso = 'ADMIN' AND f.tenant_id IS NOT NULL
+        AND f.id = (SELECT id FROM funcionarios x WHERE x.tenant_id = f.tenant_id AND x.nivel_acesso = 'ADMIN' ORDER BY x.criado_em, x.id LIMIT 1)
+        AND NOT EXISTS (SELECT 1 FROM funcionarios y WHERE y.tenant_id = f.tenant_id AND y.titular);
+    `);
 
     // Clientes
     await client.query(`
@@ -569,8 +580,8 @@ async function seedDB(pool) {
   if (existeAdmin.rows.length === 0) {
     const hash = await bcrypt.hash('Admin@NukPOS25!', 12);
     await pool.query(`
-      INSERT INTO funcionarios (tenant_id, nome, email, password_hash, cargo, nivel_acesso, salario)
-      VALUES ($1, 'Administrador', 'admin@nukpos.ao', $2, 'Administrador', 'ADMIN', 450000)
+      INSERT INTO funcionarios (tenant_id, nome, email, password_hash, cargo, nivel_acesso, salario, titular)
+      VALUES ($1, 'Administrador', 'admin@nukpos.ao', $2, 'Administrador', 'ADMIN', 450000, true)
     `, [tenantId, hash]);
     console.log('👤 Admin demo criado: admin@nukpos.ao / Admin@NukPOS25!');
   }

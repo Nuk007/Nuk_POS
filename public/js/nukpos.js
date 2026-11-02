@@ -61,7 +61,7 @@ document.getElementById('form-login').addEventListener('submit', async (e) => {
     NUK.token = res.token;
     NUK.utilizador = res.funcionario; // contrato da API: { token, funcionario }
     localStorage.setItem('nukpos_token', res.token);
-    localStorage.setItem('nukpos_user', JSON.stringify(res.utilizador));
+    localStorage.setItem('nukpos_user', JSON.stringify(res.funcionario)); // (antes guardava res.utilizador = undefined e a sessão perdia-se ao recarregar)
     iniciarApp();
   } catch (err) {
     erroEl.textContent = err.message;
@@ -312,6 +312,14 @@ window.addEventListener('DOMContentLoaded', () => {
 window.addEventListener('DOMContentLoaded', () => {
   if (NUK.token && NUK.utilizador) {
     iniciarApp();
+    // renova os dados do utilizador (perfis de quartos, titular) sem bloquear o arranque
+    api('GET', '/auth/me').then(p => {
+      const novo = p && (p.funcionario || p);
+      if (novo && novo.id) {
+        NUK.utilizador = { ...NUK.utilizador, ...novo };
+        try { localStorage.setItem('nukpos_user', JSON.stringify(NUK.utilizador)); } catch (e) { /* ignorar */ }
+      }
+    }).catch(() => {});
   }
 });
 

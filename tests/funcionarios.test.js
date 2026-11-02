@@ -82,7 +82,7 @@ describe('POST /api/funcionarios', () => {
     nome:         'Pedro Caixa',
     email:        'pedro@nukpos.ao',
     password:     'Senha@Segura1!',
-    nivel_acesso: 'CAIXA',
+    nivel_acesso: 'OPERADOR', // 'CAIXA' não existe na BD (CHECK) e dava 500: a API passou a recusá-lo
   };
 
   it('cria funcionário como ADMIN', async () => {
@@ -99,7 +99,7 @@ describe('POST /api/funcionarios', () => {
 
     expect(res.status).toBe(201);
     expect(res.body).toHaveProperty('id');
-    expect(res.body.nivel_acesso).toBe('CAIXA');
+    expect(res.body.nivel_acesso).toBe('OPERADOR');
   });
 
   it('retorna 409 quando email já está registado', async () => {
@@ -159,7 +159,7 @@ describe('PUT /api/funcionarios/:id', () => {
   });
 
   it('retorna 404 quando funcionário não existe', async () => {
-    mockPool.query.mockResolvedValueOnce({ rows: [] });
+    mockPool.query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [] }); // UPDATE sem linhas + confirmação de existência
 
     const res = await request(app)
       .put(`/api/funcionarios/${FUNC_ID}`)

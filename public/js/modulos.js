@@ -1146,6 +1146,7 @@ async function modulo_funcionarios(el) {
   }
   try {
     const lista = await api('GET', '/funcionarios') || [];
+    window._funcionarios = lista;
 
     el.innerHTML = `
       <div class="toolbar">
@@ -1158,15 +1159,15 @@ async function modulo_funcionarios(el) {
           <tbody>
             ${lista.map(f => `
               <tr>
-                <td><b>${f.nome}</b><div class="muted texto-pequeno">${f.email}</div></td>
+                <td><b>${f.nome}</b>${f.titular ? ' <span class="status-badge status-CONFIRMADA" title="Conta titular do estabelecimento">Titular</span>' : ''}<div class="muted texto-pequeno">${f.email}</div>${f.pode_vender_quartos ? '<span class="muted texto-pequeno">🛏 vende quartos </span>' : ''}${f.arruma_quartos ? '<span class="muted texto-pequeno">🧹 arruma quartos</span>' : ''}</td>
                 <td>${f.cargo || '—'}</td>
                 <td><span class="status-badge ${f.nivel_acesso === 'ADMIN' ? 'status-CONFIRMADA' : f.nivel_acesso === 'GERENTE' ? 'status-EM_PREPARO' : 'status-LIVRE'}">${f.nivel_acesso}</span></td>
                 <td>★ ${parseFloat(f.media_avaliacao||0).toFixed(1)} <span class="muted">(${f.total_avaliacoes})</span></td>
                 <td>${f.ativo ? '<span class="status-badge status-LIVRE">Activo</span>' : '<span class="status-badge status-FECHADO">Inactivo</span>'}</td>
                 <td class="muted">${f.ultimo_acesso ? formatarData(f.ultimo_acesso) : 'Nunca'}</td>
                 <td><div class="row-acoes">
-                  <button class="btn-secundario" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="modalEditarFuncionario('${f.id}','${f.nome.replace(/'/g,"\\'")}','${f.cargo||''}','${f.nivel_acesso}',${f.salario||0},${f.ativo})">Editar</button>
-                  <button class="btn-${f.ativo ? 'perigo' : 'sucesso'}" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="${f.ativo ? `pedirDesactivarFunc('${f.id}')` : `toggleActivarFunc('${f.id}',false)`}">${f.ativo ? 'Desactivar' : 'Activar'}</button>
+                  <button class="btn-secundario" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="modalEditarFuncionario('${f.id}')">Editar</button>
+                  ${f.titular ? (NUK.utilizador.titular ? '<button class="btn-secundario" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="modalTransferirTitularidade()">Transferir titularidade</button>' : '') : `<button class="btn-${f.ativo ? 'perigo' : 'sucesso'}" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="${f.ativo ? `pedirDesactivarFunc('${f.id}')` : `toggleActivarFunc('${f.id}',false)`}">${f.ativo ? 'Desactivar' : 'Activar'}</button>`}
                 </div></td>
               </tr>`).join('')}
           </tbody>
@@ -1192,6 +1193,8 @@ function modalNovoFuncionario() {
       </select>
     </div>
     <div class="campo"><label>Salário (Kz)</label><input type="number" id="nf-sal" value="200000" min="0"></div>
+    <div class="campo"><label><input type="checkbox" id="nf-vq"> Pode vender/reservar/abrir quartos</label></div>
+    <div class="campo"><label><input type="checkbox" id="nf-aq"> Arruma quartos (recebe os avisos de limpeza)</label></div>
     <button class="btn-primario btn-bloco" data-on-click="guardarNovoFuncionario()">Guardar</button>
   `);
 }
@@ -1205,26 +1208,55 @@ async function guardarNovoFuncionario() {
   const salario = parseFloat(document.getElementById('nf-sal').value) || 0;
   if (!nome || !email || !password || password.length < 8) { toast('Preencha todos os campos (senha ≥ 8 chars)', 'erro'); return; }
   try {
-    await api('POST', '/funcionarios', { nome, email, password, cargo, nivel_acesso, salario });
+    await api('POST', '/funcionarios', { nome, email, password, cargo, nivel_acesso, salario,
+      pode_vender_quartos: document.getElementById('nf-vq').checked, arruma_quartos: document.getElementById('nf-aq').checked });
     toast('Funcionário criado!', 'sucesso');
     fecharModal();
     carregarModulo('funcionarios');
   } catch (e) { toast(e.message, 'erro'); }
 }
 
-function modalEditarFuncionario(id, nome, cargo, nivel, salario, ativo) {
+function modalEditarFuncionario(id) {
+  const f = (window._funcionarios || []).find(x => x.id === id);
+  if (!f) return;
+  const campoNivel = f.titular
+    ? '<div class="campo"><label>Nível</label><input type="text" value="ADMIN (titular)" disabled><div class="muted texto-pequeno">O titular mantém-se Administrador. Para mudar, transfira a titularidade.</div></div><input type="hidden" id="ef-nivel" value="ADMIN">'
+    : `<div class="campo"><label>Nível</label><select id="ef-nivel">${['OPERADOR','GERENTE','ADMIN'].map(n => `<option value="${n}" ${n===f.nivel_acesso?'selected':''}>${n}</option>`).join('')}</select></div>`;
   abrirModal('Editar Funcionário', `
-    <div class="campo"><label>Nome</label><input type="text" id="ef-nome" value="${nome}"></div>
-    <div class="campo"><label>Cargo</label><input type="text" id="ef-cargo" value="${cargo}"></div>
-    <div class="campo"><label>Nível</label>
-      <select id="ef-nivel">
-        ${['OPERADOR','GERENTE','ADMIN'].map(n => `<option value="${n}" ${n===nivel?'selected':''}>${n}</option>`).join('')}
-      </select>
-    </div>
-    <div class="campo"><label>Salário (Kz)</label><input type="number" id="ef-sal" value="${salario}" min="0"></div>
+    <div class="campo"><label>Nome</label><input type="text" id="ef-nome" value="${esc(f.nome)}"></div>
+    <div class="campo"><label>Cargo</label><input type="text" id="ef-cargo" value="${esc(f.cargo || '')}"></div>
+    ${campoNivel}
+    <div class="campo"><label>Salário (Kz)</label><input type="number" id="ef-sal" value="${esc(f.salario || 0)}" min="0"></div>
+    <div class="campo"><label><input type="checkbox" id="ef-vq" ${f.pode_vender_quartos ? 'checked' : ''}> Pode vender/reservar/abrir quartos</label></div>
+    <div class="campo"><label><input type="checkbox" id="ef-aq" ${f.arruma_quartos ? 'checked' : ''}> Arruma quartos (recebe os avisos de limpeza)</label></div>
     <div class="campo"><label>Nova Senha (deixar vazio para não alterar)</label><input type="password" id="ef-senha" placeholder="Mínimo 8 caracteres"></div>
     <button class="btn-primario btn-bloco" data-on-click="salvarEdicaoFuncionario('${id}')">Guardar</button>
   `);
+}
+
+function modalTransferirTitularidade() {
+  const alvos = (window._funcionarios || []).filter(f => f.ativo && !f.titular);
+  abrirModal('Transferir titularidade', `
+    <p class="muted" style="margin-bottom:.75rem">A conta titular é a primeira conta do estabelecimento e não pode ser apagada: só passa para outra pessoa. O novo titular fica Administrador e você mantém a sua conta.</p>
+    <div class="campo"><label>Novo titular</label>
+      <select id="tt-novo">${alvos.length ? alvos.map(f => `<option value="${esc(f.id)}">${esc(f.nome)} — ${esc(f.email)}</option>`).join('') : '<option value="">Sem outros funcionários activos</option>'}</select>
+    </div>
+    <div class="campo"><label>A sua palavra-passe (confirmação)</label><input type="password" id="tt-senha" autocomplete="current-password"></div>
+    <button class="btn-perigo btn-bloco" data-on-click="confirmarTransferirTitularidade()">Transferir titularidade</button>
+  `);
+}
+
+async function confirmarTransferirTitularidade() {
+  const novo = document.getElementById('tt-novo').value;
+  const password = document.getElementById('tt-senha').value;
+  if (!novo || !password) { toast('Escolha o novo titular e escreva a sua palavra-passe', 'erro'); return; }
+  try {
+    const r = await api('POST', '/funcionarios/transferir-titularidade', { novo_titular_id: novo, password });
+    NUK.utilizador.titular = false;
+    toast(`${r.nome} é agora o titular`, 'sucesso');
+    fecharModal();
+    carregarModulo('funcionarios');
+  } catch (e) { toast(e.message, 'erro'); }
 }
 
 async function salvarEdicaoFuncionario(id) {
@@ -1233,7 +1265,8 @@ async function salvarEdicaoFuncionario(id) {
   const nivel_acesso = document.getElementById('ef-nivel').value;
   const salario = parseFloat(document.getElementById('ef-sal').value) || 0;
   const password = document.getElementById('ef-senha').value;
-  const dados = { nome, cargo, nivel_acesso, salario };
+  const dados = { nome, cargo, nivel_acesso, salario,
+    pode_vender_quartos: document.getElementById('ef-vq').checked, arruma_quartos: document.getElementById('ef-aq').checked };
   if (password) dados.password = password;
   try {
     await api('PUT', `/funcionarios/${id}`, dados);

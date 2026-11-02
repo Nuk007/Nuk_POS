@@ -52,13 +52,16 @@ async function login({ email, password }) {
       nivel_acesso: funcionario.nivel_acesso,
       tenant_slug: funcionario.tenant_slug,
       tenant_nome: funcionario.tenant_nome,
+      titular: !!funcionario.titular,
+      pode_vender_quartos: !!funcionario.pode_vender_quartos,
+      arruma_quartos: !!funcionario.arruma_quartos,
     },
   };
 }
 
 async function obterPerfil({ userId }) {
   const r = await pool.query(
-    `SELECT f.id, f.nome, f.email, f.nivel_acesso, f.tenant_id,
+    `SELECT f.id, f.nome, f.email, f.nivel_acesso, f.tenant_id, f.titular, f.pode_vender_quartos, f.arruma_quartos,
             t.slug as tenant_slug, t.nome as tenant_nome
      FROM funcionarios f
      LEFT JOIN tenants t ON f.tenant_id = t.id

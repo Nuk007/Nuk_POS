@@ -588,8 +588,8 @@ router.post('/activate/:key/confirmar', async (req, res) => {
     const emailAdmin = email_admin || `admin@${lic.slug}.nukpos.ao`;
 
     await client.query(`
-      INSERT INTO funcionarios (tenant_id, nome, email, password_hash, cargo, nivel_acesso)
-      VALUES ($1, $2, $3, $4, 'Administrador', 'ADMIN')
+      INSERT INTO funcionarios (tenant_id, nome, email, password_hash, cargo, nivel_acesso, titular)
+      VALUES ($1, $2, $3, $4, 'Administrador', 'ADMIN', true)
       ON CONFLICT (tenant_id, email) DO UPDATE SET password_hash = $4
     `, [lic.tenant_id, nome_admin, emailAdmin, hash]);
 
