@@ -546,3 +546,55 @@ tr:hover td { background: rgba(255,255,255,.02); }
 .nav-titulo { padding: 6px 16px 4px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--c-muted); }
 .nav-subtitulo { padding: 4px 16px 2px 20px; font-size: 12px; font-weight: 600; color: var(--c-muted); }
 .nav-sub .nav-item { padding-left: 28px; }
+
+/* ── Menu: cada categoria numa caixa com contorno ─────────────── */
+.sidebar-nav { padding: .6rem .6rem; display: flex; flex-direction: column; gap: .6rem; }
+.nav-grupo {
+  margin: 0;
+  padding: .45rem .45rem .5rem;
+  border: 1.5px solid var(--c-border);
+  border-radius: calc(var(--radius) + 2px);
+  background: rgba(255,255,255,.025);
+  display: flex; flex-direction: column; gap: .4rem;
+}
+.nav-titulo { padding: .1rem .4rem .15rem; color: var(--c-primary-light); }
+.nav-sub {
+  display: flex; flex-direction: column; gap: .4rem;
+  padding: .35rem;
+  border: 1px dashed var(--c-border);
+  border-radius: var(--radius);
+}
+.nav-subtitulo { padding: 0 .3rem; }
+.nav-sub .nav-item { padding-left: 1rem; }
+
+/* ── Botões 3D: relevo, aresta inferior e «afundam» ao carregar ── */
+.btn-primario, .btn-secundario, .btn-perigo, .btn-sucesso, .btn-logout, .btn-menu,
+.nav-item, .mesa-card, .quarto-card, .cmp-acoes button, .acoes-quarto button {
+  --aresta: rgba(0,0,0,.45);
+  box-shadow: 0 4px 0 var(--aresta), 0 6px 10px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.18);
+  transform: translateY(0);
+  transition: transform .08s, box-shadow .08s, background .15s, border-color .15s, color .15s;
+}
+.btn-primario { --aresta: #8f3d04; background-image: linear-gradient(180deg, var(--c-primary-light), var(--c-primary)); }
+.btn-primario:hover { background-image: linear-gradient(180deg, var(--c-primary), var(--c-primary-dark)); }
+.btn-secundario { --aresta: #1b232f; background-image: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,0)); }
+.btn-perigo { --aresta: #6b1d1d; }
+.btn-sucesso { --aresta: #0b5b41; }
+.nav-item {
+  --aresta: #0c121b;
+  width: 100%;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  background: var(--c-surface);
+  background-image: linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,0));
+}
+.nav-item.active { --aresta: #8f3d04; border-right-width: 1px; border-color: var(--c-primary); background-color: rgba(232,101,10,.22); }
+.nav-item[style*="display: none"] { display: none; }
+.mesa-card:hover, .quarto-card:hover { transform: translateY(-2px); box-shadow: 0 6px 0 var(--aresta), 0 10px 14px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.18); }
+.btn-primario:active, .btn-secundario:active, .btn-perigo:active, .btn-sucesso:active, .btn-logout:active, .btn-menu:active,
+.nav-item:active, .mesa-card:active, .quarto-card:active, .cmp-acoes button:active, .acoes-quarto button:active {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 var(--aresta), 0 2px 4px rgba(0,0,0,.3), inset 0 2px 4px rgba(0,0,0,.25);
+}
+.btn-primario:disabled, .btn-secundario:disabled, .acoes-quarto button:disabled { box-shadow: 0 2px 0 var(--aresta); transform: none; }
+@media (prefers-reduced-motion: reduce) { .btn-primario, .btn-secundario, .nav-item, .mesa-card, .quarto-card { transition: none; } }
