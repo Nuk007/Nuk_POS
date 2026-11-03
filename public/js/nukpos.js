@@ -219,7 +219,7 @@ function carregarModulo(modulo) {
   if (window.innerWidth <= 768) fecharSidebar();
 
   const titulos = {
-    dashboard: '📊 Dashboard', pedidos: '🍽️ Pedidos', mesas: '🪑 Mesas',
+    dashboard: '📊 Dashboard', pedidos: '🍽️ Pedidos', mesas: '🪑 Mesa', balcao: '🧾 Balcão', remota: '📱 Remota', takeaway: '🥡 Take Away',
     quartos: '🛏️ Quartos', solicitacoes: '🔔 Solicitações', produtos: '📋 Produtos', stock: '📦 Stock',
     financeiro: '💰 Financeiro', clientes: '👥 Clientes',
     funcionarios: '👨‍💼 Funcionários', configuracoes: '⚙️ Configurações',

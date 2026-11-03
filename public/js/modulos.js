@@ -1433,6 +1433,14 @@ async function toggleActivarFunc(id, ativo) {
 // ════════════════════════════════════════════════════════════
 // CONFIGURAÇÕES
 // ════════════════════════════════════════════════════════════
+// Fluxos de venda ainda por definir pelo dono (Balcão, Remota, Take Away): ecrãs provisórios
+function moduloFluxoPorDefinir(el, titulo) {
+  el.innerHTML = `<div class="secao-titulo">${titulo}</div><div class="card" style="max-width:520px"><div class="muted">O fluxo desta venda ainda está por definir. Assim que for indicado, aparece aqui.</div></div>`;
+}
+async function modulo_balcao(el) { moduloFluxoPorDefinir(el, '🧾 Balcão'); }
+async function modulo_remota(el) { moduloFluxoPorDefinir(el, '📱 Remota'); }
+async function modulo_takeaway(el) { moduloFluxoPorDefinir(el, '🥡 Take Away'); }
+
 // Licença do estabelecimento (NUK.utilizador.modulos = chaves contratadas; ausente = tudo, contas antigas)
 function licenciadoModulo(k) {
   const m = NUK.utilizador && NUK.utilizador.modulos;

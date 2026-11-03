@@ -6,11 +6,11 @@
  *    (o seu limite foi fixado pelo titular) e não cria nem edita administradores.
  * `permissoes` NULL = predefinição do nível (comportamento anterior à delegação).
  */
-const MODULOS = ['dashboard', 'caixa', 'pedidos', 'mesas', 'produtos', 'quartos', 'solicitacoes', 'lazer', 'loja', 'compras', 'stock', 'servicos', 'funcionarios', 'financeiro', 'patrimonio', 'clientes', 'configuracoes'];
+const MODULOS = ['dashboard', 'caixa', 'pedidos', 'mesas', 'balcao', 'remota', 'takeaway', 'produtos', 'quartos', 'solicitacoes', 'lazer', 'loja', 'compras', 'stock', 'servicos', 'funcionarios', 'financeiro', 'patrimonio', 'clientes', 'configuracoes'];
 const CAPACIDADES = ['vender_quartos', 'arrumar_quartos']; // limite para atribuir os perfis de quartos
 const TODAS = [...MODULOS, ...CAPACIDADES];
 const ROTULOS = {
-  dashboard: 'Dashboard', pedidos: 'Pedidos', mesas: 'Mesas', quartos: 'Quartos', solicitacoes: 'Solicitações', produtos: 'Menu / Produtos',
+  dashboard: 'Dashboard', pedidos: 'Pedidos', mesas: 'Venda · Mesa', balcao: 'Venda · Balcão', remota: 'Venda · Remota', takeaway: 'Venda · Take Away', quartos: 'Quartos', solicitacoes: 'Solicitações', produtos: 'Menu / Produtos',
   caixa: 'Caixa do dia', lazer: 'Lazer', loja: 'Loja', compras: 'Compras', servicos: 'Serviços', patrimonio: 'Património',
   stock: 'Stock', financeiro: 'Financeiro', clientes: 'Clientes', funcionarios: 'Funcionários', configuracoes: 'Configurações',
   vender_quartos: 'Atribuir «vender quartos»', arrumar_quartos: 'Atribuir «arrumar quartos»',
@@ -36,7 +36,7 @@ const interseccao = (a, b) => a.filter(x => b.includes(x));
  * Dashboard e Configuração existem sempre (a Configuração só mostra o que está contratado).
  */
 const LICENCAS = {
-  restauracao: { rotulo: 'Vendas · Restauração', grupo: 'Vendas', acessos: ['pedidos', 'mesas', 'produtos', 'solicitacoes'], pronto: true },
+  restauracao: { rotulo: 'Vendas · Restauração', grupo: 'Vendas', acessos: ['pedidos', 'mesas', 'balcao', 'remota', 'takeaway', 'produtos', 'solicitacoes'], pronto: true },
   hospedagem: { rotulo: 'Vendas · Hospedagem', grupo: 'Vendas', acessos: ['quartos', 'solicitacoes'], pronto: true },
   lazer: { rotulo: 'Vendas · Lazer', grupo: 'Vendas', acessos: ['lazer', 'solicitacoes'], pronto: false },
   loja: { rotulo: 'Vendas · Loja', grupo: 'Vendas', acessos: ['loja', 'solicitacoes'], pronto: false },
