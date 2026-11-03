@@ -181,3 +181,19 @@ describe('PUT /api/funcionarios/:id', () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe('Licença por módulos (acessos.js)', () => {
+  const A = require('../server/services/acessos');
+  test('NULL = todos os módulos prontos; lista corta os acessos', () => {
+    expect(A.licenciados(null)).toEqual(A.PRONTOS);
+    const ch = A.chavesLicenciadas(['restauracao']);
+    expect(ch).toEqual(expect.arrayContaining(['dashboard', 'configuracoes', 'pedidos', 'mesas', 'produtos']));
+    expect(ch).not.toContain('quartos');
+  });
+  test('validarModulos recusa vazio, desconhecido e não construído', () => {
+    expect(() => A.validarModulos([])).toThrow();
+    expect(() => A.validarModulos(['voar'])).toThrow();
+    expect(() => A.validarModulos(['lazer'])).toThrow();
+    expect(A.validarModulos(['rh', 'rh'])).toEqual(['rh']);
+  });
+});

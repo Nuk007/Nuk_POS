@@ -1433,6 +1433,17 @@ async function toggleActivarFunc(id, ativo) {
 // ════════════════════════════════════════════════════════════
 // CONFIGURAÇÕES
 // ════════════════════════════════════════════════════════════
+// Licença do estabelecimento (NUK.utilizador.modulos = chaves contratadas; ausente = tudo, contas antigas)
+function licenciadoModulo(k) {
+  const m = NUK.utilizador && NUK.utilizador.modulos;
+  return !Array.isArray(m) || m.includes(k);
+}
+function listaContratada(lista) {
+  if (lista === 'TIPO_QUARTO') return licenciadoModulo('hospedagem');
+  if (lista === 'CATEGORIA_PRODUTO') return licenciadoModulo('restauracao');
+  if (lista === 'CATEGORIA_STOCK' || lista === 'UNIDADE_STOCK') return licenciadoModulo('compras');
+  return true;
+}
 async function modulo_configuracoes(el) {
   if (!['ADMIN'].includes(NUK.utilizador.nivel_acesso)) {
     el.innerHTML = '<div class="erro-msg">Acesso restrito ao Administrador</div>';
@@ -1440,8 +1451,10 @@ async function modulo_configuracoes(el) {
   }
   try {
     const cfg = await api('GET', '/configuracoes');
-    const quartos = await api('GET', '/quartos') || [];
-    const produtos = await api('GET', '/produtos') || [];
+    // só os módulos contratados (licença do estabelecimento) aparecem e são consultados
+    const lic = k => licenciadoModulo(k);
+    const quartos = lic('hospedagem') ? (await api('GET', '/quartos') || []) : [];
+    const produtos = lic('restauracao') ? (await api('GET', '/produtos') || []) : [];
     const listas = await api('GET', '/listas') || {};
     const dsh = await api('GET', '/dashboard/itens') || { itens: [], servicos: {} };
     window._cfgDash = { produtos, categorias: (listas.CATEGORIA_PRODUTO?.opcoes || []).filter(o => o.ativo).map(o => o.valor), servicos: dsh.servicos };
@@ -1492,7 +1505,7 @@ async function modulo_configuracoes(el) {
       <div class="card mt-2" style="max-width:700px">
         <div class="card-titulo mb-2">LISTAS (ADAPTE AO SEU ESTABELECIMENTO)</div>
         <div class="muted" style="font-size:.82rem;margin-bottom:.75rem">Estas opções aparecem nos formulários de quartos, produtos e stock. Uma opção em uso não se apaga — oculte-a.</div>
-        ${Object.entries(listas).map(([lista, l]) => `
+        ${Object.entries(listas).filter(([lista]) => listaContratada(lista)).map(([lista, l]) => `
           <div style="margin-bottom:1rem">
             <div style="font-weight:600;margin-bottom:.4rem">${l.nome}</div>
             <div style="display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:.5rem">
@@ -1510,7 +1523,7 @@ async function modulo_configuracoes(el) {
           </div>`).join('')}
       </div>
 
-      <div class="card mt-2" style="max-width:500px">
+      ${lic('hospedagem') ? `<div class="card mt-2" style="max-width:500px">
         <div class="toolbar" style="margin-bottom:.5rem">
           <div class="card-titulo">QUARTOS E PREÇOS</div>
           <button class="btn-secundario" data-on-click="modalFormQuarto('')">+ Novo Quarto</button>
@@ -1521,16 +1534,16 @@ async function modulo_configuracoes(el) {
               <div class="muted" style="font-size:.8rem">${formatarMoeda(q.preco_2h)}/2h · ${formatarMoeda(q.preco_pernoite)} pernoite · ${formatarMoeda(q.preco_diaria)} diária</div></div>
             <button class="btn-secundario" data-on-click="modalFormQuarto('${q.id}')">Editar</button>
           </div>`).join('') : '<div class="muted">Ainda não há quartos. Crie o primeiro.</div>'}
-      </div>
+      </div>` : ''}
 
-      <div class="card mt-2">
+      ${lic('restauracao') ? `<div class="card mt-2">
         <div class="toolbar" style="margin-bottom:.5rem">
           <div class="card-titulo">EMENTA (PRODUTOS, PREÇOS E RECEITAS)</div>
           <button class="btn-primario" data-on-click="modalNovoProduto()">+ Novo Produto</button>
           <input type="text" class="input-pesquisa" placeholder="Pesquisar produto..." data-on-input="filtrarProdutosTabela(this.value)">
         </div>
         ${htmlEmentaProdutos(produtos, true)}
-      </div>
+      </div>` : ''}
 
       <div class="card mt-2" style="max-width:500px">
         <div class="card-titulo mb-2">INFORMAÇÕES DO SISTEMA</div>

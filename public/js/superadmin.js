@@ -200,6 +200,8 @@ async function verTenant(id) {
     const licKey = (t.licencas && t.licencas[0] && t.licencas[0].license_key) ? t.licencas[0].license_key : null;
     document.getElementById('modal-tenant-title').textContent = t.nome;
     const dias = daysLeft(t.licenca_fim);
+    const cat = await catalogoModulos();
+    const marcados = Array.isArray(t.modulos) ? t.modulos : cat.modulos.filter(m => m.pronto).map(m => m.chave);
     body.innerHTML = `
       ${dias !== null && dias <= 7 ? `<div class="alert alert-warn">A licença expira em ${dias <= 0 ? 0 : dias} dia${dias===1?'':'s'} — renove para evitar interrupção.</div>` : ''}
       <div class="detail-grid">
@@ -213,9 +215,12 @@ async function verTenant(id) {
         <div class="detail-item"><div class="di-label">LICENÇA EXPIRA</div><div class="di-val ${dias!==null&&dias<=7?'exp-warn':''}">${fmt(t.licenca_fim)}</div></div>
         ${licKey ? `<div class="detail-item full"><div class="di-label">CHAVE DE LICENÇA</div><div class="key-box"><code>${licKey}</code><button class="copy-btn" title="Copiar" data-action="copy" data-key="${licKey}">📋</button></div></div>` : ''}
         ${t.notas ? `<div class="detail-item full"><div class="di-label">NOTAS</div><div class="di-val" style="color:var(--muted);font-size:13px">${t.notas}</div></div>` : ''}
-      </div>`;
+      </div>
+      <div class="detail-item full" style="margin-top:14px"><div class="di-label">MÓDULOS CONTRATADOS</div>
+        <div id="det-modulos" class="mod-grid" style="margin-top:6px">${htmlModulos(cat, marcados, 'det-mod')}</div></div>`;
     footer.innerHTML = `
       <button class="btn btn-ghost btn-sm" data-action="close-modal" data-modal="modal-tenant">Fechar</button>
+      <button class="btn btn-primary btn-sm" data-action="guardar-modulos" data-id="${t.id}">Guardar módulos</button>
       ${t.estado==='ACTIVA'   ? `<button class="btn btn-danger btn-sm"  data-action="alterar-estado" data-id="${t.id}" data-estado="SUSPENSA" data-nome="${t.nome}">Suspender</button>`  : ''}
       ${t.estado==='SUSPENSA' ? `<button class="btn btn-success btn-sm" data-action="alterar-estado" data-id="${t.id}" data-estado="ACTIVA"   data-nome="${t.nome}">Reactivar</button>` : ''}
       <button class="btn btn-blue btn-sm" data-action="renovar-licenca" data-id="${t.id}" data-nome="${t.nome}">Renovar licença</button>
@@ -320,6 +325,39 @@ async function reenviarWA(key, nome) {
   });
 }
 
+// ── MÓDULOS CONTRATADOS ──────────────────────────────
+let CATALOGO_MODULOS = null;
+async function catalogoModulos() {
+  if (!CATALOGO_MODULOS) CATALOGO_MODULOS = await api('/api/saas/modulos');
+  return CATALOGO_MODULOS;
+}
+function htmlModulos(cat, marcados, prefixo) {
+  return cat.modulos.map(m => `<label class="${m.pronto ? '' : 'off'}">
+    <input type="checkbox" data-mod="${m.chave}" id="${prefixo}-${m.chave}" ${marcados.includes(m.chave) ? 'checked' : ''} ${m.pronto ? '' : 'disabled'}>
+    <span>${m.rotulo}${m.pronto ? '' : ' <small>(em breve)</small>'}</span></label>`).join('');
+}
+function lerModulos(contentor) {
+  return [...contentor.querySelectorAll('input[data-mod]:checked')].map(i => i.dataset.mod);
+}
+async function prepararModulosNovo() {
+  const box = document.getElementById('nt-modulos');
+  try {
+    const cat = await catalogoModulos();
+    const pintar = () => { box.innerHTML = htmlModulos(cat, cat.planos[document.getElementById('nt-plano').value] || [], 'nt-mod'); };
+    pintar();
+    document.getElementById('nt-plano').addEventListener('change', pintar);
+  } catch (e) { box.textContent = e.message; }
+}
+prepararModulosNovo();
+
+async function guardarModulos(id) {
+  const lista = lerModulos(document.getElementById('det-modulos'));
+  try {
+    await api(`/api/saas/tenants/${id}/modulos`, { method: 'PUT', body: { modulos: lista } });
+    toast('Módulos actualizados');
+  } catch (e) { toast(e.message, 'err'); }
+}
+
 // ── NOVO TENANT ──────────────────────────────────────
 document.getElementById('btn-criar-tenant').addEventListener('click', criarTenant);
 
@@ -340,7 +378,7 @@ async function criarTenant() {
   try {
     const r = await api('/api/saas/tenants', {
       method: 'POST',
-      body: { nome, telefone_whatsapp: tel, nif, email, plano_nome: plano, duracao_dias: dias, notas },
+      body: { nome, telefone_whatsapp: tel, nif, email, plano_nome: plano, duracao_dias: dias, notas, modulos: lerModulos(document.getElementById('nt-modulos')) },
     });
     result.hidden = false;
     result.className = 'alert alert-ok';
@@ -427,6 +465,7 @@ document.addEventListener('click', e => {
   else if (action === 'close-modal')       closeModal(btn.dataset.modal);
   else if (action === 'alterar-estado')    alterarEstado(btn.dataset.id, btn.dataset.estado, btn.dataset.nome);
   else if (action === 'renovar-licenca')   renovarLicenca(btn.dataset.id, btn.dataset.nome);
+  else if (action === 'guardar-modulos')    guardarModulos(btn.dataset.id);
   else if (action === 'reenviar-wa')       reenviarWA(btn.dataset.key, btn.dataset.nome);
   else if (action === 'reenviar-wa-by-id') reenviarWAById(btn.dataset.id, btn.dataset.nome);
   else if (action === 'navigate')          navigate(btn.dataset.view);

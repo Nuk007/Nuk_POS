@@ -8,6 +8,7 @@ const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { pool } = require('./db');
 const { saasLimiter } = require('./middleware/rateLimiters');
+const acessosLicenca = require('./services/acessos');
 
 const router = express.Router();
 
@@ -257,11 +258,18 @@ router.post('/tenants', saasLimiter, superAdminAuth, async (req, res) => {
     plano_nome = 'PRO',
     duracao_dias = 30,
     notas = '',
+    modulos,
   } = req.body;
 
   if (!nome || !telefone_whatsapp) {
     return res.status(400).json({ erro: 'nome e telefone_whatsapp são obrigatórios' });
   }
+
+  // Módulos contratados: os escolhidos pelo superadmin ou, se nada vier, os do plano
+  let modulosFinais;
+  try {
+    modulosFinais = acessosLicenca.validarModulos(modulos === undefined ? (acessosLicenca.PLANOS_MODULOS[plano_nome] || acessosLicenca.PRONTOS) : modulos);
+  } catch (e) { return res.status(e.statusCode || 400).json({ erro: e.message }); }
 
   const client = await pool.connect();
   try {
@@ -279,10 +287,10 @@ router.post('/tenants', saasLimiter, superAdminAuth, async (req, res) => {
     // Criar tenant
     const slug = await slugUnico(gerarSlug(nome));
     const tenantR = await client.query(`
-      INSERT INTO tenants (nome, nif, telefone_whatsapp, email, plano_id, estado, slug)
-      VALUES ($1, $2, $3, $4, $5, 'PENDENTE', $6)
+      INSERT INTO tenants (nome, nif, telefone_whatsapp, email, plano_id, estado, slug, modulos)
+      VALUES ($1, $2, $3, $4, $5, 'PENDENTE', $6, $7)
       RETURNING id, slug
-    `, [nome, nif, telefone_whatsapp, email, planoId, slug]);
+    `, [nome, nif, telefone_whatsapp, email, planoId, slug, JSON.stringify(modulosFinais)]);
     const tenantId = tenantR.rows[0].id;
 
     // Gerar licença
@@ -366,6 +374,24 @@ router.get('/tenants/:id', superAdminAuth, async (req, res) => {
 
 // ──────────────────────────────────────────────────────────────
 // SUPERADMIN — MUDAR ESTADO DE TENANT
+// GET /api/saas/modulos — catálogo de módulos contratáveis e o que cada plano traz
+router.get('/modulos', superAdminAuth, (req, res) => {
+  res.json({ modulos: Object.entries(acessosLicenca.LICENCAS).map(([chave, m]) => ({ chave, rotulo: m.rotulo, grupo: m.grupo, pronto: m.pronto })), planos: acessosLicenca.PLANOS_MODULOS });
+});
+
+// PUT /api/saas/tenants/:id/modulos — módulos contratados por um estabelecimento
+router.put('/tenants/:id/modulos', superAdminAuth, async (req, res) => {
+  try {
+    const lista = acessosLicenca.validarModulos((req.body || {}).modulos);
+    const r = await pool.query(`UPDATE tenants SET modulos = $1, atualizado_em = NOW() WHERE id = $2 RETURNING id, modulos`, [JSON.stringify(lista), req.params.id]);
+    if (!r.rows[0]) return res.status(404).json({ erro: 'Tenant não encontrado' });
+    res.json({ ok: true, modulos: r.rows[0].modulos });
+  } catch (e) {
+    if (e.statusCode) return res.status(e.statusCode).json({ erro: e.message });
+    res.status(500).json({ erro: 'Erro interno do servidor' });
+  }
+});
+
 // PATCH /api/saas/tenants/:id/estado
 // Body: { estado: 'ACTIVA' | 'SUSPENSA' | 'CANCELADA' }
 // ──────────────────────────────────────────────────────────────

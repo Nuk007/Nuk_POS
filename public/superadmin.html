@@ -389,7 +389,7 @@ tbody tr:hover td { background: #F8FAFC; }
   letter-spacing: .04em;
 }
 .plan-tag.ENTERPRISE { background: #F5F3FF; color: #6D28D9; }
-.plan-tag.STARTER    { background: #F0FDF4; color: #166534; }
+.plan-tag.BASICO     { background: #F0FDF4; color: #166534; }
 
 /* ── EXPIRY ── */
 .exp-warn { color: var(--amber); font-weight: 600; }
@@ -631,6 +631,11 @@ tbody tr:hover td { background: #F8FAFC; }
   .form-row { grid-template-columns: 1fr; }
   .detail-grid { grid-template-columns: 1fr; }
 }
+.mod-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:6px 12px}
+.mod-grid label{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:400;margin:0;cursor:pointer}
+.mod-grid label input{width:auto;margin:0}
+.mod-grid label.off{opacity:.5;cursor:not-allowed}
+.mod-grid small{color:var(--muted);font-size:11px}
 </style>
 
 <!-- ═══════════════ LOGIN ═══════════════ -->
@@ -810,7 +815,7 @@ tbody tr:hover td { background: #F8FAFC; }
             <div class="form-group">
               <label>Plano</label>
               <select id="nt-plano">
-                <option value="STARTER">STARTER</option>
+                <option value="BASICO">BASICO</option>
                 <option value="PRO" selected>PRO</option>
                 <option value="ENTERPRISE">ENTERPRISE</option>
               </select>
@@ -819,6 +824,10 @@ tbody tr:hover td { background: #F8FAFC; }
               <label>Duração da licença (dias)</label>
               <input type="number" id="nt-dias" value="30" min="1" max="365">
             </div>
+          </div>
+          <div class="form-group">
+            <label>Módulos contratados</label>
+            <div id="nt-modulos" class="mod-grid"></div>
           </div>
           <div class="form-group">
             <label>Notas internas</label>

@@ -243,7 +243,7 @@ describe('Estado manual pela chefia', () => {
 
 describe('Migração de dados antigos (quartos e perfil do único utilizador)', () => {
   const mig = require('../../migrations/1749600000000_quartos-dados-antigos');
-  const correr = () => mig.up({ sql: q => pool.query(q) });
+  const correr = async () => { let p; mig.up({ sql: q => { p = pool.query(q); } }); await p; }; // up() não devolve a promessa: guarda-se a da query
   const hora = min => new Date(Date.now() + min * MIN);
   const antigo = async (T, numero, status, ini, fim) => {
     const id = await quarto(T, numero);

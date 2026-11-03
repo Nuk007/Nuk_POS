@@ -540,3 +540,9 @@ tr:hover td { background: rgba(255,255,255,.02); }
 
 .quarto-livre { font-size: .72rem; min-height: 1em; margin-top: .1rem; color: var(--c-muted); }
 .quarto-card.escalado .quarto-livre { color: var(--c-danger); font-weight: 600; }
+
+/* Menu lateral por categorias (activadas pela licença contratada) */
+.nav-grupo { margin-top: 10px; }
+.nav-titulo { padding: 6px 16px 4px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--c-muted); }
+.nav-subtitulo { padding: 4px 16px 2px 20px; font-size: 12px; font-weight: 600; color: var(--c-muted); }
+.nav-sub .nav-item { padding-left: 28px; }

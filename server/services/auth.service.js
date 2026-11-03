@@ -5,7 +5,7 @@
 const bcrypt = require('bcryptjs');
 const { pool } = require('../db');
 const { gerarToken } = require('../middleware/auth');
-const { efectivas } = require('./acessos');
+const { efectivasLicenciadas, licenciados } = require('./acessos');
 
 async function login({ email, password }) {
   if (!email || !password) {
@@ -13,7 +13,7 @@ async function login({ email, password }) {
   }
 
   const r = await pool.query(
-    `SELECT f.*, t.slug as tenant_slug, t.nome as tenant_nome, t.estado as tenant_estado
+    `SELECT f.*, t.slug as tenant_slug, t.nome as tenant_nome, t.estado as tenant_estado, t.modulos as tenant_modulos
      FROM funcionarios f
      LEFT JOIN tenants t ON f.tenant_id = t.id
      WHERE LOWER(f.email) = LOWER($1) AND f.ativo = true`,
@@ -42,7 +42,7 @@ async function login({ email, password }) {
     tenantId: funcionario.tenant_id,
     tenantSlug: funcionario.tenant_slug,
     tenantNome: funcionario.tenant_nome,
-    permissoes: efectivas(funcionario),
+    permissoes: efectivasLicenciadas(funcionario, funcionario.tenant_modulos),
   };
 
   return {
@@ -57,7 +57,8 @@ async function login({ email, password }) {
       titular: !!funcionario.titular,
       pode_vender_quartos: !!funcionario.pode_vender_quartos,
       arruma_quartos: !!funcionario.arruma_quartos,
-      permissoes: efectivas(funcionario),
+      permissoes: efectivasLicenciadas(funcionario, funcionario.tenant_modulos),
+      modulos: funcionario.tenant_id ? licenciados(funcionario.tenant_modulos) : null,
     },
   };
 }
@@ -65,7 +66,7 @@ async function login({ email, password }) {
 async function obterPerfil({ userId }) {
   const r = await pool.query(
     `SELECT f.id, f.nome, f.email, f.nivel_acesso, f.tenant_id, f.titular, f.pode_vender_quartos, f.arruma_quartos, f.permissoes,
-            t.slug as tenant_slug, t.nome as tenant_nome
+            t.slug as tenant_slug, t.nome as tenant_nome, t.modulos as tenant_modulos
      FROM funcionarios f
      LEFT JOIN tenants t ON f.tenant_id = t.id
      WHERE f.id = $1 AND f.ativo = true`,
@@ -74,8 +75,8 @@ async function obterPerfil({ userId }) {
   if (!r.rows[0]) {
     const err = new Error('Funcionário não encontrado'); err.statusCode = 404; throw err;
   }
-  const { permissoes, ...resto } = r.rows[0];
-  return { ...resto, permissoes: efectivas(r.rows[0]) };
+  const { permissoes, tenant_modulos, ...resto } = r.rows[0];
+  return { ...resto, permissoes: efectivasLicenciadas(r.rows[0], tenant_modulos), modulos: r.rows[0].tenant_id ? licenciados(tenant_modulos) : null };
 }
 
 module.exports = { login, obterPerfil };

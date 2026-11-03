@@ -240,6 +240,8 @@ function carregarModulo(modulo) {
 }
 
 async function actualizarBadgePedidos() {
+  const m = NUK.utilizador && NUK.utilizador.modulos;
+  if (Array.isArray(m) && !m.includes('restauracao')) return;
   try {
     const _resp = await api('GET', '/pedidos?status=ABERTO') || [];
     const pedidos = Array.isArray(_resp) ? _resp : (_resp.data || []);
@@ -331,12 +333,20 @@ function moduloPermitido(m) {
   const primeiro = [...document.querySelectorAll('.nav-item[data-modulo]')].map(e => e.dataset.modulo).find(x => p.includes(x));
   return primeiro || m;
 }
+function esconderGruposVazios() {
+  // esconde subgrupos e categorias que ficaram sem itens (módulo não contratado ou sem acesso)
+  const vazio = el => ![...el.querySelectorAll('.nav-item')].some(i => i.style.display !== 'none');
+  document.querySelectorAll('.nav-sub').forEach(g => { g.style.display = vazio(g) ? 'none' : ''; });
+  document.querySelectorAll('.nav-grupo').forEach(g => { g.style.display = vazio(g) ? 'none' : ''; });
+}
 function aplicarAcessos() {
   const p = NUK.utilizador && NUK.utilizador.permissoes;
-  if (!Array.isArray(p)) return;
-  document.querySelectorAll('.nav-item[data-modulo]').forEach(el => {
-    if (!p.includes(el.dataset.modulo)) el.style.display = 'none';
-  });
+  if (Array.isArray(p)) {
+    document.querySelectorAll('.nav-item[data-modulo]').forEach(el => {
+      if (!p.includes(el.dataset.modulo)) el.style.display = 'none';
+    });
+  }
+  esconderGruposVazios();
 }
 
 // ── Splash de arranque ───────────────────────────────────────

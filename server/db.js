@@ -375,6 +375,9 @@ async function initDB() {
       CREATE INDEX IF NOT EXISTS idx_dashboard_registos_item ON dashboard_registos(tenant_id, item_id, criado_em);
     `);
 
+    // Módulos contratados — espelha a migração 1749700000000
+    await client.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS modulos JSONB`);
+
     // Acessos delegáveis — espelha a migração 1749500000000
     await client.query(`ALTER TABLE funcionarios ADD COLUMN IF NOT EXISTS permissoes JSONB`);
 
