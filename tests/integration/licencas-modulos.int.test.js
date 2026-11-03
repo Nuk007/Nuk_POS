@@ -48,6 +48,9 @@ describe('O estabelecimento só recebe o que contratou', () => {
     expect((await com(l.token, '/api/quartos')).status).toBe(403);
     expect((await com(l.token, '/api/financeiro/resumo')).status).toBe(403);
     expect((await com(l.token, '/api/mesas')).status).toBe(200);
+    // as Solicitações do portal (hospedagem, serviços, eventos) não dependem de Hospedagem
+    expect(l.funcionario.permissoes).toContain('solicitacoes');
+    expect((await com(l.token, '/api/solicitacoes-portal')).status).toBe(200);
   });
   test('acrescentar hospedagem abre os quartos; /auth/me reflecte a licença', async () => {
     await sa('put', `/api/saas/tenants/${T.tenantId}/modulos`, { modulos: ['restauracao', 'hospedagem'] });

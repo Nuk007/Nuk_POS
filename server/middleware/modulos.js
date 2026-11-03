@@ -2,7 +2,7 @@
 /**
  * Controlo por módulo, lido da BD (cache de 15 s, por isso uma revogação vale quase de imediato):
  *  - exigirModulo(chave): a conta tem o acesso E o estabelecimento contratou o módulo a que a chave pertence;
- *  - exigirLicenca(modulo): o estabelecimento contratou o módulo (não olha ao acesso individual — serve rotas
+ *  - exigirLicenca(modulo | [módulos]): o estabelecimento contratou o módulo (ou um deles) (não olha ao acesso individual — serve rotas
  *    partilhadas por vários ecrãs do mesmo módulo).
  * Tokens sem a marca `permissoes` (emitidos antes desta funcionalidade) passam como antes até expirarem.
  */
@@ -50,12 +50,13 @@ function exigirModulo(chave) {
 }
 
 function exigirLicenca(modulo) {
+  const aceites = [].concat(modulo); // basta um dos módulos indicados
   return async (req, res, next) => {
     try {
       const u = utilizadorDoPedido(req);
       if (!u) return next();
       const f = await contaDe(u.id);
-      if (f && f.tenant_id && !licenciados(f.modulos).includes(modulo)) return res.status(403).json({ erro: 'Este módulo não está incluído na licença do estabelecimento.' });
+      if (f && f.tenant_id && !licenciados(f.modulos).some(m => aceites.includes(m))) return res.status(403).json({ erro: 'Este módulo não está incluído na licença do estabelecimento.' });
       next();
     } catch (e) { next(e); }
   };

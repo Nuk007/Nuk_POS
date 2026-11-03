@@ -36,10 +36,10 @@ const interseccao = (a, b) => a.filter(x => b.includes(x));
  * Dashboard e Configuração existem sempre (a Configuração só mostra o que está contratado).
  */
 const LICENCAS = {
-  restauracao: { rotulo: 'Vendas · Restauração', grupo: 'Vendas', acessos: ['pedidos', 'mesas', 'produtos'], pronto: true },
+  restauracao: { rotulo: 'Vendas · Restauração', grupo: 'Vendas', acessos: ['pedidos', 'mesas', 'produtos', 'solicitacoes'], pronto: true },
   hospedagem: { rotulo: 'Vendas · Hospedagem', grupo: 'Vendas', acessos: ['quartos', 'solicitacoes'], pronto: true },
-  lazer: { rotulo: 'Vendas · Lazer', grupo: 'Vendas', acessos: ['lazer'], pronto: false },
-  loja: { rotulo: 'Vendas · Loja', grupo: 'Vendas', acessos: ['loja'], pronto: false },
+  lazer: { rotulo: 'Vendas · Lazer', grupo: 'Vendas', acessos: ['lazer', 'solicitacoes'], pronto: false },
+  loja: { rotulo: 'Vendas · Loja', grupo: 'Vendas', acessos: ['loja', 'solicitacoes'], pronto: false },
   caixa: { rotulo: 'Caixa', grupo: 'Caixa', acessos: ['clientes', 'caixa'], pronto: true },
   compras: { rotulo: 'Compras e stock', grupo: 'Compras', acessos: ['stock', 'compras'], pronto: true },
   servicos: { rotulo: 'Serviços (avarias e manutenção)', grupo: 'Serviços', acessos: ['servicos'], pronto: false },
