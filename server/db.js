@@ -510,6 +510,12 @@ async function initDB() {
     )`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_manutencoes_registo ON manutencoes_registo (plano_id, realizada_em DESC)`);
 
+    // Regras ON DELETE das FK de caixa/compras/serviços — espelha a migração 1750200000000
+    for (const [t, c, ref, acao] of require('./migrations-data/fk-ondelete')) {
+      await client.query(`ALTER TABLE ${t} DROP CONSTRAINT IF EXISTS ${t}_${c}_fkey`);
+      await client.query(`ALTER TABLE ${t} ADD CONSTRAINT ${t}_${c}_fkey FOREIGN KEY (${c}) REFERENCES ${ref}(id) ON DELETE ${acao}`);
+    }
+
     // Acessos delegáveis — espelha a migração 1749500000000
     await client.query(`ALTER TABLE funcionarios ADD COLUMN IF NOT EXISTS permissoes JSONB`);
 
