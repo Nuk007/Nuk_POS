@@ -36,14 +36,15 @@ function utilizadorDoPedido(req) {
 }
 
 function exigirModulo(chave) {
+  const chaves = [].concat(chave); // basta uma das chaves indicadas
   return async (req, res, next) => {
     try {
       const u = utilizadorDoPedido(req);
       if (!u) return next();
       const f = await contaDe(u.id);
       if (!f || !f.ativo) return res.status(403).json({ erro: 'Não tem acesso a este módulo. Peça a um administrador.' });
-      if (f.tenant_id && !chavesLicenciadas(f.modulos).includes(chave)) return res.status(403).json({ erro: 'Este módulo não está incluído na licença do estabelecimento.' });
-      if (!efectivas(f).includes(chave)) return res.status(403).json({ erro: 'Não tem acesso a este módulo. Peça a um administrador.' });
+      if (f.tenant_id && !chavesLicenciadas(f.modulos).some(c => chaves.includes(c))) return res.status(403).json({ erro: 'Este módulo não está incluído na licença do estabelecimento.' });
+      if (!efectivas(f).some(c => chaves.includes(c))) return res.status(403).json({ erro: 'Não tem acesso a este módulo. Peça a um administrador.' });
       next();
     } catch (e) { next(e); }
   };

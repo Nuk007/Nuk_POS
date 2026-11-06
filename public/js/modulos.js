@@ -1459,6 +1459,8 @@ async function modulo_configuracoes(el) {
     const produtos = lic('restauracao') ? (await api('GET', '/produtos') || []) : [];
     const nMesas = lic('restauracao') ? ((await api('GET', '/mesas/quantidade')) || {}).quantidade || 0 : 0;
     window._nMesas = nMesas;
+    const servAtivos = lic('servicos') ? await api('GET', '/servicos/ativos') : [];
+    const servPlanos = lic('servicos') ? await api('GET', '/servicos/manutencoes') : [];
     const listas = await api('GET', '/listas') || {};
     const dsh = await api('GET', '/dashboard/itens') || { itens: [], servicos: {} };
     window._cfgDash = { produtos, categorias: (listas.CATEGORIA_PRODUTO?.opcoes || []).filter(o => o.ativo).map(o => o.valor), servicos: dsh.servicos };
@@ -1557,6 +1559,8 @@ async function modulo_configuracoes(el) {
         </div>
         ${htmlEmentaProdutos(produtos, true)}
       </div>` : ''}
+
+      ${lic('servicos') && typeof htmlConfigServicos === 'function' ? htmlConfigServicos(Array.isArray(servAtivos) ? servAtivos : [], Array.isArray(servPlanos) ? servPlanos : []) : ''}
 
       <div class="card mt-2" style="max-width:500px">
         <div class="card-titulo mb-2">INFORMAÇÕES DO SISTEMA</div>

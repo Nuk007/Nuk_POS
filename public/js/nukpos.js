@@ -199,6 +199,11 @@ function iniciarWebSocket() {
     document.getElementById('badge-stock').style.display = 'inline-block';
   });
 
+  NUK.socket.on('servicos_atualizados', (d) => {
+    if (d && ['ALTA', 'URGENTE'].includes(d.prioridade)) toast(`🛠️ Nova ${d.prioridade === 'URGENTE' ? 'ocorrência urgente' : 'ocorrência de prioridade alta'} em Serviços`, 'aviso', 8000);
+    if (['servicos', 'manutencao'].includes(NUK.moduloActual)) carregarModulo(NUK.moduloActual);
+  });
+
   NUK.socket.on('chamada_staff', (dados) => {
     toast(`🔔 Chamada da Mesa ${dados.mesa_id} — ${dados.motivo || 'Atenção pedida'}`, 'aviso');
   });
@@ -224,7 +229,7 @@ function carregarModulo(modulo) {
 
   const titulos = {
     dashboard: '📊 Dashboard', pedidos: '🍽️ Pedidos', mesas: '🪑 Mesa', balcao: '🧾 Balcão', remota: '📱 Remota', takeaway: '🥡 Take Away',
-    quartos: '🛏️ Quartos', caixa: '💵 Caixa do dia', nukcoin: '💜 Nuk-Coin', cartoes: '💳 Cartões de consumo', recebimentos: '🧾 Receber mesas', compras: '🛒 Compras pontuais', solicitacoes: '🔔 Solicitações', produtos: '📋 Produtos', stock: '📦 Stock',
+    quartos: '🛏️ Quartos', caixa: '💵 Caixa do dia', nukcoin: '💜 Nuk-Coin', cartoes: '💳 Cartões de consumo', recebimentos: '🧾 Receber mesas', compras: '🛒 Compras pontuais', servicos: '🛠️ Avarias e danos', manutencao: '🗓️ Prazos de manutenção', solicitacoes: '🔔 Solicitações', produtos: '📋 Produtos', stock: '📦 Stock',
     financeiro: '💰 Financeiro', clientes: '👥 Clientes',
     funcionarios: '👨‍💼 Funcionários', configuracoes: '⚙️ Configurações',
   };

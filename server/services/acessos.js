@@ -6,12 +6,12 @@
  *    (o seu limite foi fixado pelo titular) e não cria nem edita administradores.
  * `permissoes` NULL = predefinição do nível (comportamento anterior à delegação).
  */
-const MODULOS = ['dashboard', 'caixa', 'nukcoin', 'cartoes', 'recebimentos', 'pedidos', 'mesas', 'balcao', 'remota', 'takeaway', 'produtos', 'quartos', 'solicitacoes', 'lazer', 'loja', 'compras', 'stock', 'servicos', 'funcionarios', 'financeiro', 'patrimonio', 'clientes', 'configuracoes'];
+const MODULOS = ['dashboard', 'caixa', 'nukcoin', 'cartoes', 'recebimentos', 'pedidos', 'mesas', 'balcao', 'remota', 'takeaway', 'produtos', 'quartos', 'solicitacoes', 'lazer', 'loja', 'compras', 'stock', 'servicos', 'manutencao', 'funcionarios', 'financeiro', 'patrimonio', 'clientes', 'configuracoes'];
 const CAPACIDADES = ['vender_quartos', 'arrumar_quartos']; // limite para atribuir os perfis de quartos
 const TODAS = [...MODULOS, ...CAPACIDADES];
 const ROTULOS = {
   dashboard: 'Dashboard', pedidos: 'Pedidos', mesas: 'Venda · Mesa', balcao: 'Venda · Balcão', remota: 'Venda · Remota', takeaway: 'Venda · Take Away', quartos: 'Quartos', solicitacoes: 'Solicitações', produtos: 'Menu / Produtos',
-  caixa: 'Caixa do dia', nukcoin: 'Caixa · Nuk-Coin', cartoes: 'Caixa · Cartões de consumo', recebimentos: 'Caixa · Receber mesas', lazer: 'Lazer', loja: 'Loja', compras: 'Compras', servicos: 'Serviços', patrimonio: 'Património',
+  caixa: 'Caixa do dia', nukcoin: 'Caixa · Nuk-Coin', cartoes: 'Caixa · Cartões de consumo', recebimentos: 'Caixa · Receber mesas', lazer: 'Lazer', loja: 'Loja', compras: 'Compras', servicos: 'Avarias e danos', manutencao: 'Prazos de manutenção', patrimonio: 'Património',
   stock: 'Stock', financeiro: 'Financeiro', clientes: 'Clientes', funcionarios: 'Funcionários', configuracoes: 'Configurações',
   vender_quartos: 'Atribuir «vender quartos»', arrumar_quartos: 'Atribuir «arrumar quartos»',
 };
@@ -42,7 +42,7 @@ const LICENCAS = {
   loja: { rotulo: 'Vendas · Loja', grupo: 'Vendas', acessos: ['loja', 'solicitacoes'], pronto: false },
   caixa: { rotulo: 'Caixa', grupo: 'Caixa', acessos: ['clientes', 'caixa', 'nukcoin', 'cartoes', 'recebimentos'], pronto: true },
   compras: { rotulo: 'Compras e stock', grupo: 'Compras', acessos: ['stock', 'compras'], pronto: true },
-  servicos: { rotulo: 'Serviços (avarias e manutenção)', grupo: 'Serviços', acessos: ['servicos'], pronto: false },
+  servicos: { rotulo: 'Serviços (avarias e manutenção)', grupo: 'Serviços', acessos: ['servicos', 'manutencao'], pronto: true },
   rh: { rotulo: 'Administração · RH', grupo: 'Administração', acessos: ['funcionarios'], pronto: true },
   financas: { rotulo: 'Administração · Finanças', grupo: 'Administração', acessos: ['financeiro'], pronto: true },
   patrimonio: { rotulo: 'Administração · Património', grupo: 'Administração', acessos: ['patrimonio'], pronto: false },
