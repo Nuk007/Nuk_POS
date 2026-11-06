@@ -136,3 +136,8 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 - A venda nasce **FECHADA** (não passa pela cozinha) e fica por receber: o caixa recebe-a em Caixa → Receber mesas. Stock abate como nos outros pedidos. O CHECK `pedidos_origem_check` aceita LAZER/LOJA (initDB e migração).
 - `LAZER` entrou nos padrões de `CATEGORIA_PRODUTO` (tenants novos; os existentes acrescentam-na em Configurações). No portal cai na secção «outros» (🎯).
 - Dívida: sem preços por hora/entrada nem controlo de lotação ou reservas de espaços de lazer; a lista de bens da Loja não tem fornecedor/stock mínimo próprios (usa produtos e receitas de stock).
+
+## Botões em relevo (todo o sistema)
+- Regra do dono: **todos os botões têm relevo e, ao carregar, afundam ligeiramente** (desce 2–3 px, sombra de baixo some, sombra interior). `public/css/botoes.css` aplica-o a `button`, `input[type=button|submit|reset]`, `[role=button]`, `.btn*` e às classes dos botões do portal/activação/superadmin; está ligado em **todas** as páginas HTML (`tests/botoes.test.js` verifica) e na cache do service worker.
+- Os seletores estão em `:where()` (especificidade zero): o relevo próprio de `nukpos.css` (`.btn-primario`, `.nav-item`, `.venda-produto`…) ganha onde existe; o resto herda o genérico. Cada botão pode definir `--aresta` (cor da aresta inferior). Botões só com ícone (`.btn-fechar-modal`, `.modal-close`, `.btn-fechar-sidebar`) cedem ao toque (`scale(.88)`) sem relevo; elementos clicáveis que não são `<button>` (`data-on-click`, `data-action`) também cedem. `.sem-relevo` desliga o efeito num botão; desactivados não reagem; `prefers-reduced-motion` tira a transição.
+- Botão novo = nada a fazer (herda). Evitar `box-shadow: none` em seletores de botão (o teste apanha).
