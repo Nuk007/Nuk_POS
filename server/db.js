@@ -443,6 +443,24 @@ async function initDB() {
     await client.query(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS pago_por UUID REFERENCES funcionarios(id)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_pedidos_por_receber ON pedidos (tenant_id, atualizado_em) WHERE status = 'FECHADO' AND pago_em IS NULL`);
 
+    // Compras pontuais — espelha a migração 1750000000000
+    await client.query(`CREATE TABLE IF NOT EXISTS compras_pontuais (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      sessao_id UUID NOT NULL REFERENCES caixa_sessoes(id),
+      stock_item_id UUID NOT NULL REFERENCES stock_items(id),
+      quantidade NUMERIC(10,3) NOT NULL CHECK (quantidade > 0),
+      valor_total NUMERIC(15,2) NOT NULL CHECK (valor_total > 0),
+      fornecedor VARCHAR(120),
+      observacoes TEXT,
+      criado_por UUID REFERENCES funcionarios(id),
+      criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      anulada_em TIMESTAMPTZ,
+      anulada_por UUID REFERENCES funcionarios(id)
+    )`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_compras_pontuais_sessao ON compras_pontuais (tenant_id, sessao_id, criado_em DESC)`);
+    await client.query(`ALTER TABLE caixa_movimentos ADD COLUMN IF NOT EXISTS compra_id UUID REFERENCES compras_pontuais(id)`);
+
     // Acessos delegáveis — espelha a migração 1749500000000
     await client.query(`ALTER TABLE funcionarios ADD COLUMN IF NOT EXISTS permissoes JSONB`);
 

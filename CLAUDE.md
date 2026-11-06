@@ -110,3 +110,10 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 - Cartão de consumo = pré-pago físico, código `CC` + 8 caracteres, 1000–500000 Kz, vendido a qualquer pessoa. Formas de pagamento: Dinheiro, TPA, Transferência, Express (+ Nuk-Coin com PIN e Cartão no recebimento). PIN errado = 403 (um 401 faria logout no frontend).
 - «Recebido» = `pago_em` preenchido; só se recebe pedidos FECHADOS. Pedidos legados FECHADOS ficam como pagos; pedidos remotos pagos com Nuk-Coin nascem pagos.
 - Dívida: receita/financeiro ainda conta FECHADO (não `pago_em`); sem desconto Nuk-Coin no caixa (o portal aplica `nukcoin_desconto_pct`); `exigirModulo('caixa')` protege todo o `/api/caixa`, logo nukcoin/cartoes/recebimentos só são separados na UI; Compras pontuais (movimento `COMPRA` negativo) ainda por fazer.
+
+## Compras pontuais
+- Menu Compras → «Compras pontuais» (acesso `compras`, licença `compras`); `services/compras.service.js` + `routes/compras.js` (`/api/compras`) + `public/js/compras.js`. Tabela `compras_pontuais`; `caixa_movimentos.compra_id`.
+- Regras: exige caixa aberto (409 `CAIXA_FECHADO`); só itens **cadastrados** em `stock_items` do próprio estabelecimento (404 caso contrário); só dinheiro (CASH) e nunca acima do dinheiro disponível na gaveta (409 com `disponivel`).
+- Efeitos: movimento CASH negativo no caixa, entrada no stock (`movimentos_stock` COMPRA) e `custo_unitario` = último preço pago.
+- Nunca se apaga: «Anular» (com confirmação) só no caixa em curso e só se o stock comprado ainda não foi consumido; faz o movimento contrário.
+- Dívida: o financeiro/relatórios ainda não contam as compras como despesa; sem anexo de talão/factura do fornecedor; quem tem licença `compras` sem `caixa` não consegue abrir caixa.

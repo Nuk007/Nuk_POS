@@ -113,3 +113,40 @@ describe('Caixa do dia (frontend)', () => {
     expect(totalMesa).toBe(1500);
   });
 });
+
+describe('Compras pontuais (frontend)', () => {
+  function carregarCompras(dados) {
+    const ctx = carregar(dados);
+    ctx.modalConfirmar = (t, x, f, ...a) => { ctx._confirmar = [f, ...a]; };
+    vm.runInContext(ler('compras.js'), ctx);
+    return ctx;
+  }
+  test('caixa fechado: pede para abrir o caixa', async () => {
+    const ctx = carregarCompras({ '/caixa': { aberta: false } });
+    const el = { innerHTML: '' };
+    await ctx.modulo_compras(el);
+    expect(el.innerHTML).toContain("carregarModulo('caixa')");
+  });
+  test('regista a compra com o corpo esperado e anular pede confirmação', async () => {
+    const ctx = carregarCompras({
+      '/caixa': { aberta: true, resumo }, '/stock?limit=500': { data: [{ id: 'i1', nome: 'Farinha', unidade: 'kg' }] },
+      '/compras': [{ id: 'c1', item_nome: 'Farinha', unidade: 'kg', quantidade: '5', valor_total: '2000', criado_em: '2026-11-06T10:00:00Z', sessao_aberta: true }],
+      '/compras/c1/anular': { anulada: true },
+    });
+    ctx.api = (m, u, b) => { ctx._chamadas.push([m, u, b]); return Promise.resolve(ctx._dados[u] || {}); };
+    ctx._dados = { '/caixa': { aberta: true, resumo }, '/stock?limit=500': { data: [{ id: 'i1', nome: 'Farinha', unidade: 'kg' }] }, '/compras': [{ id: 'c1', item_nome: 'Farinha', unidade: 'kg', quantidade: '5', valor_total: '2000', criado_em: '2026-11-06T10:00:00Z', sessao_aberta: true }], '/compras/c1/anular': {} };
+    const el = { innerHTML: '' };
+    await ctx.modulo_compras(el);
+    expect(el.innerHTML).toContain('registarCompra()');
+    expect(el.innerHTML).toContain("pedirAnularCompra('c1')");
+    for (const [k, v] of Object.entries({ 'cp-item': 'i1', 'cp-qtd': '5', 'cp-valor': '2000', 'cp-forn': ' Mercado ', 'cp-obs': '' })) ctx._els[k] = { value: v };
+    ctx.api = async (m, u, b) => { ctx._chamadas.push([m, u, b]); return { item: 'Farinha', dinheiro_na_gaveta: 3000 }; };
+    await ctx.registarCompra();
+    expect(ctx._chamadas).toContainEqual(['POST', '/compras', { stock_item_id: 'i1', quantidade: 5, valor_total: 2000, fornecedor: 'Mercado', observacoes: undefined }]);
+    ctx.pedirAnularCompra('c1');
+    expect(ctx._confirmar).toEqual(['anularCompra', 'c1']);
+    expect(ctx._chamadas.some(c => c[1].endsWith('/anular'))).toBe(false); // só anula depois de confirmar
+    await ctx.anularCompra('c1');
+    expect(ctx._chamadas).toContainEqual(['POST', '/compras/c1/anular', undefined]);
+  });
+});
