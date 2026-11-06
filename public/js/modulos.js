@@ -1119,26 +1119,8 @@ async function modulo_clientes(el) {
   }
 }
 
-function modalCarregarNukcoin(id) {
-  const c = (window._clientesCache || []).find(x => x.id === id);
-  if (!c) return;
-  abrirModal('Carregar Nuk-Coin', `
-    <p style="margin-bottom:.8rem"><strong>${esc(c.nome)}</strong> — saldo actual: 💜 ${formatarMoeda(c.nukcoin_saldo || 0)}</p>
-    <p class="muted" style="margin-bottom:.6rem">Receba o dinheiro no balcão e escolha o valor a creditar:</p>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem">
-      ${NUKCOIN_VALORES.map(v => `<button class="btn-primario" data-on-click="carregarNukcoin('${esc(id)}',${v})">${formatarMoeda(v)}</button>`).join('')}
-    </div>
-  `);
-}
-
-async function carregarNukcoin(id, valor) {
-  try {
-    const r = await api('POST', '/cliente/nukcoin/carregar', { cliente_id: id, valor });
-    toast(r.mensagem || 'Carregado!', 'sucesso');
-    fecharModal();
-    carregarModulo('clientes');
-  } catch (e) { toast(e.message, 'erro'); }
-}
+// O carregamento de Nuk-Coin é feito no Caixa (exige o caixa aberto e regista a forma de pagamento)
+function modalCarregarNukcoin(id) { window._nukcoinPre = id; carregarModulo('nukcoin'); }
 
 async function reporPinCliente(id) {
   if (!confirm('Repor o PIN deste cliente? Ele define um novo PIN no próximo acesso.')) return;

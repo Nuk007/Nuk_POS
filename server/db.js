@@ -386,6 +386,63 @@ async function initDB() {
     await client.query(`ALTER TABLE pedidos ADD CONSTRAINT pedidos_origem_check CHECK (origem IN ('MESA','BALCAO','REMOTA','TAKEAWAY'))`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_pedidos_por_validar ON pedidos (tenant_id, criado_em) WHERE origem = 'REMOTA' AND validado_em IS NULL`);
 
+    // Caixa do dia, cartões de consumo e recebimento — espelha a migração 1749900000000 (o preenchimento dos dados antigos só corre na migração)
+    await client.query(`CREATE TABLE IF NOT EXISTS caixa_sessoes (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      aberta_por UUID REFERENCES funcionarios(id),
+      aberta_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      fundo_inicial NUMERIC(15,2) NOT NULL DEFAULT 0 CHECK (fundo_inicial >= 0),
+      fechada_por UUID REFERENCES funcionarios(id),
+      fechada_em TIMESTAMPTZ,
+      esperado NUMERIC(15,2),
+      contado NUMERIC(15,2),
+      diferenca NUMERIC(15,2),
+      observacoes TEXT
+    )`);
+    await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_caixa_sessao_aberta ON caixa_sessoes (tenant_id) WHERE fechada_em IS NULL`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_caixa_sessoes_tenant ON caixa_sessoes (tenant_id, aberta_em DESC)`);
+    await client.query(`CREATE TABLE IF NOT EXISTS cartoes_consumo (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      codigo VARCHAR(16) NOT NULL,
+      valor_inicial NUMERIC(15,2) NOT NULL CHECK (valor_inicial > 0),
+      saldo NUMERIC(15,2) NOT NULL CHECK (saldo >= 0),
+      vendido_por UUID REFERENCES funcionarios(id),
+      criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (tenant_id, codigo)
+    )`);
+    await client.query(`CREATE TABLE IF NOT EXISTS movimentos_cartao (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      cartao_id UUID NOT NULL REFERENCES cartoes_consumo(id) ON DELETE CASCADE,
+      tipo VARCHAR(10) NOT NULL CHECK (tipo IN ('VENDA','CONSUMO','ESTORNO')),
+      valor NUMERIC(15,2) NOT NULL,
+      saldo_antes NUMERIC(15,2) NOT NULL,
+      saldo_depois NUMERIC(15,2) NOT NULL,
+      pedido_id UUID REFERENCES pedidos(id),
+      criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_mov_cartao ON movimentos_cartao (cartao_id, criado_em)`);
+    await client.query(`CREATE TABLE IF NOT EXISTS caixa_movimentos (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      sessao_id UUID NOT NULL REFERENCES caixa_sessoes(id),
+      tipo VARCHAR(20) NOT NULL CHECK (tipo IN ('NUKCOIN_CARREGAMENTO','CARTAO_VENDA','RECEBIMENTO','COMPRA')),
+      metodo VARCHAR(15) NOT NULL CHECK (metodo IN ('CASH','TPA','TRANSFERENCIA','EXPRESS','NUKCOIN','CARTAO')),
+      valor NUMERIC(15,2) NOT NULL,
+      descricao TEXT,
+      pedido_id UUID REFERENCES pedidos(id),
+      cliente_id UUID REFERENCES clientes(id),
+      cartao_id UUID REFERENCES cartoes_consumo(id),
+      criado_por UUID REFERENCES funcionarios(id),
+      criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_caixa_mov_sessao ON caixa_movimentos (sessao_id, criado_em)`);
+    await client.query(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS pago_em TIMESTAMPTZ`);
+    await client.query(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS pago_metodo VARCHAR(15)`);
+    await client.query(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS pago_por UUID REFERENCES funcionarios(id)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_pedidos_por_receber ON pedidos (tenant_id, atualizado_em) WHERE status = 'FECHADO' AND pago_em IS NULL`);
+
     // Acessos delegáveis — espelha a migração 1749500000000
     await client.query(`ALTER TABLE funcionarios ADD COLUMN IF NOT EXISTS permissoes JSONB`);
 

@@ -20,6 +20,7 @@ beforeAll(async () => {
   A = await criarTenantFixture({ slug: 'it-fluxos' });
   B = await criarTenantFixture({ slug: 'it-fluxos-b' });
   await pool.query(`DELETE FROM mesas WHERE tenant_id = ANY($1)`, [[A.tenantId, B.tenantId]]);
+  await pool.query(`INSERT INTO caixa_sessoes (tenant_id, aberta_por, fundo_inicial) VALUES ($1,$2,0)`, [A.tenantId, A.userId]); // carregar Nuk-Coin exige o caixa aberto
   const ins = async (nome, preco, cat) => (await pool.query(
     `INSERT INTO produtos (tenant_id, nome, preco, categoria, disponivel, ativo) VALUES ($1,$2,$3,$4,true,true) RETURNING id`, [A.tenantId, nome, preco, cat])).rows[0].id;
   cuca = await ins('Cuca', 600, 'BEBIDA'); shisha = await ins('Shisha', 5000, 'SHISHA'); pedra = await ins('Maço', 1500, 'CIGARROS');

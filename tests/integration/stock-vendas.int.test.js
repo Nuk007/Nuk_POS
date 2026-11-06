@@ -20,6 +20,7 @@ beforeAll(async () => {
   B = await criarTenantFixture({ slug: 'it-stock-b' });
   const prod = async (nome, preco) => (await pool.query(`INSERT INTO produtos (tenant_id, nome, preco, categoria, disponivel, ativo) VALUES ($1,$2,$3,'OUTRO',true,true) RETURNING id`, [A.tenantId, nome, preco])).rows[0].id;
   const item = async (t, nome, un, q, min = 0) => (await pool.query(`INSERT INTO stock_items (tenant_id, nome, categoria, stock_atual, stock_minimo, unidade) VALUES ($1,$2,'OUTRO',$3,$4,$5) RETURNING id`, [t, nome, q, min, un])).rows[0].id;
+  await pool.query(`INSERT INTO caixa_sessoes (tenant_id, aberta_por, fundo_inicial) VALUES ($1,$2,0)`, [A.tenantId, A.userId]); // carregar Nuk-Coin exige o caixa aberto
   cuca = await prod('Cuca 33cl', 600); picanha = await prod('Picanha', 4500);
   stockCuca = await item(A.tenantId, 'Cuca (garrafas)', 'un', 24, 6);
   stockCarne = await item(A.tenantId, 'Carne de vaca', 'g', 2000);

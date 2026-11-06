@@ -122,7 +122,7 @@ async function cadastrar({ tenantId, nome, telefone, provincia, pin, referido_po
 }
 
 /** Carregamento feito por um operador (o dinheiro entra no balcão). */
-async function carregar({ tenantId, clienteId, valor, operadorId }) {
+async function carregar({ tenantId, clienteId, valor, operadorId, aoCarregar }) {
   const v = Number(valor);
   if (!VALORES_CARREGAMENTO.includes(v)) throw erro(400, `Valor inválido. Opções: ${VALORES_CARREGAMENTO.join(', ')} Kz`);
   const out = await withTx(async db => {
@@ -134,6 +134,7 @@ async function carregar({ tenantId, clienteId, valor, operadorId }) {
     await db.query(
       `INSERT INTO movimentos_nukcoin (id, cliente_id, tipo, valor, saldo_antes, saldo_depois, descricao) VALUES ($1,$2,'CARREGAMENTO',$3,$4,$5,$6)`,
       [uuidv4(), clienteId, v, antes, depois, operadorId ? `Carregamento no balcão (operador ${operadorId})` : 'Carregamento Nuk-Coin']);
+    if (aoCarregar) await aoCarregar(db, { valor: v, clienteId }); // ex.: registo no caixa do dia (falha = nada é carregado)
     return { saldo_anterior: antes, valor_carregado: v, saldo_atual: depois, nome: r.rows[0].nome };
   });
   broadcast('nukcoin_carregado', { cliente_id: clienteId, saldo_atual: out.saldo_atual }, tenantId);
@@ -198,8 +199,8 @@ async function criarPedidoRestaurante({ tenantId, itens, mesa_ref, observacoes, 
     }
     const pedidoId = uuidv4();
     await db.query(
-      `INSERT INTO pedidos (id, tenant_id, mesa_id, cliente_id, status, total, desconto, observacoes, metodo_pagamento, nukcoin_pago, origem, criado_em, atualizado_em)
-       VALUES ($1,$2,$3,$4,'ABERTO',$5,$6,$7,$8,$9,'REMOTA',NOW(),NOW())`,
+      `INSERT INTO pedidos (id, tenant_id, mesa_id, cliente_id, status, total, desconto, observacoes, metodo_pagamento, nukcoin_pago, origem, pago_em, pago_metodo, criado_em, atualizado_em)
+       VALUES ($1,$2,$3,$4,'ABERTO',$5,$6,$7,$8::text,$9,'REMOTA', CASE WHEN $8::text = 'NUKCOIN' THEN NOW() END, CASE WHEN $8 = 'NUKCOIN' THEN 'NUKCOIN' END, NOW(),NOW())`,
       [pedidoId, T(tenantId), mesaId, cliente_id || null, totalFinal, desconto, observacoes || null, metodo, nukcoinPago]);
     for (const l of linhas) {
       await db.query(`INSERT INTO itens_pedido (id, pedido_id, produto_id, quantidade, preco_unitario) VALUES ($1,$2,$3,$4,$5)`, [uuidv4(), pedidoId, l.produto_id, l.quantidade, l.preco_unitario]);

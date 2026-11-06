@@ -224,7 +224,7 @@ function carregarModulo(modulo) {
 
   const titulos = {
     dashboard: '📊 Dashboard', pedidos: '🍽️ Pedidos', mesas: '🪑 Mesa', balcao: '🧾 Balcão', remota: '📱 Remota', takeaway: '🥡 Take Away',
-    quartos: '🛏️ Quartos', solicitacoes: '🔔 Solicitações', produtos: '📋 Produtos', stock: '📦 Stock',
+    quartos: '🛏️ Quartos', caixa: '💵 Caixa do dia', nukcoin: '💜 Nuk-Coin', cartoes: '💳 Cartões de consumo', recebimentos: '🧾 Receber mesas', solicitacoes: '🔔 Solicitações', produtos: '📋 Produtos', stock: '📦 Stock',
     financeiro: '💰 Financeiro', clientes: '👥 Clientes',
     funcionarios: '👨‍💼 Funcionários', configuracoes: '⚙️ Configurações',
   };

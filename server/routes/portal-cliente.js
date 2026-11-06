@@ -9,6 +9,7 @@ const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const svc = require('../services/portal.service');
 const solicitacoes = require('../services/solicitacoes.service');
+const caixa = require('../services/caixa.service');
 const { authMiddleware, requerNivel, isUUID } = require('../middleware/auth');
 const { resolverTenantPublico } = require('../saas');
 
@@ -136,13 +137,14 @@ router.post('/perfil', ...pub, h(async (req, res) => res.json(await svc.perfil({
  * /api/cliente/nukcoin/carregar:
  *   post:
  *     tags: [Portal cliente]
- *     summary: Carregar Nuk-Coin (feito por um operador, no balcão). Valores 5000–50000
+ *     summary: Carregar Nuk-Coin (feito por um operador, no balcão; exige o caixa aberto — preferir /api/caixa/nukcoin). Valores 5000–50000
  *     requestBody: { content: { application/json: { schema: { type: object, required: [cliente_id, valor] } } } }
  *     responses: { 200: { description: Novo saldo }, 400: { description: Valor inválido }, 404: { description: Cliente não encontrado } }
  */
 router.post('/nukcoin/carregar', clienteLimiter, authMiddleware, h(async (req, res) => {
   if (!isUUID(req.body.cliente_id)) return res.status(400).json({ erro: 'cliente_id inválido' });
-  res.json(await svc.carregar({ tenantId: req.tenantId, clienteId: req.body.cliente_id, valor: req.body.valor, operadorId: req.user && req.user.id }));
+  // o carregamento passa pelo caixa do dia (exige o caixa aberto e regista a forma de pagamento)
+  res.json(await caixa.carregarNukcoin({ tenantId: req.tenantId, clienteId: req.body.cliente_id, valor: req.body.valor, metodo: req.body.metodo, userId: req.user && req.user.id }));
 }));
 
 /**
