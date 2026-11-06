@@ -43,6 +43,18 @@ describe('módulos do POS renderizam sem erro', () => {
     expect(html).not.toMatch(/erro-msg/);
     expect(html.length).toBeGreaterThan(50);
   });
+  test('Configurações tem morada, NIF e telefone e envia-os ao guardar (contrato com a API)', async () => {
+    const ctx = carregar(admin);
+    const html = await render(ctx, 'modulo_configuracoes');
+    ['cfg-morada', 'cfg-nif', 'cfg-telefone'].forEach(id => expect(html).toContain(`id="${id}"`));
+    const valores = { 'cfg-nome': 'Bar X', 'cfg-iva': '14', 'cfg-moeda': 'Kz', 'cfg-morada': 'Rua A 1', 'cfg-nif': '5417000000', 'cfg-telefone': '+244 923 125 060' };
+    ctx.document.getElementById = id => ({ value: valores[id] });
+    let enviado = null;
+    ctx.api = async (m, url, corpo) => { if (m === 'PUT') enviado = { url, corpo }; return {}; };
+    await ctx.guardarConfiguracoes();
+    expect(enviado.url).toBe('/configuracoes');
+    expect(enviado.corpo).toMatchObject({ morada: 'Rua A 1', nif_empresa: '5417000000', telefone: '+244 923 125 060' });
+  });
   test('Configurações mostra quartos e ementa; módulos operacionais não trazem botões de configuração', async () => {
     const ctx = carregar(admin);
     const cfg = await render(ctx, 'modulo_configuracoes');

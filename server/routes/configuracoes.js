@@ -16,6 +16,14 @@ const CHAVES_PERMITIDAS = [
   'evento_nome', 'evento_data', 'evento_descricao', 'evento_ativo',
 ];
 
+/** Dados do estabelecimento que vão nos talões e documentos: morada, NIF e telefone. Vazio = apagar. */
+function validarContacto(b) {
+  if (b.morada != null && String(b.morada).trim().length > 200) return 'A morada não pode ter mais de 200 caracteres';
+  if (b.nif_empresa != null && String(b.nif_empresa).trim() !== '' && !/^[A-Za-z0-9]{5,20}$/.test(String(b.nif_empresa).trim())) return 'NIF inválido: use só letras e números (5 a 20 caracteres)';
+  if (b.telefone != null && String(b.telefone).trim() !== '' && !/^\+?[0-9 ()-]{6,20}$/.test(String(b.telefone).trim())) return 'Telefone inválido: use números, espaços e + (6 a 20 caracteres)';
+  return null;
+}
+
 // GET /api/configuracoes
 router.get('/', authMiddleware, async (req, res) => {
   const tenantId = req.tenantId;
@@ -40,6 +48,8 @@ router.put('/', authMiddleware, requerNivel(['ADMIN']), exigirModulo('configurac
   if (chavesDesconhecidas.length > 0) {
     return res.status(400).json({ erro: `Chaves não permitidas: ${chavesDesconhecidas.join(', ')}` });
   }
+  const msgContacto = validarContacto(req.body);
+  if (msgContacto) return res.status(400).json({ erro: msgContacto });
   const tenantId = req.tenantId;
   const client = await pool.connect();
   try {
@@ -48,7 +58,7 @@ router.put('/', authMiddleware, requerNivel(['ADMIN']), exigirModulo('configurac
       await client.query(
         `INSERT INTO configuracoes (tenant_id, chave, valor) VALUES ($1,$2,$3)
          ON CONFLICT (tenant_id, chave) DO UPDATE SET valor=$3, atualizado_em=NOW()`,
-        [tenantId || null, chave, String(valor)]
+        [tenantId || null, chave, String(valor).trim()]
       );
     }
     await client.query('COMMIT');

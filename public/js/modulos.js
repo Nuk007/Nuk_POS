@@ -1472,6 +1472,16 @@ async function modulo_configuracoes(el) {
         <div class="campo"><label>Nome do Estabelecimento</label>
           <input type="text" id="cfg-nome" value="${cfg.nome_estabelecimento || ''}">
         </div>
+        <div class="campo"><label>Morada</label>
+          <input type="text" id="cfg-morada" maxlength="200" value="${esc(cfg.morada || '')}" placeholder="Rua, bairro, município, província">
+        </div>
+        <div class="campo"><label>NIF</label>
+          <input type="text" id="cfg-nif" maxlength="20" value="${esc(cfg.nif_empresa || '')}" placeholder="Número de Identificação Fiscal">
+        </div>
+        <div class="campo"><label>Telefone</label>
+          <input type="tel" id="cfg-telefone" maxlength="20" value="${esc(cfg.telefone || '')}" placeholder="+244 9XX XXX XXX">
+        </div>
+        <div class="muted texto-pequeno" style="margin-bottom:.75rem">Aparecem no cabeçalho dos talões e documentos.</div>
         <div class="campo"><label>Taxa de IVA (%)</label>
           <input type="number" id="cfg-iva" value="${cfg.iva_padrao || 14}" min="0" max="100" step="0.1">
         </div>
@@ -1651,6 +1661,9 @@ async function guardarConfiguracoes() {
     nome_estabelecimento: document.getElementById('cfg-nome').value,
     iva_padrao: document.getElementById('cfg-iva').value,
     moeda: document.getElementById('cfg-moeda').value,
+    morada: document.getElementById('cfg-morada').value,
+    nif_empresa: document.getElementById('cfg-nif').value,
+    telefone: document.getElementById('cfg-telefone').value,
   };
   try {
     await api('PUT', '/configuracoes', dados);

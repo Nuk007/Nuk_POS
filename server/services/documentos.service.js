@@ -41,10 +41,11 @@ function cabecalhoLogo(doc, x, y, largura, alturaPlaca) {
 
 async function tenantInfo(tenantId) {
   const r = await pool.query(`SELECT nome, nif, email, telefone_whatsapp FROM tenants WHERE ($1::uuid IS NULL OR id = $1) ORDER BY criado_em LIMIT 1`, [T(tenantId)]);
-  const cfg = await pool.query(`SELECT chave, valor FROM configuracoes WHERE chave IN ('nome_estabelecimento','morada_estabelecimento') AND ($1::uuid IS NULL OR tenant_id = $1)`, [T(tenantId)]);
+  const cfg = await pool.query(`SELECT chave, valor FROM configuracoes WHERE chave IN ('nome_estabelecimento','morada','nif_empresa','telefone') AND ($1::uuid IS NULL OR tenant_id = $1)`, [T(tenantId)]);
   const c = Object.fromEntries(cfg.rows.map(x => [x.chave, x.valor]));
   const t = r.rows[0] || {};
-  return { nome: c.nome_estabelecimento || t.nome || 'Estabelecimento', nif: t.nif, morada: c.morada_estabelecimento, email: t.email, telefone: t.telefone_whatsapp };
+  // Configurações (o que o Administrador preenche) têm prioridade sobre os dados do registo do estabelecimento
+  return { nome: c.nome_estabelecimento || t.nome || 'Estabelecimento', nif: c.nif_empresa || t.nif, morada: c.morada, email: t.email, telefone: c.telefone || t.telefone_whatsapp };
 }
 
 async function carregarPedido(tenantId, pedidoId) {
@@ -145,4 +146,4 @@ async function facturaPdf({ tenantId, faturaId }) {
   return renderizar(doc);
 }
 
-module.exports = { talaoPedido, facturaPdf };
+module.exports = { talaoPedido, facturaPdf, tenantInfo };
