@@ -45,7 +45,7 @@ async function modulo_caixa(el) {
         <span class="muted">Aberto às ${hora(e.sessao.aberta_em)}</span>
         <button class="btn-perigo" data-on-click="modalFecharCaixa()">Fechar caixa</button></div>
       <div class="kpi-grid">
-        ${kpi('Dinheiro esperado na gaveta', r.dinheiro_esperado, `fundo ${formatarMoeda(r.fundo_inicial)} + recebido ${formatarMoeda(r.dinheiro_recebido)}`)}
+        ${kpi('Dinheiro esperado na gaveta', r.dinheiro_esperado, `fundo ${formatarMoeda(r.fundo_inicial)} + movimentos em dinheiro ${formatarMoeda(r.dinheiro_recebido)}`)}
         ${Object.entries(r.por_metodo).map(([m, v]) => kpi(FORMAS_RECEBER[m] || m, v)).join('')}
       </div>
       <div class="card tabela-wrapper mt-2"><table>
