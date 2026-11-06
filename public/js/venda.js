@@ -69,7 +69,7 @@ function vendaRender() {
           ${n ? `<span class="venda-produto-qtd">${n}</span>` : ''}
         </button>`;
       }).join('')
-    : '<div class="muted">Sem produtos nesta categoria.</div>';
+    : `<div class="muted">${CATEGORIAS_ORIGEM_UI[v.origem] && !v.produtos.length ? `Ainda não há produtos para ${ROTULO_ORIGEM[v.origem]}. Crie-os em Configurações → Ementa com a categoria ${CATEGORIAS_ORIGEM_UI[v.origem].join(' ou ')}.` : 'Sem produtos nesta categoria.'}</div>`;
   vendaRenderCarrinho();
 }
 
