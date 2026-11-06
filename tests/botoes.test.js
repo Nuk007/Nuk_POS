@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const pub = f => fs.readFileSync(path.join(__dirname, '../public', f), 'utf8');
 
-describe('Botões em relevo (todo o sistema)', () => {
+describe('Botões suaves (todo o sistema)', () => {
   test.each(['index.html', 'cliente.html', 'activate.html', 'superadmin.html'])('%s carrega botoes.css', f => {
     expect(pub(f)).toContain('<link rel="stylesheet" href="/css/botoes.css">');
   });
@@ -15,8 +15,8 @@ describe('Botões em relevo (todo o sistema)', () => {
     const css = pub('css/botoes.css');
     expect(css).toMatch(/:where\(button, input\[type="button"\], input\[type="submit"\]/);
     expect(css).toContain(':active:not(:disabled');
-    expect(css).toMatch(/translateY\(2px\) scale\(\.985\)/);
-    expect(css).toMatch(/inset 0 2px 5px/); // fica «para dentro»
+    expect(css).toMatch(/scale\(\.98\)/);
+    expect(css).toMatch(/inset 4px 4px 9px/); // fica «para dentro»
     expect(css).toContain('.btn-fechar-modal');
     expect(css).toContain('prefers-reduced-motion');
   });

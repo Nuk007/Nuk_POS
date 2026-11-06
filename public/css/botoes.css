@@ -1,12 +1,12 @@
-/* Botões em relevo que afundam ao carregar — vale para TODO o sistema (POS, portal, activação, superadmin).
+/* Botões «suaves» (neumorfismo escuro) — vale para TODO o sistema (POS, portal, activação, superadmin):
+   saem da superfície com sombra e entram nela ao carregar.
    Todos os seletores estão dentro de :where() (especificidade zero): onde uma página ou componente já define
    o seu relevo (ex.: .btn-primario em nukpos.css) esse ganha; em tudo o resto, isto garante o mesmo comportamento.
-   Cada botão pode definir --aresta (a cor da aresta inferior); sem ela usa-se uma sombra neutra. */
+   As sombras são translúcidas (funcionam sobre qualquer fundo); as páginas sem nukpos.css usam os valores de recurso. */
 
 :where(button, input[type="button"], input[type="submit"], input[type="reset"], [role="button"], .btn, a.btn,
        .btn-primary, .btn-ghost, .btn-info, .btn-warn, .btn-blue, .btn-ok, .btn-coin, .btn-danger, .btn-success, .btn-activate, .back-btn, .copy-btn, .lf-btn):not(.sem-relevo, .btn-fechar-modal, .modal-close, .btn-fechar-sidebar) {
-  --aresta: rgba(0, 0, 0, .42);
-  box-shadow: 0 3px 0 var(--aresta), 0 5px 8px rgba(0, 0, 0, .22), inset 0 1px 0 rgba(255, 255, 255, .2);
+  box-shadow: var(--neu-sombra, 5px 5px 10px rgba(0, 0, 0, .4), -3px -3px 8px rgba(255, 255, 255, .05));
   transform: translateY(0);
   transition: transform .07s ease, box-shadow .07s ease, filter .15s ease;
   -webkit-tap-highlight-color: transparent;
@@ -16,9 +16,8 @@
 /* Carregado: desce e a sombra de baixo quase desaparece, com sombra interior (fica «para dentro») */
 :where(button, input[type="button"], input[type="submit"], input[type="reset"], [role="button"], .btn, a.btn,
        .btn-primary, .btn-ghost, .btn-info, .btn-warn, .btn-blue, .btn-ok, .btn-coin, .btn-danger, .btn-success, .btn-activate, .back-btn, .copy-btn, .lf-btn):not(.sem-relevo, .btn-fechar-modal, .modal-close, .btn-fechar-sidebar):where(:active:not(:disabled, [aria-disabled="true"])) {
-  transform: translateY(2px) scale(.985);
-  box-shadow: 0 1px 0 var(--aresta), inset 0 2px 5px rgba(0, 0, 0, .32);
-  filter: brightness(.96);
+  transform: scale(.98);
+  box-shadow: var(--neu-premido, inset 4px 4px 9px rgba(0, 0, 0, .5), inset -3px -3px 7px rgba(255, 255, 255, .04));
 }
 
 /* Botões só com ícone (sem fundo): não têm relevo, mas também cedem ao toque */
@@ -33,7 +32,7 @@
   transition: transform .07s ease, box-shadow .07s ease;
   -webkit-tap-highlight-color: transparent;
 }
-:where([data-on-click]:not(button), [data-action]:not(button)):where(:active) { transform: translateY(2px) scale(.99); }
+:where([data-on-click]:not(button), [data-action]:not(button)):where(:active) { transform: scale(.98); }
 
 /* Desactivados: sem relevo e sem reacção */
 :where(button, input[type="button"], input[type="submit"], [role="button"], .btn):where(:disabled, [aria-disabled="true"]) { cursor: not-allowed; }

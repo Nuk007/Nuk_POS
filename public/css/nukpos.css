@@ -17,6 +17,10 @@
   --c-warning: #f59e0b;
   --c-danger: #ef4444;
   --c-info: #3b82f6;
+  /* Tema «suave»: botões que saem da superfície (sombra) e entram nela ao carregar (premido) */
+  --neu-base: #1b2431;
+  --neu-sombra: 6px 6px 12px rgba(0,0,0,.45), -4px -4px 10px rgba(255,255,255,.045);
+  --neu-premido: inset 4px 4px 9px rgba(0,0,0,.5), inset -3px -3px 7px rgba(255,255,255,.04);
   --sidebar-w: 240px;
   --topbar-h: 56px;
   --radius: 8px;
@@ -567,55 +571,54 @@ tr:hover td { background: rgba(255,255,255,.02); }
 .nav-subtitulo { padding: 0 .3rem; }
 .nav-sub .nav-item { padding-left: 1rem; }
 
-/* ── Botões 3D: relevo, aresta inferior e «afundam» ao carregar ── */
+/* ── Botões suaves (tema único do sistema): saem da superfície e «entram» nela ao carregar ──
+   Sombras translúcidas funcionam sobre qualquer fundo. A cor fica no texto/ícone, não no fundo. */
 .btn-primario, .btn-secundario, .btn-perigo, .btn-sucesso, .btn-logout, .btn-menu,
 .nav-item, .mesa-card, .quarto-card, .cmp-acoes button, .acoes-quarto button {
-  --aresta: rgba(0,0,0,.45);
-  box-shadow: 0 4px 0 var(--aresta), 0 6px 10px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.18);
+  background: var(--neu-base);
+  background-image: none;
+  border: 1px solid transparent;
+  box-shadow: var(--neu-sombra);
   transform: translateY(0);
-  transition: transform .08s, box-shadow .08s, background .15s, border-color .15s, color .15s;
+  transition: transform .08s, box-shadow .08s, background .15s, color .15s;
 }
-.btn-primario { --aresta: #8f3d04; background-image: linear-gradient(180deg, var(--c-primary-light), var(--c-primary)); }
-.btn-primario:hover { background-image: linear-gradient(180deg, var(--c-primary), var(--c-primary-dark)); }
-.btn-secundario { --aresta: #1b232f; background-image: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,0)); }
-.btn-perigo { --aresta: #6b1d1d; }
-.btn-sucesso { --aresta: #0b5b41; }
-.nav-item {
-  --aresta: #0c121b;
-  width: 100%;
-  border: 1px solid var(--c-border);
-  border-radius: var(--radius);
-  background: var(--c-surface);
-  background-image: linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,0));
-}
-.nav-item.active { --aresta: #8f3d04; border-right-width: 1px; border-color: var(--c-primary); background-color: rgba(232,101,10,.22); }
+.btn-primario { color: var(--c-primary-light); }
+.btn-primario:hover { background: var(--neu-base); color: #ffa05a; }
+.btn-secundario { color: var(--c-text); }
+.btn-secundario:hover { background: var(--neu-base); color: var(--c-primary-light); }
+.btn-perigo { color: #ff7a74; }
+.btn-perigo:hover { background: var(--neu-base); color: #ff9a95; }
+.btn-sucesso { color: #4fd69a; }
+.btn-sucesso:hover { background: var(--neu-base); color: #7be8b6; }
+.nav-item { width: 100%; border-radius: var(--radius); }
+.nav-item.active { border-right-width: 1px; color: var(--c-primary-light); box-shadow: var(--neu-premido); }
 .nav-item[style*="display: none"] { display: none; }
-.mesa-card:hover, .quarto-card:hover { transform: translateY(-2px); box-shadow: 0 6px 0 var(--aresta), 0 10px 14px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.18); }
+.mesa-card:hover, .quarto-card:hover { transform: translateY(-1px); box-shadow: 8px 8px 16px rgba(0,0,0,.5), -5px -5px 12px rgba(255,255,255,.05); }
 .btn-primario:active, .btn-secundario:active, .btn-perigo:active, .btn-sucesso:active, .btn-logout:active, .btn-menu:active,
 .nav-item:active, .mesa-card:active, .quarto-card:active, .cmp-acoes button:active, .acoes-quarto button:active {
-  transform: translateY(3px);
-  box-shadow: 0 1px 0 var(--aresta), 0 2px 4px rgba(0,0,0,.3), inset 0 2px 4px rgba(0,0,0,.25);
+  transform: scale(.98);
+  box-shadow: var(--neu-premido);
 }
-.btn-primario:disabled, .btn-secundario:disabled, .acoes-quarto button:disabled { box-shadow: 0 2px 0 var(--aresta); transform: none; }
+.btn-primario:disabled, .btn-secundario:disabled, .acoes-quarto button:disabled { box-shadow: var(--neu-sombra); transform: none; opacity: .55; }
 @media (prefers-reduced-motion: reduce) { .btn-primario, .btn-secundario, .nav-item, .mesa-card, .quarto-card { transition: none; } }
 
 /* ── Painel de venda (Mesa, Balcão, Take Away) ───────────────── */
 .venda-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 1rem; align-items: start; }
 @media (max-width: 900px) { .venda-layout { grid-template-columns: 1fr; } }
 .venda-categorias { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: .9rem; }
-.venda-cat.activa { background: var(--c-primary); color: #fff; border-color: var(--c-primary-dark); }
+.venda-cat.activa { color: var(--c-primary-light); box-shadow: var(--neu-premido); }
 .venda-grelha { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: .75rem; }
 .venda-produto {
   position: relative; display: flex; flex-direction: column; justify-content: space-between; gap: .4rem; min-height: 5.6rem;
   padding: .7rem; text-align: left; color: var(--c-text); cursor: pointer;
-  background: var(--c-surface); background-image: linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,0));
-  border: 1px solid var(--c-border); border-radius: var(--radius);
-  box-shadow: 0 4px 0 #0c121b, 0 6px 10px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.18);
-  transition: transform .08s, box-shadow .08s, border-color .15s;
+  background: var(--neu-base);
+  border: 1px solid transparent; border-radius: var(--radius);
+  box-shadow: var(--neu-sombra);
+  transition: transform .08s, box-shadow .08s, color .15s;
 }
-.venda-produto:hover { border-color: var(--c-primary); }
-.venda-produto:active { transform: translateY(3px); box-shadow: 0 1px 0 #0c121b, inset 0 2px 4px rgba(0,0,0,.25); }
-.venda-produto.no-carrinho { border-color: var(--c-primary); background-color: rgba(232,101,10,.12); }
+.venda-produto:hover { color: var(--c-primary-light); }
+.venda-produto:active { transform: scale(.98); box-shadow: var(--neu-premido); }
+.venda-produto.no-carrinho { box-shadow: var(--neu-premido); }
 .venda-produto-nome { font-weight: 600; font-size: .9rem; }
 .venda-produto-preco { color: var(--c-primary-light); font-size: .85rem; font-weight: 700; }
 .venda-produto-qtd { position: absolute; top: -8px; right: -8px; min-width: 24px; height: 24px; padding: 0 6px; border-radius: 12px; background: var(--c-primary); color: #fff; font-size: .8rem; font-weight: 700; display: flex; align-items: center; justify-content: center; }
