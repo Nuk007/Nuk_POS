@@ -21,7 +21,7 @@ describe('Listas configuráveis', () => {
     expect(r.body.map(o => o.valor)).toEqual(['STANDARD', 'SUPERIOR', 'SUITE', 'SUITE_PRESIDENCIAL', 'VIP_EXECUTIVO']);
     expect((await op(A, 'get', '/api/listas/NAO_EXISTE')).status).toBe(404);
     const todas = await op(A, 'get', '/api/listas');
-    expect(Object.keys(todas.body).sort()).toEqual(['CATEGORIA_PRODUTO', 'CATEGORIA_STOCK', 'TIPO_QUARTO', 'UNIDADE_STOCK']);
+    expect(Object.keys(todas.body).sort()).toEqual(['CATEGORIA_PATRIMONIO', 'CATEGORIA_PRODUTO', 'CATEGORIA_STOCK', 'TIPO_QUARTO', 'UNIDADE_STOCK']);
   });
   test('tipo de quarto novo: sem estar na lista é recusado; depois de acrescentado é aceite', async () => {
     expect((await op(A, 'post', '/api/quartos', quarto({ tipo: 'CHALE' }))).status).toBe(400);

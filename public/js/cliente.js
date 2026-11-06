@@ -27,7 +27,7 @@ const SECCOES = {
 };
 const EMOJI_CAT = {
   CHURRASCO: '🍖', PEIXE: '🐟', PRATO: '🍽️', ENTRADA: '🥗', ACOMPANHAMENTO: '🍚',
-  BEBIDA: '🥤', COCKTAIL: '🍹', SHISHA: '💨', CIGARROS: '🚬', LOJA: '🛍️', SERVICO_QUARTO: '🛎️', SOBREMESA: '🍮', OUTRO: '📦',
+  BEBIDA: '🥤', COCKTAIL: '🍹', SHISHA: '💨', CIGARROS: '🚬', LOJA: '🛍️', LAZER: '🎯', SERVICO_QUARTO: '🛎️', SOBREMESA: '🍮', OUTRO: '📦',
 };
 const METODOS = {
   coin:     { api: 'NUKCOIN',       nome: 'Nuk-Coin' },

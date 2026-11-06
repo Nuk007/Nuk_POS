@@ -8,9 +8,10 @@ const { erro } = require('./shared');
 
 const DEFAULTS = {
   TIPO_QUARTO: ['STANDARD', 'SUPERIOR', 'SUITE', 'SUITE_PRESIDENCIAL', 'VIP_EXECUTIVO'],
-  CATEGORIA_PRODUTO: ['CHURRASCO', 'PEIXE', 'BEBIDA', 'SOBREMESA', 'ACOMPANHAMENTO', 'COCKTAIL', 'ENTRADA', 'SHISHA', 'CIGARROS', 'LOJA', 'SERVICO_QUARTO', 'PRATO', 'OUTRO'],
+  CATEGORIA_PRODUTO: ['CHURRASCO', 'PEIXE', 'BEBIDA', 'SOBREMESA', 'ACOMPANHAMENTO', 'COCKTAIL', 'ENTRADA', 'SHISHA', 'CIGARROS', 'LOJA', 'LAZER', 'SERVICO_QUARTO', 'PRATO', 'OUTRO'],
   CATEGORIA_STOCK: ['CARNE', 'PEIXE', 'VEGETAL', 'TEMPERO', 'BEBIDA', 'CARVAO', 'LIMPEZA', 'OUTRO'],
   UNIDADE_STOCK: ['un', 'kg', 'g', 'L', 'ml'],
+  CATEGORIA_PATRIMONIO: ['MOBILIARIO', 'EQUIPAMENTO', 'INFORMATICA', 'VEICULO', 'IMOVEL', 'OUTRO'],
 };
 // Onde cada lista é usada (para impedir apagar valores em uso)
 const USO = {
@@ -18,8 +19,9 @@ const USO = {
   CATEGORIA_PRODUTO: ['produtos', 'categoria'],
   CATEGORIA_STOCK: ['stock_items', 'categoria'],
   UNIDADE_STOCK: ['stock_items', 'unidade'],
+  CATEGORIA_PATRIMONIO: ['patrimonio_bens', 'categoria'],
 };
-const NOMES = { TIPO_QUARTO: 'Tipos de quarto', CATEGORIA_PRODUTO: 'Categorias de produto', CATEGORIA_STOCK: 'Categorias de stock', UNIDADE_STOCK: 'Unidades de stock' };
+const NOMES = { TIPO_QUARTO: 'Tipos de quarto', CATEGORIA_PRODUTO: 'Categorias de produto', CATEGORIA_STOCK: 'Categorias de stock', UNIDADE_STOCK: 'Unidades de stock', CATEGORIA_PATRIMONIO: 'Categorias de património' };
 
 function validarLista(lista) {
   if (!DEFAULTS[lista]) throw erro(404, 'Lista desconhecida');

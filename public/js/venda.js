@@ -8,7 +8,8 @@
  * Sem handlers inline (CSP): data-on-click com argumentos literais.
  */
 const NAO_TAKEAWAY_UI = /^(SHISHA|OUTRO)$|LOJA|CIGARR|TABAC|SERVIC|QUARTO/; // espelha pedidos.service (o servidor é que decide)
-const ROTULO_ORIGEM = { MESA: 'Mesa', BALCAO: 'Balcão', TAKEAWAY: 'Take Away', REMOTA: 'Remota' };
+const ROTULO_ORIGEM = { MESA: 'Mesa', BALCAO: 'Balcão', TAKEAWAY: 'Take Away', REMOTA: 'Remota', LAZER: 'Lazer', LOJA: 'Loja' };
+const CATEGORIAS_ORIGEM_UI = { LAZER: ['LAZER'], LOJA: ['LOJA', 'CIGARROS'] }; // espelha pedidos.service (o servidor é que decide)
 
 // ── Painel de botões ────────────────────────────────────────
 async function abrirPainelVenda(el, { origem, mesa = null, cliente = null }) {
@@ -16,6 +17,7 @@ async function abrirPainelVenda(el, { origem, mesa = null, cliente = null }) {
   try {
     let produtos = await api('GET', '/produtos?disponivel=true') || [];
     if (origem === 'TAKEAWAY') produtos = produtos.filter(p => !NAO_TAKEAWAY_UI.test(String(p.categoria || '').toUpperCase()));
+    if (CATEGORIAS_ORIGEM_UI[origem]) produtos = produtos.filter(p => CATEGORIAS_ORIGEM_UI[origem].includes(String(p.categoria || '').toUpperCase()));
     window._venda = { origem, mesa, cliente, produtos, categoria: '', carrinho: [] };
     el.innerHTML = htmlPainelVenda();
     vendaRender();
@@ -26,7 +28,7 @@ async function abrirPainelVenda(el, { origem, mesa = null, cliente = null }) {
 
 function htmlPainelVenda() {
   const v = window._venda;
-  const titulo = v.origem === 'MESA' ? `🪑 Mesa ${esc(v.mesa.numero)}` : v.origem === 'TAKEAWAY' ? `🥡 Take Away · ${esc(v.cliente.nome)}` : '🧾 Balcão';
+  const titulo = v.origem === 'MESA' ? `🪑 Mesa ${esc(v.mesa.numero)}` : v.origem === 'TAKEAWAY' ? `🥡 Take Away · ${esc(v.cliente.nome)}` : v.origem === 'LAZER' ? '🎯 Lazer' : v.origem === 'LOJA' ? '🛍️ Loja' : '🧾 Balcão';
   const voltar = v.origem === 'MESA' ? '<button class="btn-secundario" data-on-click="vendaVoltar()">← Mesas</button>'
     : v.origem === 'TAKEAWAY' ? '<button class="btn-secundario" data-on-click="vendaVoltar()">← Outro cliente</button>' : '';
   const estado = v.origem === 'MESA' ? `<button class="btn-secundario" data-on-click="modalMesa('${esc(v.mesa.id)}','${esc(v.mesa.numero)}','${esc(v.mesa.status)}')">Estado da mesa</button>` : '';
@@ -45,7 +47,7 @@ function htmlPainelVenda() {
         <div id="venda-itens"></div>
         <div id="venda-total" class="venda-total"></div>
         <div class="campo"><label>Observações</label><textarea id="venda-obs" rows="2" placeholder="Notas especiais..."></textarea></div>
-        <button class="btn-primario btn-bloco" data-on-click="vendaConfirmar()">Enviar pedido</button>
+        <button class="btn-primario btn-bloco" data-on-click="vendaConfirmar()">${CATEGORIAS_ORIGEM_UI[v.origem] ? 'Registar venda' : 'Enviar pedido'}</button>
       </div>
     </div>`;
 }
@@ -110,8 +112,8 @@ async function vendaConfirmar() {
   };
   try {
     await api('POST', '/pedidos', corpo);
-    toast(`Pedido enviado (${ROTULO_ORIGEM[v.origem]})`, 'sucesso');
-    if (v.origem === 'BALCAO') { v.carrinho = []; document.getElementById('venda-obs').value = ''; vendaRender(); }
+    toast(CATEGORIAS_ORIGEM_UI[v.origem] ? `Venda registada (${ROTULO_ORIGEM[v.origem]}). Receba-a no Caixa → Receber mesas` : `Pedido enviado (${ROTULO_ORIGEM[v.origem]})`, 'sucesso', CATEGORIAS_ORIGEM_UI[v.origem] ? 6000 : undefined);
+    if (v.origem === 'BALCAO' || CATEGORIAS_ORIGEM_UI[v.origem]) { v.carrinho = []; document.getElementById('venda-obs').value = ''; vendaRender(); }
     else carregarModulo(v.origem === 'MESA' ? 'mesas' : 'takeaway');
   } catch (e) { toast(e.message, 'erro'); }
 }
@@ -123,6 +125,8 @@ async function abrirVendaMesa(id) {
   await abrirPainelVenda(document.getElementById('main-content'), { origem: 'MESA', mesa: { id: m.id, numero: m.numero, status: m.status } });
 }
 async function modulo_balcao(el) { await abrirPainelVenda(el, { origem: 'BALCAO' }); }
+async function modulo_lazer(el) { await abrirPainelVenda(el, { origem: 'LAZER' }); }
+async function modulo_loja(el) { await abrirPainelVenda(el, { origem: 'LOJA' }); }
 
 // ── Take Away ───────────────────────────────────────────────
 async function modulo_takeaway(el) {

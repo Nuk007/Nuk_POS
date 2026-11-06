@@ -23,10 +23,9 @@ describe('Superadmin escolhe os módulos', () => {
     expect(r.body.planos.BASICO).toEqual(expect.arrayContaining(['restauracao']));
     expect(r.body.planos.BASICO).not.toContain('hospedagem');
   });
-  test('rejeita lista vazia, desconhecida e módulo ainda não construído', async () => {
+  test('rejeita lista vazia e módulo desconhecido', async () => {
     expect((await sa('put', `/api/saas/tenants/${T.tenantId}/modulos`, { modulos: [] })).status).toBe(400);
     expect((await sa('put', `/api/saas/tenants/${T.tenantId}/modulos`, { modulos: ['voar'] })).status).toBe(400);
-    expect((await sa('put', `/api/saas/tenants/${T.tenantId}/modulos`, { modulos: ['lazer'] })).status).toBe(400);
   });
   test('sem chave de superadmin → 401', async () => {
     expect((await request(app).put(`/api/saas/tenants/${T.tenantId}/modulos`).send({ modulos: ['rh'] })).status).toBe(401);

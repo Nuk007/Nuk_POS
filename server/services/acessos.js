@@ -38,14 +38,14 @@ const interseccao = (a, b) => a.filter(x => b.includes(x));
 const LICENCAS = {
   restauracao: { rotulo: 'Vendas · Restauração', grupo: 'Vendas', acessos: ['pedidos', 'mesas', 'balcao', 'remota', 'takeaway', 'produtos', 'solicitacoes'], pronto: true },
   hospedagem: { rotulo: 'Vendas · Hospedagem', grupo: 'Vendas', acessos: ['quartos', 'solicitacoes'], pronto: true },
-  lazer: { rotulo: 'Vendas · Lazer', grupo: 'Vendas', acessos: ['lazer', 'solicitacoes'], pronto: false },
-  loja: { rotulo: 'Vendas · Loja', grupo: 'Vendas', acessos: ['loja', 'solicitacoes'], pronto: false },
+  lazer: { rotulo: 'Vendas · Lazer', grupo: 'Vendas', acessos: ['lazer', 'solicitacoes', 'produtos'], pronto: true },
+  loja: { rotulo: 'Vendas · Loja', grupo: 'Vendas', acessos: ['loja', 'solicitacoes', 'produtos'], pronto: true },
   caixa: { rotulo: 'Caixa', grupo: 'Caixa', acessos: ['clientes', 'caixa', 'nukcoin', 'cartoes', 'recebimentos'], pronto: true },
   compras: { rotulo: 'Compras e stock', grupo: 'Compras', acessos: ['stock', 'compras'], pronto: true },
   servicos: { rotulo: 'Serviços (avarias e manutenção)', grupo: 'Serviços', acessos: ['servicos', 'manutencao'], pronto: true },
   rh: { rotulo: 'Administração · RH', grupo: 'Administração', acessos: ['funcionarios'], pronto: true },
   financas: { rotulo: 'Administração · Finanças', grupo: 'Administração', acessos: ['financeiro'], pronto: true },
-  patrimonio: { rotulo: 'Administração · Património', grupo: 'Administração', acessos: ['patrimonio'], pronto: false },
+  patrimonio: { rotulo: 'Administração · Património', grupo: 'Administração', acessos: ['patrimonio'], pronto: true },
 };
 const SEMPRE = ['dashboard', 'configuracoes'];
 const PRONTOS = Object.keys(LICENCAS).filter(k => LICENCAS[k].pronto);

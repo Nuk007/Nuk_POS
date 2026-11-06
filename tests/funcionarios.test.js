@@ -190,10 +190,11 @@ describe('Licença por módulos (acessos.js)', () => {
     expect(ch).toEqual(expect.arrayContaining(['dashboard', 'configuracoes', 'pedidos', 'mesas', 'produtos']));
     expect(ch).not.toContain('quartos');
   });
-  test('validarModulos recusa vazio, desconhecido e não construído', () => {
+  test('validarModulos recusa vazio e desconhecido; aceita os módulos prontos (já todos construídos)', () => {
     expect(() => A.validarModulos([])).toThrow();
     expect(() => A.validarModulos(['voar'])).toThrow();
-    expect(() => A.validarModulos(['lazer'])).toThrow();
+    expect(A.validarModulos(['lazer', 'loja', 'patrimonio'])).toEqual(['lazer', 'loja', 'patrimonio']);
+    expect(Object.values(A.LICENCAS).every(l => l.pronto)).toBe(true);
     expect(A.validarModulos(['rh', 'rh'])).toEqual(['rh']);
   });
 });

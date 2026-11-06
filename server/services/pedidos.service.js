@@ -107,12 +107,15 @@ async function clienteJaUsouEspaco(db, { tenantId, clienteId }) {
  * A origem REMOTA só nasce no portal do cliente.
  * @throws {Error} com mensagem legível em caso de falha de negócio
  */
+/** Categorias de produto que cada origem especial pode vender (dívida: devia ser configurável). */
+const CATEGORIAS_ORIGEM = { LAZER: ['LAZER'], LOJA: ['LOJA', 'CIGARROS'] };
+
 async function criarPedido({ tenantId, userId, mesa_id, cliente_id, itens, observacoes, origem }) {
   if (!itens || !itens.length) {
     const err = new Error('Pedido sem itens'); err.statusCode = 400; throw err;
   }
   origem = origem || (mesa_id ? 'MESA' : 'BALCAO');
-  if (!['MESA', 'BALCAO', 'TAKEAWAY'].includes(origem)) { const err = new Error('Origem inválida (Mesa, Balcão ou Take Away)'); err.statusCode = 400; throw err; }
+  if (!['MESA', 'BALCAO', 'TAKEAWAY', 'LAZER', 'LOJA'].includes(origem)) { const err = new Error('Origem inválida (Mesa, Balcão, Take Away, Lazer ou Loja)'); err.statusCode = 400; throw err; }
   if (origem === 'MESA' && !mesa_id) { const err = new Error('Escolha a mesa'); err.statusCode = 400; throw err; }
   if (origem !== 'MESA') mesa_id = null;
   if (origem === 'TAKEAWAY' && !cliente_id) { const err = new Error('O Take Away é só para clientes cadastrados'); err.statusCode = 400; throw err; }
@@ -146,14 +149,18 @@ async function criarPedido({ tenantId, userId, mesa_id, cliente_id, itens, obser
       if (origem === 'TAKEAWAY' && !categoriaTakeAway(pr.rows[0].categoria)) {
         const err = new Error('O Take Away é só para comidas e bebidas'); err.statusCode = 400; throw err;
       }
+      if (CATEGORIAS_ORIGEM[origem] && !CATEGORIAS_ORIGEM[origem].includes(String(pr.rows[0].categoria || '').toUpperCase())) {
+        const err = new Error(`${origem === 'LAZER' ? 'O Lazer' : 'A Loja'} só vende ${origem === 'LAZER' ? 'produtos de lazer' : 'produtos da loja e cigarros'}`); err.statusCode = 400; throw err;
+      }
       total += pr.rows[0].preco * item.quantidade;
       itensDetalhes.push({ ...item, preco_unitario: pr.rows[0].preco });
     }
 
     const pedidoR = await client.query(
-      `INSERT INTO pedidos (tenant_id, mesa_id, cliente_id, funcionario_id, total, observacoes, origem, validado_em, validado_por)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $4) RETURNING *`,
-      [tenantId || null, mesa_id || null, cliente_id || null, userId, total, observacoes || null, origem]
+      // Lazer e Loja não passam pela cozinha: a venda nasce FECHADA e fica a aguardar recebimento no caixa
+      `INSERT INTO pedidos (tenant_id, mesa_id, cliente_id, funcionario_id, total, observacoes, origem, validado_em, validado_por, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $4, $8::text) RETURNING *`,
+      [tenantId || null, mesa_id || null, cliente_id || null, userId, total, observacoes || null, origem, CATEGORIAS_ORIGEM[origem] ? 'FECHADO' : 'ABERTO']
     );
     const pedido = pedidoR.rows[0];
 

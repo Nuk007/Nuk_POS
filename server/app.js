@@ -1,10 +1,10 @@
 // Nuk_POS — Servidor Principal (refactored)
 // Stack: Node.js + Express + PostgreSQL + Socket.io
 // SaaS multi-tenant: cada empresa tem tenant_id em todas as operações
-// v2026.11.06.5-servicos-fk
+// v2026.11.06.6-patrimonio-lazer-loja
 
 require('dotenv').config();
-console.log('[NukPOS] server/app.js v2026.11.06.5-servicos-fk a arrancar');
+console.log('[NukPOS] server/app.js v2026.11.06.6-patrimonio-lazer-loja a arrancar');
 
 const express = require('express');
 const http = require('http');
@@ -146,11 +146,12 @@ app.use('/api/auth',           require('./routes/auth'));
 app.use('/api/dashboard',      resolverTenant, verificarLicencaTenant, require('./routes/dashboard'));
 app.use('/api/funcionarios',   resolverTenant, verificarLicencaTenant, exigirModulo('funcionarios'), require('./routes/funcionarios'));
 app.use('/api/mesas',          resolverTenant, verificarLicencaTenant, exigirLicenca('restauracao'), require('./routes/mesas'));
-app.use('/api/produtos',       resolverTenant, verificarLicencaTenant, exigirLicenca('restauracao'), require('./routes/produtos'));
-app.use('/api/pedidos',        resolverTenant, verificarLicencaTenant, exigirLicenca('restauracao'), require('./routes/pedidos'));
+app.use('/api/produtos',       resolverTenant, verificarLicencaTenant, exigirLicenca(['restauracao', 'lazer', 'loja']), require('./routes/produtos'));
+app.use('/api/pedidos',        resolverTenant, verificarLicencaTenant, exigirLicenca(['restauracao', 'lazer', 'loja']), require('./routes/pedidos'));
 app.use('/api/caixa',          resolverTenant, verificarLicencaTenant, exigirLicenca('caixa'), exigirModulo('caixa'), require('./routes/caixa'));
 app.use('/api/compras',        resolverTenant, verificarLicencaTenant, exigirLicenca('compras'), exigirModulo('compras'), require('./routes/compras'));
 app.use('/api/servicos',       resolverTenant, verificarLicencaTenant, exigirLicenca('servicos'), exigirModulo(['servicos', 'manutencao']), require('./routes/servicos'));
+app.use('/api/patrimonio',     resolverTenant, verificarLicencaTenant, exigirLicenca('patrimonio'), exigirModulo('patrimonio'), require('./routes/patrimonio'));
 app.use('/api/quartos',        resolverTenant, verificarLicencaTenant, exigirLicenca('hospedagem'), require('./routes/quartos'));
 app.use('/api/listas',         resolverTenant, verificarLicencaTenant, require('./routes/listas'));
 app.use('/api/reservas',       resolverTenant, verificarLicencaTenant, exigirLicenca('hospedagem'), require('./routes/reservas'));

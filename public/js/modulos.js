@@ -1442,8 +1442,9 @@ function licenciadoModulo(k) {
 }
 function listaContratada(lista) {
   if (lista === 'TIPO_QUARTO') return licenciadoModulo('hospedagem');
-  if (lista === 'CATEGORIA_PRODUTO') return licenciadoModulo('restauracao');
+  if (lista === 'CATEGORIA_PRODUTO') return licenciadoModulo('restauracao') || licenciadoModulo('lazer') || licenciadoModulo('loja');
   if (lista === 'CATEGORIA_STOCK' || lista === 'UNIDADE_STOCK') return licenciadoModulo('compras');
+  if (lista === 'CATEGORIA_PATRIMONIO') return licenciadoModulo('patrimonio');
   return true;
 }
 async function modulo_configuracoes(el) {
