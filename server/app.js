@@ -1,10 +1,10 @@
 // Nuk_POS — Servidor Principal (refactored)
 // Stack: Node.js + Express + PostgreSQL + Socket.io
 // SaaS multi-tenant: cada empresa tem tenant_id em todas as operações
-// v2026.11.03.4-fluxos-venda
+// v2026.11.06.1-fluxos-venda-pedidos
 
 require('dotenv').config();
-console.log('[NukPOS] server/app.js v2026.11.03.4-fluxos-venda a arrancar');
+console.log('[NukPOS] server/app.js v2026.11.06.1-fluxos-venda-pedidos a arrancar');
 
 const express = require('express');
 const http = require('http');

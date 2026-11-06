@@ -102,6 +102,7 @@ function iniciarApp() {
   // WebSocket
   iniciarWebSocket();
   actualizarBadgeSolicitacoes();
+  actualizarBadgeRemota();
 
   // Relógio
   setInterval(actualizarHora, 1000);
@@ -139,9 +140,10 @@ function iniciarWebSocket() {
 
   // Pedido feito pelo cliente no portal (QR code)
   NUK.socket.on('novo_pedido_cliente', (p) => {
-    toast(`🆕 Pedido do portal ${p.codigo || ''} — ${formatarMoeda(p.total)}`, 'aviso');
+    toast(`🆕 Pedido remoto por validar ${p.codigo || ''} — ${formatarMoeda(p.total)}`, 'aviso', 8000);
     actualizarBadgePedidos();
-    if (['pedidos', 'dashboard', 'financeiro'].includes(NUK.moduloActual)) carregarModulo(NUK.moduloActual);
+    actualizarBadgeRemota();
+    if (['pedidos', 'dashboard', 'financeiro', 'remota'].includes(NUK.moduloActual)) carregarModulo(NUK.moduloActual);
   });
 
   // Serviço, hospedagem ou evento pedido no portal: avisa a equipa e actualiza a caixa de entrada
@@ -158,11 +160,13 @@ function iniciarWebSocket() {
   }));
 
   NUK.socket.on('pedido_atualizado', () => {
+    actualizarBadgeRemota();
     if (NUK.moduloActual === 'pedidos') carregarModulo('pedidos');
   });
 
   NUK.socket.on('mesa_atualizada', () => {
-    if (NUK.moduloActual === 'mesas') carregarModulo('mesas');
+    // não se refaz o ecrã enquanto está aberto o painel de venda da mesa (perdia-se o pedido a meio)
+    if (NUK.moduloActual === 'mesas' && !document.getElementById('venda-grelha')) carregarModulo('mesas');
   });
 
   NUK.socket.on('quarto_atualizado', () => {

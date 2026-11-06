@@ -198,8 +198,8 @@ async function criarPedidoRestaurante({ tenantId, itens, mesa_ref, observacoes, 
     }
     const pedidoId = uuidv4();
     await db.query(
-      `INSERT INTO pedidos (id, tenant_id, mesa_id, cliente_id, status, total, desconto, observacoes, metodo_pagamento, nukcoin_pago, criado_em, atualizado_em)
-       VALUES ($1,$2,$3,$4,'ABERTO',$5,$6,$7,$8,$9,NOW(),NOW())`,
+      `INSERT INTO pedidos (id, tenant_id, mesa_id, cliente_id, status, total, desconto, observacoes, metodo_pagamento, nukcoin_pago, origem, criado_em, atualizado_em)
+       VALUES ($1,$2,$3,$4,'ABERTO',$5,$6,$7,$8,$9,'REMOTA',NOW(),NOW())`,
       [pedidoId, T(tenantId), mesaId, cliente_id || null, totalFinal, desconto, observacoes || null, metodo, nukcoinPago]);
     for (const l of linhas) {
       await db.query(`INSERT INTO itens_pedido (id, pedido_id, produto_id, quantidade, preco_unitario) VALUES ($1,$2,$3,$4,$5)`, [uuidv4(), pedidoId, l.produto_id, l.quantidade, l.preco_unitario]);

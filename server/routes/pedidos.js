@@ -5,7 +5,7 @@
  */
 const express = require('express');
 const router  = express.Router();
-const { authMiddleware, validarUUID } = require('../middleware/auth');
+const { authMiddleware, validarUUID, isUUID } = require('../middleware/auth');
 const svc = require('../services/pedidos.service');
 const docs = require('../services/documentos.service');
 
@@ -87,6 +87,40 @@ router.get('/hoje', authMiddleware, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// ── GET /api/pedidos/por-validar ─────────────────────────────────────────────
+/**
+ * @openapi
+ * /api/pedidos/por-validar:
+ *   get:
+ *     summary: Pedidos remotos (QR do cliente) à espera de validação do caixa
+ *     tags: [Pedidos]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: Lista, mais antigos primeiro }
+ */
+router.get('/por-validar', authMiddleware, async (req, res, next) => {
+  try { res.json(await svc.listarPorValidar({ tenantId: req.tenantId })); } catch (e) { next(e); }
+});
+
+// ── GET /api/pedidos/takeaway/elegivel ───────────────────────────────────────
+/**
+ * @openapi
+ * /api/pedidos/takeaway/elegivel:
+ *   get:
+ *     summary: Indica se o cliente já usou o espaço (condição para o Take Away)
+ *     tags: [Pedidos]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { in: query, name: cliente_id, required: true, schema: { type: string, format: uuid } }
+ *     responses: { 200: { description: "{ elegivel }" }, 400: { description: cliente_id inválido } }
+ */
+router.get('/takeaway/elegivel', authMiddleware, async (req, res, next) => {
+  try {
+    if (!isUUID(req.query.cliente_id)) return res.status(400).json({ erro: 'cliente_id inválido' });
+    res.json({ elegivel: await svc.takeAwayElegivel({ tenantId: req.tenantId, clienteId: req.query.cliente_id }) });
+  } catch (e) { next(e); }
+});
+
 // ── POST /api/pedidos ────────────────────────────────────────────────────────
 /**
  * @openapi
@@ -135,6 +169,7 @@ router.post('/', authMiddleware, async (req, res, next) => {
       cliente_id:  req.body.cliente_id,
       itens:       req.body.itens,
       observacoes: req.body.observacoes,
+      origem:      req.body.origem,
     });
     res.status(201).json(pedido);
   } catch (e) {

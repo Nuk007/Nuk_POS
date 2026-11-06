@@ -598,3 +598,30 @@ tr:hover td { background: rgba(255,255,255,.02); }
 }
 .btn-primario:disabled, .btn-secundario:disabled, .acoes-quarto button:disabled { box-shadow: 0 2px 0 var(--aresta); transform: none; }
 @media (prefers-reduced-motion: reduce) { .btn-primario, .btn-secundario, .nav-item, .mesa-card, .quarto-card { transition: none; } }
+
+/* ── Painel de venda (Mesa, Balcão, Take Away) ───────────────── */
+.venda-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 1rem; align-items: start; }
+@media (max-width: 900px) { .venda-layout { grid-template-columns: 1fr; } }
+.venda-categorias { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: .9rem; }
+.venda-cat.activa { background: var(--c-primary); color: #fff; border-color: var(--c-primary-dark); }
+.venda-grelha { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: .75rem; }
+.venda-produto {
+  position: relative; display: flex; flex-direction: column; justify-content: space-between; gap: .4rem; min-height: 5.6rem;
+  padding: .7rem; text-align: left; color: var(--c-text); cursor: pointer;
+  background: var(--c-surface); background-image: linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,0));
+  border: 1px solid var(--c-border); border-radius: var(--radius);
+  box-shadow: 0 4px 0 #0c121b, 0 6px 10px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.18);
+  transition: transform .08s, box-shadow .08s, border-color .15s;
+}
+.venda-produto:hover { border-color: var(--c-primary); }
+.venda-produto:active { transform: translateY(3px); box-shadow: 0 1px 0 #0c121b, inset 0 2px 4px rgba(0,0,0,.25); }
+.venda-produto.no-carrinho { border-color: var(--c-primary); background-color: rgba(232,101,10,.12); }
+.venda-produto-nome { font-weight: 600; font-size: .9rem; }
+.venda-produto-preco { color: var(--c-primary-light); font-size: .85rem; font-weight: 700; }
+.venda-produto-qtd { position: absolute; top: -8px; right: -8px; min-width: 24px; height: 24px; padding: 0 6px; border-radius: 12px; background: var(--c-primary); color: #fff; font-size: .8rem; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.venda-carrinho { position: sticky; top: .5rem; }
+.venda-linha { display: flex; align-items: center; gap: .4rem; margin: .3rem 0; font-size: .85rem; }
+.venda-linha-nome { flex: 1; min-width: 0; }
+.venda-linha-valor { min-width: 70px; text-align: right; }
+.venda-qtd { padding: .1rem .55rem; }
+.venda-total { text-align: right; font-weight: 700; color: var(--c-primary); margin: .6rem 0; }

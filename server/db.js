@@ -378,6 +378,14 @@ async function initDB() {
     // Módulos contratados — espelha a migração 1749700000000
     await client.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS modulos JSONB`);
 
+    // Fluxo de venda e validação do caixa — espelha a migração 1749800000000 (o preenchimento dos dados antigos só corre na migração)
+    await client.query(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS origem VARCHAR(10) NOT NULL DEFAULT 'BALCAO'`);
+    await client.query(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS validado_em TIMESTAMPTZ`);
+    await client.query(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS validado_por UUID REFERENCES funcionarios(id)`);
+    await client.query(`ALTER TABLE pedidos DROP CONSTRAINT IF EXISTS pedidos_origem_check`);
+    await client.query(`ALTER TABLE pedidos ADD CONSTRAINT pedidos_origem_check CHECK (origem IN ('MESA','BALCAO','REMOTA','TAKEAWAY'))`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_pedidos_por_validar ON pedidos (tenant_id, criado_em) WHERE origem = 'REMOTA' AND validado_em IS NULL`);
+
     // Acessos delegáveis — espelha a migração 1749500000000
     await client.query(`ALTER TABLE funcionarios ADD COLUMN IF NOT EXISTS permissoes JSONB`);
 

@@ -87,25 +87,54 @@ async function listarPedidosHoje({ tenantId }) {
   return r.rows;
 }
 
+// Take Away: só comidas e bebidas. Categorias de loja, tabaco, serviços de quarto, shisha e «outro» ficam de fora.
+const NAO_TAKEAWAY = /^(SHISHA|OUTRO)$|LOJA|CIGARR|TABAC|SERVIC|QUARTO/;
+const categoriaTakeAway = (cat) => !NAO_TAKEAWAY.test(String(cat || '').toUpperCase());
+
+/** «Já fez uso do espaço»: tem um pedido fechado ou uma reserva/estadia de quarto que não foi cancelada. */
+async function clienteJaUsouEspaco(db, { tenantId, clienteId }) {
+  const r = await db.query(
+    `SELECT 1 FROM pedidos WHERE cliente_id = $1 AND status = 'FECHADO' AND ($2::uuid IS NULL OR tenant_id = $2)
+     UNION ALL
+     SELECT 1 FROM reservas WHERE cliente_id = $1 AND status IN ('CHECKIN','CHECKOUT') AND ($2::uuid IS NULL OR tenant_id = $2)
+     LIMIT 1`, [clienteId, tenantId || null]);
+  return r.rows.length > 0;
+}
+
 /**
  * Cria um novo pedido numa transacção.
+ * `origem`: MESA (exige mesa_id) | BALCAO | TAKEAWAY (cliente cadastrado que já usou o espaço; só comidas e bebidas).
+ * A origem REMOTA só nasce no portal do cliente.
  * @throws {Error} com mensagem legível em caso de falha de negócio
  */
-async function criarPedido({ tenantId, userId, mesa_id, cliente_id, itens, observacoes }) {
+async function criarPedido({ tenantId, userId, mesa_id, cliente_id, itens, observacoes, origem }) {
   if (!itens || !itens.length) {
     const err = new Error('Pedido sem itens'); err.statusCode = 400; throw err;
   }
+  origem = origem || (mesa_id ? 'MESA' : 'BALCAO');
+  if (!['MESA', 'BALCAO', 'TAKEAWAY'].includes(origem)) { const err = new Error('Origem inválida (Mesa, Balcão ou Take Away)'); err.statusCode = 400; throw err; }
+  if (origem === 'MESA' && !mesa_id) { const err = new Error('Escolha a mesa'); err.statusCode = 400; throw err; }
+  if (origem !== 'MESA') mesa_id = null;
+  if (origem === 'TAKEAWAY' && !cliente_id) { const err = new Error('O Take Away é só para clientes cadastrados'); err.statusCode = 400; throw err; }
 
   const client = await pool.connect();
   let alertasStock = [];
   try {
     await client.query('BEGIN');
 
+    if (origem === 'TAKEAWAY') {
+      const c = await client.query(`SELECT 1 FROM clientes WHERE id = $1 AND ativo = true AND ($2::uuid IS NULL OR tenant_id = $2)`, [cliente_id, tenantId || null]);
+      if (!c.rows[0]) { const err = new Error('Cliente não encontrado'); err.statusCode = 400; throw err; }
+      if (!await clienteJaUsouEspaco(client, { tenantId, clienteId: cliente_id })) {
+        const err = new Error('O Take Away só está disponível para clientes que já usaram o espaço'); err.statusCode = 403; throw err;
+      }
+    }
+
     let total = 0;
     const itensDetalhes = [];
     for (const item of itens) {
       const pr = await client.query(
-        `SELECT preco FROM produtos
+        `SELECT preco, categoria FROM produtos
          WHERE id = $1 AND disponivel = true AND ativo = true
            AND ($2::uuid IS NULL OR tenant_id = $2)`,
         [item.produto_id, tenantId || null]
@@ -114,14 +143,17 @@ async function criarPedido({ tenantId, userId, mesa_id, cliente_id, itens, obser
         const err = new Error(`Produto ${item.produto_id} não disponível`);
         err.statusCode = 400; throw err;
       }
+      if (origem === 'TAKEAWAY' && !categoriaTakeAway(pr.rows[0].categoria)) {
+        const err = new Error('O Take Away é só para comidas e bebidas'); err.statusCode = 400; throw err;
+      }
       total += pr.rows[0].preco * item.quantidade;
       itensDetalhes.push({ ...item, preco_unitario: pr.rows[0].preco });
     }
 
     const pedidoR = await client.query(
-      `INSERT INTO pedidos (tenant_id, mesa_id, cliente_id, funcionario_id, total, observacoes)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [tenantId || null, mesa_id || null, cliente_id || null, userId, total, observacoes || null]
+      `INSERT INTO pedidos (tenant_id, mesa_id, cliente_id, funcionario_id, total, observacoes, origem, validado_em, validado_por)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $4) RETURNING *`,
+      [tenantId || null, mesa_id || null, cliente_id || null, userId, total, observacoes || null, origem]
     );
     const pedido = pedidoR.rows[0];
 
@@ -197,8 +229,12 @@ async function actualizarStatusPedido({ tenantId, pedidoId, status, userId }) {
     }
 
     const r = await db.query(
-      `UPDATE pedidos SET status = $1, atualizado_em = NOW() WHERE id = $2 RETURNING *`,
-      [status, pedidoId]
+      // sair do «por validar» (qualquer estado menos cancelar) é o caixa a validar o pedido remoto
+      `UPDATE pedidos SET status = $1::text, atualizado_em = NOW(),
+              validado_em  = CASE WHEN $1::text <> 'CANCELADO' THEN COALESCE(validado_em, NOW()) ELSE validado_em END,
+              validado_por = CASE WHEN $1::text <> 'CANCELADO' THEN COALESCE(validado_por, $3::uuid) ELSE validado_por END
+       WHERE id = $2 RETURNING *`,
+      [status, pedidoId, userId || null]
     );
 
     if (status === 'CANCELADO' && parseFloat(p.nukcoin_pago) > 0 && p.cliente_id) {
@@ -258,4 +294,24 @@ async function actualizarStatusItem({ tenantId, pedidoId, itemId, status_cozinha
   return r.rows[0];
 }
 
-module.exports = { listarPedidos, listarPedidosHoje, criarPedido, actualizarStatusPedido, actualizarStatusItem };
+/** Pedidos remotos (QR do cliente) à espera de validação do caixa, os mais antigos primeiro. */
+async function listarPorValidar({ tenantId }) {
+  const r = await pool.query(`
+    SELECT p.*, m.numero AS mesa_numero, c.nome AS cliente_nome, c.telefone AS cliente_telefone,
+           json_agg(json_build_object('produto_nome', pr.nome, 'quantidade', ip.quantidade, 'preco_unitario', ip.preco_unitario))
+             FILTER (WHERE ip.id IS NOT NULL) AS itens
+    FROM pedidos p
+    LEFT JOIN mesas m         ON p.mesa_id = m.id
+    LEFT JOIN clientes c      ON p.cliente_id = c.id
+    LEFT JOIN itens_pedido ip ON p.id = ip.pedido_id
+    LEFT JOIN produtos pr     ON ip.produto_id = pr.id
+    WHERE p.origem = 'REMOTA' AND p.validado_em IS NULL AND p.status = 'ABERTO'
+      AND ($1::uuid IS NULL OR p.tenant_id = $1)
+    GROUP BY p.id, m.numero, c.nome, c.telefone
+    ORDER BY p.criado_em ASC`, [tenantId || null]);
+  return r.rows;
+}
+
+const takeAwayElegivel = ({ tenantId, clienteId }) => clienteJaUsouEspaco(pool, { tenantId, clienteId });
+
+module.exports = { categoriaTakeAway, clienteJaUsouEspaco, takeAwayElegivel, listarPorValidar, listarPedidos, listarPedidosHoje, criarPedido, actualizarStatusPedido, actualizarStatusItem };

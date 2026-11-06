@@ -88,7 +88,7 @@ describe('portal do cliente (cliente.html ↔ cliente.js)', () => {
     const corte = (de, ate) => js.slice(js.indexOf(de), js.indexOf(ate));
     vm.runInContext(corte('const SECCOES', 'const METODOS') + corte('function gridDe', 'function buildMenu') + '\nthis.gridDe = gridDe; this.EMOJI_CAT = EMOJI_CAT;', ctx);
     const esperado = { CHURRASCO: 'grid-comidas', PEIXE: 'grid-comidas', PRATO: 'grid-comidas', ENTRADA: 'grid-comidas', ACOMPANHAMENTO: 'grid-comidas',
-      BEBIDA: 'grid-bebidas', COCKTAIL: 'grid-bebidas', SHISHA: 'grid-cigarros', SOBREMESA: 'grid-outros', OUTRO: 'grid-outros' };
+      BEBIDA: 'grid-bebidas', COCKTAIL: 'grid-bebidas', SHISHA: 'grid-cigarros', CIGARROS: 'grid-cigarros', LOJA: 'grid-loja', SERVICO_QUARTO: 'grid-quartos', SOBREMESA: 'grid-outros', OUTRO: 'grid-outros' };
     categorias.forEach(c => { expect([c, ctx.gridDe(c)]).toEqual([c, esperado[c]]); expect(ctx.EMOJI_CAT[c]).toBeTruthy(); });
     expect(ctx.gridDe('qualquer-coisa-nova')).toBe('grid-outros');
   });

@@ -344,6 +344,7 @@ async function confirmarNovoPedido() {
 async function modulo_mesas(el) {
   try {
     const mesas = await api('GET', '/mesas') || [];
+    window._mesasLista = mesas;
     const zonas = [...new Set(mesas.map(m => m.zona || 'Geral'))].sort();
 
     el.innerHTML = `
@@ -360,11 +361,11 @@ async function modulo_mesas(el) {
             <div class="secao-titulo" style="font-size:.8rem;color:var(--c-muted);margin-bottom:.5rem">${zona.toUpperCase()} (${mesasZona.length})</div>
             <div class="grid-cards">
               ${mesasZona.map(m => `
-                <div class="mesa-card ${m.status}" data-on-click="modalMesa('${m.id}','${m.numero}','${m.status}')">
+                <div class="mesa-card ${m.status}" data-on-click="abrirVendaMesa('${m.id}')">
                   <div class="card-numero">${m.numero}</div>
                   <div class="card-zona">${m.capacidade} lugares</div>
                   <div class="status-badge status-${m.status}" style="font-size:.7rem;margin-top:.3rem">${m.status}</div>
-                  ${parseInt(m.pedidos_activos) > 0 ? `<div class="card-pedidos" style="margin-top:.2rem">${m.pedidos_activos} pedido(s)</div>` : ''}
+                  ${parseInt(m.pedidos_ativos) > 0 ? `<div class="card-pedidos" style="margin-top:.2rem">${m.pedidos_ativos} pedido(s)</div>` : ''}
                 </div>`).join('')}
             </div>
           </div>`;
@@ -1433,13 +1434,24 @@ async function toggleActivarFunc(id, ativo) {
 // ════════════════════════════════════════════════════════════
 // CONFIGURAÇÕES
 // ════════════════════════════════════════════════════════════
-// Fluxos de venda ainda por definir pelo dono (Balcão, Remota, Take Away): ecrãs provisórios
-function moduloFluxoPorDefinir(el, titulo) {
-  el.innerHTML = `<div class="secao-titulo">${titulo}</div><div class="card" style="max-width:520px"><div class="muted">O fluxo desta venda ainda está por definir. Assim que for indicado, aparece aqui.</div></div>`;
+// Número de mesas (Configurações). Reduzir pede confirmação; o servidor recusa se as últimas estiverem em uso.
+function guardarMesas() {
+  const n = parseInt(document.getElementById('cfg-mesas').value, 10);
+  if (!Number.isInteger(n) || n < 0 || n > 200) { toast('Indique um número entre 0 e 200', 'erro'); return; }
+  if (n < (window._nMesas || 0)) {
+    modalConfirmar('Reduzir mesas', `Vai passar de <b>${window._nMesas}</b> para <b>${n}</b> mesas: as de número mais alto são retiradas (só se estiverem livres e sem pedidos registados).`, 'reduzirMesasConfirmado', n);
+    return;
+  }
+  definirMesas(n);
 }
-async function modulo_balcao(el) { moduloFluxoPorDefinir(el, '🧾 Balcão'); }
-async function modulo_remota(el) { moduloFluxoPorDefinir(el, '📱 Remota'); }
-async function modulo_takeaway(el) { moduloFluxoPorDefinir(el, '🥡 Take Away'); }
+function reduzirMesasConfirmado(n) { fecharModal(); definirMesas(parseInt(n, 10)); }
+async function definirMesas(n) {
+  try {
+    const r = await api('PUT', '/mesas/quantidade', { quantidade: n });
+    toast(`Mesas: ${r.quantidade}` + (r.criadas ? ` (+${r.criadas})` : '') + (r.removidas ? ` (−${r.removidas})` : ''), 'sucesso');
+    carregarModulo('configuracoes');
+  } catch (e) { toast(e.message, 'erro'); }
+}
 
 // Licença do estabelecimento (NUK.utilizador.modulos = chaves contratadas; ausente = tudo, contas antigas)
 function licenciadoModulo(k) {
@@ -1463,6 +1475,8 @@ async function modulo_configuracoes(el) {
     const lic = k => licenciadoModulo(k);
     const quartos = lic('hospedagem') ? (await api('GET', '/quartos') || []) : [];
     const produtos = lic('restauracao') ? (await api('GET', '/produtos') || []) : [];
+    const nMesas = lic('restauracao') ? ((await api('GET', '/mesas/quantidade')) || {}).quantidade || 0 : 0;
+    window._nMesas = nMesas;
     const listas = await api('GET', '/listas') || {};
     const dsh = await api('GET', '/dashboard/itens') || { itens: [], servicos: {} };
     window._cfgDash = { produtos, categorias: (listas.CATEGORIA_PRODUTO?.opcoes || []).filter(o => o.ativo).map(o => o.valor), servicos: dsh.servicos };
@@ -1542,6 +1556,15 @@ async function modulo_configuracoes(el) {
               <div class="muted" style="font-size:.8rem">${formatarMoeda(q.preco_2h)}/2h · ${formatarMoeda(q.preco_pernoite)} pernoite · ${formatarMoeda(q.preco_diaria)} diária</div></div>
             <button class="btn-secundario" data-on-click="modalFormQuarto('${q.id}')">Editar</button>
           </div>`).join('') : '<div class="muted">Ainda não há quartos. Crie o primeiro.</div>'}
+      </div>` : ''}
+
+      ${lic('restauracao') ? `<div class="card mt-2" style="max-width:500px">
+        <div class="card-titulo">MESAS</div>
+        <p class="muted texto-pequeno" style="margin:.4rem 0 .6rem">Quantas mesas tem o estabelecimento. As novas chamam-se M01, M02… e aparecem como botões em Vendas → Mesa.</p>
+        <div style="display:flex;gap:.5rem;align-items:center">
+          <input id="cfg-mesas" type="number" min="0" max="200" value="${nMesas}" style="width:100px">
+          <button class="btn-primario" data-on-click="guardarMesas()">Guardar</button>
+        </div>
       </div>` : ''}
 
       ${lic('restauracao') ? `<div class="card mt-2">

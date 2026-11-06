@@ -20,12 +20,14 @@ const MESA_QR = (new URLSearchParams(location.search).get('mesa') || '').trim().
 const SECCOES = {
   comidas:  { grid: 'grid-comidas',  cats: ['CHURRASCO', 'PEIXE', 'PRATO', 'ENTRADA', 'ACOMPANHAMENTO'] },
   bebidas:  { grid: 'grid-bebidas',  cats: ['BEBIDA', 'COCKTAIL'] },
-  cigarros: { grid: 'grid-cigarros', cats: ['SHISHA'] },
+  cigarros: { grid: 'grid-cigarros', cats: ['SHISHA', 'CIGARROS'] },
+  loja:     { grid: 'grid-loja',     cats: ['LOJA'] },
+  quartos:  { grid: 'grid-quartos',  cats: ['SERVICO_QUARTO'] },
   outros:   { grid: 'grid-outros',   cats: [] },            // tudo o resto (SOBREMESA, OUTRO, …)
 };
 const EMOJI_CAT = {
   CHURRASCO: '🍖', PEIXE: '🐟', PRATO: '🍽️', ENTRADA: '🥗', ACOMPANHAMENTO: '🍚',
-  BEBIDA: '🥤', COCKTAIL: '🍹', SHISHA: '💨', SOBREMESA: '🍮', OUTRO: '📦',
+  BEBIDA: '🥤', COCKTAIL: '🍹', SHISHA: '💨', CIGARROS: '🚬', LOJA: '🛍️', SERVICO_QUARTO: '🛎️', SOBREMESA: '🍮', OUTRO: '📦',
 };
 const METODOS = {
   coin:     { api: 'NUKCOIN',       nome: 'Nuk-Coin' },
