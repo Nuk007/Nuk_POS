@@ -68,7 +68,7 @@ router.patch('/:id/status', authMiddleware, async (req, res) => {
   const tenantId = req.tenantId;
   try {
     const r = await pool.query(
-      `UPDATE mesas SET status = $1, atualizado_em = NOW()
+      `UPDATE mesas SET status = $1, ultima_atividade = NOW()
        WHERE id = $2 AND ($3::uuid IS NULL OR tenant_id = $3)
        RETURNING *`,
       [status, id, tenantId || null]
