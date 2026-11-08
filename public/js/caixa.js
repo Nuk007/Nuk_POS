@@ -178,7 +178,7 @@ async function modulo_recebimentos(el) {
     const lista = await api('GET', '/caixa/por-receber') || [];
     // uma conta por mesa; os restantes (balcão, take away, remota) cada um com a sua
     const contas = {};
-    lista.forEach(p => { const k = p.mesa_numero ? 'M' + p.mesa_numero : 'P' + p.id; (contas[k] = contas[k] || { titulo: p.mesa_numero ? `Mesa ${p.mesa_numero}` : ({ BALCAO: 'Balcão', TAKEAWAY: 'Take Away', REMOTA: 'Remota', LAZER: 'Lazer', LOJA: 'Loja' }[p.origem] || 'Pedido') + (p.cliente_nome ? ` · ${p.cliente_nome}` : ''), pedidos: [] }).pedidos.push(p); });
+    lista.forEach(p => { const k = p.mesa_numero ? 'M' + p.mesa_numero : p.quarto_numero ? 'Q' + p.quarto_numero : 'P' + p.id; (contas[k] = contas[k] || { titulo: p.mesa_numero ? `Mesa ${p.mesa_numero}` : p.quarto_numero ? `Quarto ${p.quarto_numero}` : ({ BALCAO: 'Balcão', TAKEAWAY: 'Take Away', REMOTA: 'Remota', LAZER: 'Lazer', LOJA: 'Loja' }[p.origem] || 'Pedido') + (p.cliente_nome ? ` · ${p.cliente_nome}` : ''), pedidos: [] }).pedidos.push(p); });
     window._contas = Object.values(contas);
     el.innerHTML = `<div class="toolbar"><span class="secao-titulo">🧾 Receber mesas</span><span class="muted">Pedidos já fechados, à espera de pagamento</span></div>
       ${window._contas.length ? window._contas.map((c, i) => {

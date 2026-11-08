@@ -8,6 +8,7 @@ const { pool } = require('../db');
 const { broadcast } = require('../middleware/broadcast');
 const { buildWhere, withTx } = require('./shared');
 const stock = require('./stock.service');
+const ocupacao = require('./ocupacao.service');
 
 /**
  * Lista pedidos paginados com filtros opcionais.
@@ -110,14 +111,16 @@ async function clienteJaUsouEspaco(db, { tenantId, clienteId }) {
 /** Categorias de produto que cada origem especial pode vender (dívida: devia ser configurável). */
 const CATEGORIAS_ORIGEM = { LAZER: ['LAZER'], LOJA: ['LOJA', 'CIGARROS'] };
 
-async function criarPedido({ tenantId, userId, mesa_id, cliente_id, itens, observacoes, origem }) {
+async function criarPedido({ tenantId, userId, mesa_id, quarto_id, cliente_id, itens, observacoes, origem }) {
   if (!itens || !itens.length) {
     const err = new Error('Pedido sem itens'); err.statusCode = 400; throw err;
   }
   origem = origem || (mesa_id ? 'MESA' : 'BALCAO');
-  if (!['MESA', 'BALCAO', 'TAKEAWAY', 'LAZER', 'LOJA'].includes(origem)) { const err = new Error('Origem inválida (Mesa, Balcão, Take Away, Lazer ou Loja)'); err.statusCode = 400; throw err; }
+  if (!['MESA', 'BALCAO', 'TAKEAWAY', 'LAZER', 'LOJA', 'QUARTO'].includes(origem)) { const err = new Error('Origem inválida (Mesa, Balcão, Take Away, Lazer, Loja ou Quarto)'); err.statusCode = 400; throw err; }
   if (origem === 'MESA' && !mesa_id) { const err = new Error('Escolha a mesa'); err.statusCode = 400; throw err; }
   if (origem !== 'MESA') mesa_id = null;
+  if (origem === 'QUARTO' && !quarto_id) { const err = new Error('Escolha o quarto'); err.statusCode = 400; throw err; }
+  if (origem !== 'QUARTO') quarto_id = null;
   if (origem === 'TAKEAWAY' && !cliente_id) { const err = new Error('O Take Away é só para clientes cadastrados'); err.statusCode = 400; throw err; }
 
   const client = await pool.connect();
@@ -131,6 +134,13 @@ async function criarPedido({ tenantId, userId, mesa_id, cliente_id, itens, obser
       if (!await clienteJaUsouEspaco(client, { tenantId, clienteId: cliente_id })) {
         const err = new Error('O Take Away só está disponível para clientes que já usaram o espaço'); err.statusCode = 403; throw err;
       }
+    }
+
+    if (origem === 'QUARTO') {
+      // Consumo no quarto: o quarto tem de estar ocupado (estadia em curso) e ser deste estabelecimento
+      const q = await client.query(`SELECT status FROM quartos WHERE id = $1 AND ($2::uuid IS NULL OR tenant_id = $2) FOR UPDATE`, [quarto_id, tenantId || null]);
+      if (!q.rows[0]) { const err = new Error('Quarto não encontrado'); err.statusCode = 404; throw err; }
+      if (q.rows[0].status !== 'OCUPADO') { const err = new Error('Só se regista consumo num quarto ocupado'); err.statusCode = 409; throw err; }
     }
 
     let total = 0;
@@ -158,9 +168,9 @@ async function criarPedido({ tenantId, userId, mesa_id, cliente_id, itens, obser
 
     const pedidoR = await client.query(
       // Lazer e Loja não passam pela cozinha: a venda nasce FECHADA e fica a aguardar recebimento no caixa
-      `INSERT INTO pedidos (tenant_id, mesa_id, cliente_id, funcionario_id, total, observacoes, origem, validado_em, validado_por, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $4, $8::text) RETURNING *`,
-      [tenantId || null, mesa_id || null, cliente_id || null, userId, total, observacoes || null, origem, CATEGORIAS_ORIGEM[origem] ? 'FECHADO' : 'ABERTO']
+      `INSERT INTO pedidos (tenant_id, mesa_id, quarto_id, cliente_id, funcionario_id, total, observacoes, origem, validado_em, validado_por, status)
+       VALUES ($1, $2, $9, $3, $4, $5, $6, $7, NOW(), $4, $8::text) RETURNING *`,
+      [tenantId || null, mesa_id || null, cliente_id || null, userId, total, observacoes || null, origem, CATEGORIAS_ORIGEM[origem] ? 'FECHADO' : 'ABERTO', quarto_id || null]
     );
     const pedido = pedidoR.rows[0];
 
@@ -222,6 +232,7 @@ async function actualizarStatusPedido({ tenantId, pedidoId, status, userId }) {
     const err = new Error('Status inválido'); err.statusCode = 400; throw err;
   }
 
+  const libertas = { mesas: [], quartos: [] };
   const pedido = await withTx(async db => {
     const atual = await db.query(
       `SELECT * FROM pedidos WHERE id = $1 AND ($2::uuid IS NULL OR tenant_id = $2) FOR UPDATE`,
@@ -233,6 +244,16 @@ async function actualizarStatusPedido({ tenantId, pedidoId, status, userId }) {
     if (p.status === 'FECHADO' || p.status === 'CANCELADO') {
       const err = new Error(`Pedido ${p.status === 'FECHADO' ? 'fechado' : 'cancelado'}: já não pode mudar de estado`);
       err.statusCode = 409; throw err;
+    }
+
+    // Regra do dono: depois de 5 minutos já não se cancela (a mesa/quarto fica em uso até a conta ser paga).
+    // Excepção: pedido remoto ainda por validar (o caixa pode recusá-lo) — ainda ninguém o aceitou.
+    if (status === 'CANCELADO' && !(p.origem === 'REMOTA' && !p.validado_em)) {
+      const minutos = (Date.now() - new Date(p.criado_em).getTime()) / 60000;
+      if (minutos > ocupacao.JANELA_CANCELAR_MIN) {
+        const err = new Error(`Já passaram mais de ${ocupacao.JANELA_CANCELAR_MIN} minutos: o pedido já não se pode cancelar. A conta tem de ser paga no Caixa.`);
+        err.statusCode = 409; err.codigo = 'JANELA_CANCELAR'; throw err;
+      }
     }
 
     const r = await db.query(
@@ -262,17 +283,16 @@ async function actualizarStatusPedido({ tenantId, pedidoId, status, userId }) {
 
     if (status === 'CANCELADO') await stock.devolverStockPedido(db, { pedidoId, userId });
 
-    if ((status === 'FECHADO' || status === 'CANCELADO') && p.mesa_id) {
-      const outros = await db.query(
-        `SELECT 1 FROM pedidos WHERE mesa_id = $1 AND status NOT IN ('FECHADO', 'CANCELADO') AND id != $2 LIMIT 1`,
-        [p.mesa_id, pedidoId]
-      );
-      if (!outros.rows.length) await db.query(`UPDATE mesas SET status = 'LIVRE' WHERE id = $1`, [p.mesa_id]);
+    // Fechar não liberta: a mesa/quarto continua em uso até pagar. Cancelar (nos 5 min) liberta se não houver mais contas.
+    if (status === 'CANCELADO') {
+      if (await ocupacao.libertarMesaSePago(db, p.mesa_id, pedidoId)) libertas.mesas.push(p.mesa_id);
+      if (await ocupacao.libertarQuartoSePago(db, p.quarto_id, pedidoId)) libertas.quartos.push(p.quarto_id);
     }
     return r.rows[0];
   });
 
   broadcast('pedido_atualizado', { id: pedidoId, status }, tenantId);
+  ocupacao.avisarLibertadas(tenantId, libertas);
   if (pedido.nukcoin_estornado) broadcast('nukcoin_carregado', { cliente_id: pedido.cliente_id }, tenantId);
   return pedido;
 }

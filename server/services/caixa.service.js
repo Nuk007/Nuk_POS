@@ -9,6 +9,7 @@ const { pool } = require('../db');
 const { broadcast } = require('../middleware/broadcast');
 const { withTx, erro } = require('./shared');
 const portal = require('./portal.service');
+const ocupacao = require('./ocupacao.service');
 
 const METODOS_BALCAO = ['CASH', 'TPA', 'TRANSFERENCIA', 'EXPRESS'];
 const METODOS_RECEBIMENTO = [...METODOS_BALCAO, 'NUKCOIN', 'CARTAO'];
@@ -157,13 +158,13 @@ async function listarCartoes({ tenantId }) {
 // ── Recebimento dos pedidos fechados ────────────────────────
 async function porReceber({ tenantId }) {
   const r = await pool.query(`
-    SELECT p.id, p.origem, p.total, p.criado_em, p.atualizado_em, p.cliente_id, ms.numero AS mesa_numero, c.nome AS cliente_nome,
+    SELECT p.id, p.origem, p.total, p.criado_em, p.atualizado_em, p.cliente_id, ms.numero AS mesa_numero, qt.numero AS quarto_numero, c.nome AS cliente_nome,
            json_agg(json_build_object('produto_nome', pr.nome, 'quantidade', ip.quantidade, 'preco_unitario', ip.preco_unitario)) FILTER (WHERE ip.id IS NOT NULL) AS itens
     FROM pedidos p
-    LEFT JOIN mesas ms ON ms.id = p.mesa_id LEFT JOIN clientes c ON c.id = p.cliente_id
+    LEFT JOIN mesas ms ON ms.id = p.mesa_id LEFT JOIN quartos qt ON qt.id = p.quarto_id LEFT JOIN clientes c ON c.id = p.cliente_id
     LEFT JOIN itens_pedido ip ON ip.pedido_id = p.id LEFT JOIN produtos pr ON pr.id = ip.produto_id
     WHERE p.tenant_id = $1 AND p.status = 'FECHADO' AND p.pago_em IS NULL
-    GROUP BY p.id, ms.numero, c.nome ORDER BY p.atualizado_em ASC`, [tenantId]);
+    GROUP BY p.id, ms.numero, qt.numero, c.nome ORDER BY p.atualizado_em ASC`, [tenantId]);
   return r.rows;
 }
 
@@ -172,6 +173,7 @@ async function receber({ tenantId, userId, pedido_ids, metodo, pin, cliente_id, 
   const ids = [...new Set(pedido_ids)];
   const m = validarMetodo(metodo, METODOS_RECEBIMENTO);
 
+  let libertas = { mesas: [], quartos: [] };
   const out = await withTx(async db => {
     const s = await exigirSessao(db, tenantId);
     const r = await db.query(`SELECT * FROM pedidos WHERE id = ANY($1::uuid[]) AND tenant_id = $2 ORDER BY id FOR UPDATE`, [ids, tenantId]);
@@ -225,8 +227,11 @@ async function receber({ tenantId, userId, pedido_ids, metodo, pin, cliente_id, 
       await registar(db, { tenantId, sessaoId: s.id, tipo: 'RECEBIMENTO', metodo: m, valor: parseFloat(p.total), descricao: 'Recebimento de pedido', pedidoId: p.id, clienteId: cliId || p.cliente_id, cartaoId, userId });
     }
     await db.query(`UPDATE pedidos SET pago_em = NOW(), pago_metodo = $1, pago_por = $2 WHERE id = ANY($3::uuid[])`, [m, userId || null, ids]);
+    // Pago: a mesa/quarto deixa de estar «em uso» se já não tem outras contas por pagar
+    libertas = await ocupacao.libertarAposPagamento(db, tenantId, pedidos);
     return { total, metodo: m, pedidos: ids.length, troco, saldo_restante: saldo, cliente_id: cliId };
   });
+  ocupacao.avisarLibertadas(tenantId, libertas);
   broadcast('caixa_atualizada', {}, tenantId);
   if (out.cliente_id && m === 'NUKCOIN') broadcast('nukcoin_carregado', { cliente_id: out.cliente_id }, tenantId);
   return out;

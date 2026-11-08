@@ -137,6 +137,14 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 - `LAZER` entrou nos padrões de `CATEGORIA_PRODUTO` (tenants novos; os existentes acrescentam-na em Configurações). No portal cai na secção «outros» (🎯).
 - Dívida: sem preços por hora/entrada nem controlo de lotação ou reservas de espaços de lazer; a lista de bens da Loja não tem fornecedor/stock mínimo próprios (usa produtos e receitas de stock).
 
+## Mesa e quarto em uso até pagar (regra do dono)
+- **Conta por pagar** = pedido não cancelado sem `pago_em`. Enquanto existir, a mesa (`OCUPADA`) ou o quarto fica em uso. Lógica em `services/ocupacao.service.js` (`libertarMesaSePago`, `libertarQuartoSePago`, `libertarAposPagamento`). **Fechar o pedido já não liberta a mesa**; liberta-a o Caixa ao receber (`caixa.service.receber`) ou o cancelamento dentro da janela.
+- **Cancelar só nos primeiros 5 minutos** (`JANELA_CANCELAR_MIN`, contados desde `pedidos.criado_em`): depois → 409 `JANELA_CANCELAR`, sem excepção para a chefia. Única excepção: pedido remoto ainda por validar (o caixa pode recusá-lo). Dívida: não há anulação com motivo pela chefia para engano depois dos 5 min.
+- Mesa: `PATCH /api/mesas/:id/status` → `LIVRE` com conta por pagar devolve 409 `CONTA_POR_PAGAR`.
+- **Quarto**: a estadia paga-se à entrada; os consumos lançam-se com `POST /api/pedidos {origem:'QUARTO', quarto_id}` (só quarto `OCUPADO`; migração 1750400000000 adiciona `pedidos.quarto_id`, a origem QUARTO e o estado `POR_PAGAR`). Acabado o tempo (ou «Abrir quarto») segue para arrumação como antes; ao dar como limpo com conta por pagar o quarto fica **`POR_PAGAR`** (arrumado mas sem vender) e passa a `DISPONIVEL` quando o Caixa recebe tudo. Em Receber mesas a conta aparece como «Quarto N». `mudarEstado(DISPONIVEL)` também respeita isto.
+- UI: no quarto ocupado, «+ Registar consumo no quarto» (`consumoQuarto` em `venda.js`). Testes: `tests/integration/conta-por-pagar.int.test.js`, `tests/frontend-patrimonio.test.js`.
+- Dívida: o consumo do quarto passa pela cozinha como a mesa (tem de ficar FECHADO para se receber); sem desconto/crédito da estadia na conta; a venda do próprio quarto (estadia) não tem estado de pagamento no Caixa.
+
 ## Dados do estabelecimento (talões e documentos)
 - Configurações → cartão principal: **morada, NIF e telefone** (chaves `morada`, `nif_empresa`, `telefone` em `configuracoes`, por estabelecimento; `PUT /api/configuracoes`, só ADMIN, validados em `routes/configuracoes.js`: NIF 5–20 letras/números, telefone 6–20 com dígitos/espaços/+, morada ≤ 200; vazio apaga). O talão e a factura (`tenantInfo` em `documentos.service.js`) usam-nos com prioridade sobre `tenants.nif`/`telefone_whatsapp`. Teste: `tests/integration/config-contacto.int.test.js`.
 

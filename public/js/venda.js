@@ -8,17 +8,17 @@
  * Sem handlers inline (CSP): data-on-click com argumentos literais.
  */
 const NAO_TAKEAWAY_UI = /^(SHISHA|OUTRO)$|LOJA|CIGARR|TABAC|SERVIC|QUARTO/; // espelha pedidos.service (o servidor é que decide)
-const ROTULO_ORIGEM = { MESA: 'Mesa', BALCAO: 'Balcão', TAKEAWAY: 'Take Away', REMOTA: 'Remota', LAZER: 'Lazer', LOJA: 'Loja' };
+const ROTULO_ORIGEM = { MESA: 'Mesa', BALCAO: 'Balcão', TAKEAWAY: 'Take Away', REMOTA: 'Remota', LAZER: 'Lazer', LOJA: 'Loja', QUARTO: 'Quarto' };
 const CATEGORIAS_ORIGEM_UI = { LAZER: ['LAZER'], LOJA: ['LOJA', 'CIGARROS'] }; // espelha pedidos.service (o servidor é que decide)
 
 // ── Painel de botões ────────────────────────────────────────
-async function abrirPainelVenda(el, { origem, mesa = null, cliente = null }) {
+async function abrirPainelVenda(el, { origem, mesa = null, cliente = null, quarto = null }) {
   el.innerHTML = '<div class="loading-spinner">A carregar...</div>';
   try {
     let produtos = await api('GET', '/produtos?disponivel=true') || [];
     if (origem === 'TAKEAWAY') produtos = produtos.filter(p => !NAO_TAKEAWAY_UI.test(String(p.categoria || '').toUpperCase()));
     if (CATEGORIAS_ORIGEM_UI[origem]) produtos = produtos.filter(p => CATEGORIAS_ORIGEM_UI[origem].includes(String(p.categoria || '').toUpperCase()));
-    window._venda = { origem, mesa, cliente, produtos, categoria: '', carrinho: [] };
+    window._venda = { origem, mesa, cliente, quarto, produtos, categoria: '', carrinho: [] };
     el.innerHTML = htmlPainelVenda();
     vendaRender();
   } catch (e) {
@@ -28,8 +28,8 @@ async function abrirPainelVenda(el, { origem, mesa = null, cliente = null }) {
 
 function htmlPainelVenda() {
   const v = window._venda;
-  const titulo = v.origem === 'MESA' ? `🪑 Mesa ${esc(v.mesa.numero)}` : v.origem === 'TAKEAWAY' ? `🥡 Take Away · ${esc(v.cliente.nome)}` : v.origem === 'LAZER' ? '🎯 Lazer' : v.origem === 'LOJA' ? '🛍️ Loja' : '🧾 Balcão';
-  const voltar = v.origem === 'MESA' ? '<button class="btn-secundario" data-on-click="vendaVoltar()">← Mesas</button>'
+  const titulo = v.origem === 'MESA' ? `🪑 Mesa ${esc(v.mesa.numero)}` : v.origem === 'TAKEAWAY' ? `🥡 Take Away · ${esc(v.cliente.nome)}` : v.origem === 'LAZER' ? '🎯 Lazer' : v.origem === 'LOJA' ? '🛍️ Loja' : v.origem === 'QUARTO' ? `🛏️ Consumo · Quarto ${esc(v.quarto.numero)}` : '🧾 Balcão';
+  const voltar = v.origem === 'QUARTO' ? '<button class="btn-secundario" data-on-click="vendaVoltar()">← Quartos</button>' : v.origem === 'MESA' ? '<button class="btn-secundario" data-on-click="vendaVoltar()">← Mesas</button>'
     : v.origem === 'TAKEAWAY' ? '<button class="btn-secundario" data-on-click="vendaVoltar()">← Outro cliente</button>' : '';
   const estado = v.origem === 'MESA' ? `<button class="btn-secundario" data-on-click="modalMesa('${esc(v.mesa.id)}','${esc(v.mesa.numero)}','${esc(v.mesa.status)}')">Estado da mesa</button>` : '';
   return `
@@ -106,6 +106,7 @@ async function vendaConfirmar() {
   const corpo = {
     origem: v.origem,
     mesa_id: v.mesa ? v.mesa.id : null,
+    quarto_id: v.quarto ? v.quarto.id : null,
     cliente_id: v.cliente ? v.cliente.id : null,
     itens: v.carrinho.map(c => ({ produto_id: c.produto_id, quantidade: c.quantidade })),
     observacoes: (document.getElementById('venda-obs').value || '').trim() || null,
@@ -114,10 +115,17 @@ async function vendaConfirmar() {
     await api('POST', '/pedidos', corpo);
     toast(CATEGORIAS_ORIGEM_UI[v.origem] ? `Venda registada (${ROTULO_ORIGEM[v.origem]}). Receba-a no Caixa → Receber mesas` : `Pedido enviado (${ROTULO_ORIGEM[v.origem]})`, 'sucesso', CATEGORIAS_ORIGEM_UI[v.origem] ? 6000 : undefined);
     if (v.origem === 'BALCAO' || CATEGORIAS_ORIGEM_UI[v.origem]) { v.carrinho = []; document.getElementById('venda-obs').value = ''; vendaRender(); }
-    else carregarModulo(v.origem === 'MESA' ? 'mesas' : 'takeaway');
+    else carregarModulo(v.origem === 'MESA' ? 'mesas' : v.origem === 'QUARTO' ? 'quartos' : 'takeaway');
   } catch (e) { toast(e.message, 'erro'); }
 }
-function vendaVoltar() { carregarModulo(window._venda.origem === 'MESA' ? 'mesas' : 'takeaway'); }
+function vendaVoltar() { carregarModulo(window._venda.origem === 'MESA' ? 'mesas' : window._venda.origem === 'QUARTO' ? 'quartos' : 'takeaway'); }
+// Consumo no quarto: a conta fica por pagar e o quarto não fica disponível até o Caixa a receber
+async function consumoQuarto(id) {
+  const q = quartoPorId(id);
+  if (!q) return;
+  fecharModal();
+  await abrirPainelVenda(document.getElementById('main-content'), { origem: 'QUARTO', quarto: { id: q.id, numero: q.numero } });
+}
 
 // ── Mesa / Balcão ───────────────────────────────────────────
 async function abrirVendaMesa(id) {

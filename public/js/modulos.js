@@ -446,7 +446,7 @@ function horaQuarto(x) {
   const d = new Date(x), h = d.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
   return d.toDateString() === new Date().toDateString() ? h : `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')} ${h}`;
 }
-const NOME_ESTADO_QUARTO = { DISPONIVEL: 'Disponível', OCUPADO: 'Ocupado', LIMPEZA: 'A arrumar', MANUTENCAO: 'Em manutenção', BLOQUEADO: 'Bloqueado' };
+const NOME_ESTADO_QUARTO = { DISPONIVEL: 'Disponível', OCUPADO: 'Ocupado', LIMPEZA: 'A arrumar', POR_PAGAR: 'Por pagar', MANUTENCAO: 'Em manutenção', BLOQUEADO: 'Bloqueado' };
 function textoEstadoQuarto(q) {
   if (q.status === 'OCUPADO' && q.livre_as) return `Ocupado · livre às ${horaQuarto(q.livre_as)}`;
   if (q.status === 'LIMPEZA' && q.limpeza) return q.limpeza.escalado ? 'A arrumar · prazo excedido' : `A arrumar · até ${horaQuarto(q.livre_as)}`;
@@ -456,6 +456,7 @@ function textoEstadoQuarto(q) {
 function subtextoLivreQuarto(q) {
   if (q.status === 'OCUPADO') return q.livre_as ? `livre às ${horaQuarto(q.livre_as)}` : 'hora por definir';
   if (q.status === 'LIMPEZA' && q.limpeza) return q.limpeza.escalado ? 'prazo excedido' : `livre às ${horaQuarto(q.livre_as)}`;
+  if (q.status === 'POR_PAGAR') return 'pagar no Caixa';
   return '';
 }
 function htmlBotaoQuarto(q) {
@@ -502,6 +503,8 @@ function modalQuarto(id) {
   abrirModal(`Quarto ${q.numero} — ${q.tipo.replace(/_/g, ' ')}`, `
     <p class="mb-2">${badgeStatus(q.status)} <span class="muted">${esc(textoEstadoQuarto(q))}</span></p>
     ${q.ocupacao ? `<p class="muted texto-pequeno mb-2">Em curso: ${horaQuarto(q.ocupacao.checkin)} → ${horaQuarto(q.ocupacao.checkout)} · ${esc(FRACOES_QUARTO[q.ocupacao.fracao][0])}${q.ocupacao.nome_hospede ? ' · ' + esc(q.ocupacao.nome_hospede) : ''}</p>` : ''}
+    ${q.status === 'POR_PAGAR' ? '<div class="quartos-aviso">💳 O quarto está arrumado mas tem consumos por pagar. Só fica disponível depois de o Caixa receber a conta (Caixa → Receber mesas).</div>' : ''}
+    ${vende && ['OCUPADO'].includes(q.status) ? `<button class="btn-secundario btn-bloco" style="margin-bottom:.75rem" data-on-click="consumoQuarto('${esc(q.id)}')">+ Registar consumo no quarto</button>` : ''}
     ${q.status === 'LIMPEZA' ? `<div class="quartos-aviso">${escalado ? '⚠️ O prazo de arrumação terminou: só um gerente ou supervisor pode abrir este quarto.' : `🧹 Arrumar até às ${horaQuarto(q.livre_as)}.`}
       ${podeLimpar ? '<button class="btn-primario btn-bloco" style="margin-top:.5rem" data-on-click="pedirQuartoLimpo()">Dar como limpo e disponível</button>' : '<div class="muted texto-pequeno" style="margin-top:.4rem">Só quem tem o perfil de arrumação o pode dar como limpo.</div>'}</div>` : ''}
     <div class="campo"><label>Serviço</label>

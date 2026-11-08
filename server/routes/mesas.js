@@ -6,6 +6,7 @@ const { authMiddleware, requerNivel, isUUID } = require('../middleware/auth');
 const { broadcast } = require('../middleware/broadcast');
 const { exigirModulo } = require('../middleware/modulos');
 const svc = require('../services/mesas.service');
+const ocupacao = require('../services/ocupacao.service');
 
 // GET /api/mesas
 router.get('/', authMiddleware, async (req, res) => {
@@ -67,6 +68,10 @@ router.patch('/:id/status', authMiddleware, async (req, res) => {
   }
   const tenantId = req.tenantId;
   try {
+    // Regra do dono: mesa com conta por pagar fica em uso até o Caixa receber
+    if (status === 'LIVRE' && await ocupacao.mesaTemContaPorPagar(pool, id)) {
+      return res.status(409).json({ erro: 'A mesa tem uma conta por pagar: só fica livre depois de paga no Caixa.', codigo: 'CONTA_POR_PAGAR' });
+    }
     const r = await pool.query(
       `UPDATE mesas SET status = $1, ultima_atividade = NOW()
        WHERE id = $2 AND ($3::uuid IS NULL OR tenant_id = $3)

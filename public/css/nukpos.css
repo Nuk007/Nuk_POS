@@ -306,7 +306,7 @@ tr:hover td { background: rgba(255,255,255,.02); }
 .status-LIVRE, .status-DISPONIVEL { background: rgba(16,185,129,.15); color: var(--c-success); }
 .status-OCUPADA, .status-OCUPADO, .status-ABERTO { background: rgba(232,101,10,.15); color: var(--c-primary); }
 .status-RESERVADA, .status-CONFIRMADA, .status-EM_PREPARO { background: rgba(59,130,246,.15); color: var(--c-info); }
-.status-LIMPEZA, .status-PRONTO, .status-PENDENTE { background: rgba(245,158,11,.15); color: var(--c-warning); }
+.status-LIMPEZA, .status-POR_PAGAR, .status-PRONTO, .status-PENDENTE { background: rgba(245,158,11,.15); color: var(--c-warning); }
 .status-MANUTENCAO, .status-CANCELADO, .status-CANCELADA { background: rgba(239,68,68,.15); color: var(--c-danger); }
 .status-FECHADO, .status-CHECKOUT { background: rgba(156,163,175,.15); color: var(--c-muted); }
 .status-CHECKIN { background: rgba(16,185,129,.15); color: var(--c-success); }
@@ -327,7 +327,7 @@ tr:hover td { background: rgba(255,255,255,.02); }
 .mesa-card:hover, .quarto-card:hover { border-color: var(--c-primary); transform: translateY(-2px); }
 .mesa-card.OCUPADA, .quarto-card.OCUPADO { border-color: var(--c-primary); background: rgba(232,101,10,.08); }
 .mesa-card.LIVRE, .quarto-card.DISPONIVEL { border-color: var(--c-success); }
-.mesa-card.LIMPEZA, .quarto-card.LIMPEZA { border-color: var(--c-warning); }
+.mesa-card.LIMPEZA, .quarto-card.LIMPEZA, .quarto-card.POR_PAGAR { border-color: var(--c-warning); }
 .mesa-card.MANUTENCAO, .quarto-card.MANUTENCAO { border-color: var(--c-danger); }
 .card-numero { font-size: 1.3rem; font-weight: 700; }
 .card-zona, .card-tipo { font-size: .7rem; color: var(--c-muted); margin: .1rem 0; }
@@ -516,7 +516,7 @@ tr:hover td { background: rgba(255,255,255,.02); }
 .quarto-estado { font-size: .74rem; font-weight: 600; margin-top: .35rem; line-height: 1.25; }
 .quarto-card.DISPONIVEL .quarto-estado { color: var(--c-success); }
 .quarto-card.OCUPADO .quarto-estado { color: var(--c-primary); }
-.quarto-card.LIMPEZA .quarto-estado { color: var(--c-warning); }
+.quarto-card.LIMPEZA .quarto-estado, .quarto-card.POR_PAGAR .quarto-estado { color: var(--c-warning); }
 .quarto-card.escalado { border-color: var(--c-danger); animation: quarto-pulsa 1.6s ease-in-out infinite; }
 .quarto-card.escalado .quarto-estado { color: var(--c-danger); }
 .quarto-card .estrela { margin-top: auto; padding-top: .35rem; font-size: .75rem; font-weight: 700; }

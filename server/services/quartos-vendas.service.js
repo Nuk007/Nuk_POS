@@ -15,6 +15,7 @@ const { pool } = require('../db');
 const { erro, withTx } = require('./shared');
 const { temPerfil } = require('./funcionarios.service');
 const { broadcast } = require('../middleware/broadcast');
+const ocupacao = require('./ocupacao.service');
 
 const MIN = 60e3;
 const DURACAO_H = { DUAS_HORAS: 2, PERNOITE: 12, DIARIA: 24 }; // Hora / Noite / Diária
@@ -60,7 +61,7 @@ async function exigirPeriodoLivre(c, quartoId, inicio, fim, ignorarId) {
 }
 
 function estadoOcupacao(q) {
-  return { OCUPADO: 'O quarto está ocupado', LIMPEZA: 'O quarto está a ser arrumado', MANUTENCAO: 'O quarto está em manutenção', BLOQUEADO: 'O quarto está bloqueado' }[q.status];
+  return { OCUPADO: 'O quarto está ocupado', POR_PAGAR: 'O quarto tem uma conta por pagar: só fica disponível depois de paga no Caixa', LIMPEZA: 'O quarto está a ser arrumado', MANUTENCAO: 'O quarto está em manutenção', BLOQUEADO: 'O quarto está bloqueado' }[q.status];
 }
 
 // ── listagem (com tudo o que o botão do quarto mostra) ───────────
@@ -219,10 +220,13 @@ async function marcarLimpo({ tenantId, userId, quartoId, concluirManual = false 
     }
     const atraso = t ? Math.max(0, Math.ceil((agora - new Date(t.prazo_em)) / MIN)) : 0;
     if (t) await c.query(`UPDATE quarto_limpezas SET limpo_em = $2, limpo_por = $3, atraso_min = $4 WHERE id = $1`, [t.id, agora, userId, atraso]);
-    await c.query(`UPDATE quartos SET status = 'DISPONIVEL', atualizado_em = NOW() WHERE id = $1`, [quartoId]);
-    return { ok: true, atraso_min: atraso };
+    // Arrumado, mas com conta por pagar: não se vende até o Caixa receber
+    const porPagar = await ocupacao.quartoTemContaPorPagar(c, quartoId);
+    const novo = porPagar ? 'POR_PAGAR' : 'DISPONIVEL';
+    await c.query(`UPDATE quartos SET status = $2, atualizado_em = NOW() WHERE id = $1`, [quartoId, novo]);
+    return { ok: true, atraso_min: atraso, status: novo };
   });
-  broadcast('quarto_atualizado', { quarto_id: quartoId, status: 'DISPONIVEL' }, tenantId);
+  broadcast('quarto_atualizado', { quarto_id: quartoId, status: res.status }, tenantId);
   return res;
 }
 
@@ -236,6 +240,7 @@ async function mudarEstado({ tenantId, userId, quartoId, status }) {
   }
   const out = await withTx(async c => {
     const q = await bloquearQuarto(c, tenantId, quartoId);
+    if (status === 'DISPONIVEL' && await ocupacao.quartoTemContaPorPagar(c, quartoId)) status = 'POR_PAGAR'; // conta por pagar: continua em uso
     const r = await c.query(`UPDATE quartos SET status = $2, atualizado_em = NOW() WHERE id = $1 RETURNING *`, [quartoId, status]);
     if (status === 'LIMPEZA' && cur.status !== 'LIMPEZA') {
       const agora = new Date();

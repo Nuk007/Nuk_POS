@@ -138,6 +138,7 @@ router.get('/takeaway/elegivel', authMiddleware, async (req, res, next) => {
  *             required: [itens]
  *             properties:
  *               mesa_id:    { type: string, format: uuid }
+ *               quarto_id:  { type: string, format: uuid, description: "Com origem QUARTO: consumo no quarto ocupado; fica por pagar até o Caixa receber" }
  *               cliente_id: { type: string, format: uuid }
  *               observacoes: { type: string }
  *               itens:
@@ -166,6 +167,7 @@ router.post('/', authMiddleware, async (req, res, next) => {
       tenantId:    req.tenantId,
       userId:      req.user.id,
       mesa_id:     req.body.mesa_id,
+      quarto_id:   req.body.quarto_id,
       cliente_id:  req.body.cliente_id,
       itens:       req.body.itens,
       observacoes: req.body.observacoes,

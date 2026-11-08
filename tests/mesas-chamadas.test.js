@@ -107,7 +107,8 @@ describe('PATCH /api/mesas/:id/status', () => {
   });
 
   it('retorna 404 quando mesa não existe', async () => {
-    mockPool.query.mockResolvedValueOnce({ rows: [] });
+    mockPool.query.mockResolvedValueOnce({ rows: [] }); // sem contas por pagar
+    mockPool.query.mockResolvedValueOnce({ rows: [] }); // UPDATE sem linha
 
     const res = await request(app)
       .patch(`/api/mesas/${MESA_ID}/status`)

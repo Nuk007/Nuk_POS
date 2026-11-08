@@ -72,18 +72,35 @@ describe('pedidos.service — criarPedido (transacção)', () => {
 });
 
 describe('pedidos.service — ciclo de vida e mesa', () => {
-  test('FECHADO liberta a mesa só quando não há outros pedidos abertos', async () => {
+  test('FECHADO não liberta a mesa: fica em uso até a conta ser paga', async () => {
     const f = await fixtures(A.tenantId);
     const p1 = await svc.criarPedido({ tenantId: A.tenantId, userId: A.userId, mesa_id: f.mesaId, itens: [{ produto_id: f.prodId, quantidade: 1 }] });
     const p2 = await svc.criarPedido({ tenantId: A.tenantId, userId: A.userId, mesa_id: f.mesaId, itens: [{ produto_id: f.bebidaId, quantidade: 1 }] });
+    const estado = async () => (await pool.query(`SELECT status FROM mesas WHERE id=$1`, [f.mesaId])).rows[0].status;
 
     await svc.actualizarStatusPedido({ tenantId: A.tenantId, pedidoId: p1.id, status: 'FECHADO' });
-    let mesa = await pool.query(`SELECT status FROM mesas WHERE id=$1`, [f.mesaId]);
-    expect(mesa.rows[0].status).toBe('OCUPADA'); // p2 ainda aberto
-
     await svc.actualizarStatusPedido({ tenantId: A.tenantId, pedidoId: p2.id, status: 'FECHADO' });
-    mesa = await pool.query(`SELECT status FROM mesas WHERE id=$1`, [f.mesaId]);
-    expect(mesa.rows[0].status).toBe('LIVRE');
+    expect(await estado()).toBe('OCUPADA'); // fechados mas por pagar
+
+    // pago só um: continua em uso; pagos os dois: livre
+    const ocupacao = require('../../server/services/ocupacao.service');
+    await pool.query(`UPDATE pedidos SET pago_em = NOW() WHERE id = $1`, [p1.id]);
+    expect(await ocupacao.libertarMesaSePago(pool, f.mesaId)).toBe(false);
+    await pool.query(`UPDATE pedidos SET pago_em = NOW() WHERE id = $1`, [p2.id]);
+    expect(await ocupacao.libertarMesaSePago(pool, f.mesaId)).toBe(true);
+    expect(await estado()).toBe('LIVRE');
+  });
+
+  test('cancelar nos primeiros 5 minutos liberta a mesa; depois disso já não se cancela', async () => {
+    const f = await fixtures(A.tenantId);
+    const p1 = await svc.criarPedido({ tenantId: A.tenantId, userId: A.userId, mesa_id: f.mesaId, itens: [{ produto_id: f.prodId, quantidade: 1 }] });
+    await svc.actualizarStatusPedido({ tenantId: A.tenantId, pedidoId: p1.id, status: 'CANCELADO' });
+    expect((await pool.query(`SELECT status FROM mesas WHERE id=$1`, [f.mesaId])).rows[0].status).toBe('LIVRE');
+
+    const p2 = await svc.criarPedido({ tenantId: A.tenantId, userId: A.userId, mesa_id: f.mesaId, itens: [{ produto_id: f.prodId, quantidade: 1 }] });
+    await pool.query(`UPDATE pedidos SET criado_em = NOW() - INTERVAL '6 minutes' WHERE id = $1`, [p2.id]);
+    await expect(svc.actualizarStatusPedido({ tenantId: A.tenantId, pedidoId: p2.id, status: 'CANCELADO' })).rejects.toMatchObject({ statusCode: 409, codigo: 'JANELA_CANCELAR' });
+    expect((await pool.query(`SELECT status FROM mesas WHERE id=$1`, [f.mesaId])).rows[0].status).toBe('OCUPADA');
   });
 
   test('status fora do CHECK é bloqueado no serviço; pedido de outro tenant → 404', async () => {

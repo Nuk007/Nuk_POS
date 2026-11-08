@@ -259,7 +259,7 @@ async function initDB() {
         preco_2h NUMERIC(10,2) NOT NULL,
         preco_pernoite NUMERIC(10,2) NOT NULL,
         preco_diaria NUMERIC(10,2) NOT NULL,
-        status VARCHAR(20) DEFAULT 'DISPONIVEL' CHECK (status IN ('DISPONIVEL','OCUPADO','LIMPEZA','MANUTENCAO','BLOQUEADO')),
+        status VARCHAR(20) DEFAULT 'DISPONIVEL' CHECK (status IN ('DISPONIVEL','OCUPADO','LIMPEZA','POR_PAGAR','MANUTENCAO','BLOQUEADO')),
         descricao TEXT,
         criado_em TIMESTAMPTZ DEFAULT NOW(),
         atualizado_em TIMESTAMPTZ DEFAULT NOW(),
@@ -383,7 +383,12 @@ async function initDB() {
     await client.query(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS validado_em TIMESTAMPTZ`);
     await client.query(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS validado_por UUID REFERENCES funcionarios(id)`);
     await client.query(`ALTER TABLE pedidos DROP CONSTRAINT IF EXISTS pedidos_origem_check`);
-    await client.query(`ALTER TABLE pedidos ADD CONSTRAINT pedidos_origem_check CHECK (origem IN ('MESA','BALCAO','REMOTA','TAKEAWAY','LAZER','LOJA'))`); // inclui LAZER/LOJA (migração 1750300000000)
+    await client.query(`ALTER TABLE pedidos ADD CONSTRAINT pedidos_origem_check CHECK (origem IN ('MESA','BALCAO','REMOTA','TAKEAWAY','LAZER','LOJA','QUARTO'))`); // inclui LAZER/LOJA (1750300000000) e QUARTO (1750400000000)
+    // Conta do quarto por pagar — espelha a migração 1750400000000
+    await client.query(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS quarto_id UUID REFERENCES quartos(id) ON DELETE SET NULL`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_pedidos_quarto ON pedidos (quarto_id) WHERE quarto_id IS NOT NULL`);
+    await client.query(`ALTER TABLE quartos DROP CONSTRAINT IF EXISTS quartos_status_check`);
+    await client.query(`ALTER TABLE quartos ADD CONSTRAINT quartos_status_check CHECK (status IN ('DISPONIVEL','OCUPADO','LIMPEZA','POR_PAGAR','MANUTENCAO','BLOQUEADO'))`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_pedidos_por_validar ON pedidos (tenant_id, criado_em) WHERE origem = 'REMOTA' AND validado_em IS NULL`);
 
     // Caixa do dia, cartões de consumo e recebimento — espelha a migração 1749900000000 (o preenchimento dos dados antigos só corre na migração)

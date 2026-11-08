@@ -70,12 +70,35 @@ describe('Lazer e Loja (frontend)', () => {
     ctx.vendaAdd(0);
     ctx._els['venda-obs'] = { value: '' };
     await ctx.vendaConfirmar();
-    expect(ctx._chamadas).toContainEqual(['POST', '/pedidos', { origem: 'LAZER', mesa_id: null, cliente_id: null, itens: [{ produto_id: 'p2', quantidade: 1 }], observacoes: null }]);
+    expect(ctx._chamadas).toContainEqual(['POST', '/pedidos', { origem: 'LAZER', mesa_id: null, quarto_id: null, cliente_id: null, itens: [{ produto_id: 'p2', quantidade: 1 }], observacoes: null }]);
     expect(ctx.window._venda.carrinho).toHaveLength(0); // pronto para a venda seguinte
   });
   test('Loja mostra loja e cigarros', async () => {
     const ctx = carregar(dados, ['modulos.js', 'venda.js']);
     await ctx.modulo_loja({ innerHTML: '' });
     expect(ctx.window._venda.produtos.map(p => p.nome)).toEqual(['Camisa', 'Maço']);
+  });
+});
+
+describe('Consumo no quarto (frontend)', () => {
+  const quartoOcup = { id: 'q1', numero: '101', tipo: 'SUITE', status: 'OCUPADO', preco_2h: 1, preco_pernoite: 2, preco_diaria: 3, reservas_futuras: [] };
+  const dados = { '/produtos?disponivel=true': [{ id: 'p1', nome: 'Cuca', preco: 600, categoria: 'BEBIDA', disponivel: true }] };
+  test('quarto ocupado oferece «Registar consumo»; quarto livre e por pagar não', () => {
+    const ctx = carregar(dados, ['modulos.js', 'venda.js']);
+    ctx.NUK.utilizador = { nivel_acesso: 'OPERADOR', pode_vender_quartos: true };
+    ctx.window._quartos = [quartoOcup, { ...quartoOcup, id: 'q2', status: 'DISPONIVEL' }, { ...quartoOcup, id: 'q3', status: 'POR_PAGAR' }];
+    ctx.modalQuarto('q1'); expect(ctx._modal).toContain("consumoQuarto('q1')");
+    ctx.modalQuarto('q2'); expect(ctx._modal).not.toContain('consumoQuarto');
+    ctx.modalQuarto('q3'); expect(ctx._modal).not.toContain('consumoQuarto'); expect(ctx._modal).toContain('Por pagar');
+  });
+  test('o consumo envia origem QUARTO com o quarto_id', async () => {
+    const ctx = carregar(dados, ['modulos.js', 'venda.js']);
+    ctx.window._quartos = [quartoOcup];
+    await ctx.consumoQuarto('q1');
+    expect(ctx.window._venda.origem).toBe('QUARTO');
+    ctx.vendaAdd(0); ctx._els['venda-obs'] = { value: '' };
+    await ctx.vendaConfirmar();
+    expect(ctx._chamadas).toContainEqual(['POST', '/pedidos', { origem: 'QUARTO', mesa_id: null, quarto_id: 'q1', cliente_id: null, itens: [{ produto_id: 'p1', quantidade: 1 }], observacoes: null }]);
+    expect(ctx._modulo).toBe('quartos');
   });
 });
