@@ -32,7 +32,7 @@ const TABELAS_OPERACIONAIS = [
  * Cria tenant ACTIVA + licença ACTIVA + admin, devolvendo ids e token JWT válido.
  * Reutilizado por todos os ficheiros de integração.
  */
-async function criarTenantFixture({ slug = 'teste', nivel = 'ADMIN' } = {}) {
+async function criarTenantFixture({ slug = 'teste', nivel = 'ADMIN', adesao = true } = {}) {
   const plano = await pool.query(`SELECT id FROM planos_assinatura ORDER BY preco_mensal LIMIT 1`);
   const planoId = plano.rows[0]?.id || null;
 
@@ -56,6 +56,15 @@ async function criarTenantFixture({ slug = 'teste', nivel = 'ADMIN' } = {}) {
     [tenantId, `Admin ${slug}`, `admin@${slug}.ao`, hash, nivel]
   );
   const user = f.rows[0];
+  // Contrato de Adesão (13/11/2026): sem ele a operação responde 428. Os testes partem de um estabelecimento
+  // que já o assinou; os testes da adesão usam tenants próprios sem este registo.
+  if (adesao) {
+    const { ADESAO_VERSAO } = require('../../server/services/adesao-texto');
+    await pool.query(
+      `INSERT INTO adesoes_plataforma (tenant_id, versao, texto, texto_hash, assinado_por, nome_escrito, hash)
+       VALUES ($1, $2, 'texto de teste', repeat('0', 64), $3, $4, repeat('0', 64))`,
+      [tenantId, ADESAO_VERSAO, user.id, `Admin ${slug}`]);
+  }
 
   const token = gerarToken({ id: user.id, email: user.email, nivel_acesso: user.nivel_acesso, tenantId });
   return { tenantId, userId: user.id, email: user.email, password: 'Senha@123', token, slug };

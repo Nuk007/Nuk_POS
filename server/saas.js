@@ -724,6 +724,17 @@ async function verificarLicencaTenant(req, res, next) {
       });
     }
 
+    // Contrato de Adesão à Plataforma Nuk_POS da GESTNUK AI (decisão do dono de 13/11/2026): sem a versão em
+    // vigor assinada pelo titular, a operação fica parada (428) até ele a assinar no primeiro acesso.
+    const { ADESAO_VERSAO } = require('./services/adesao-texto');
+    const a = await pool.query(`SELECT 1 FROM adesoes_plataforma WHERE tenant_id = $1 AND versao = $2`, [tenantId, ADESAO_VERSAO]);
+    if (a.rows.length === 0) {
+      return res.status(428).json({
+        erro: 'O Contrato de Adesão à Plataforma Nuk_POS ainda não foi assinado. O administrador titular assina-o ao entrar.',
+        codigo: 'ADESAO_PENDENTE',
+      });
+    }
+
     next();
   } catch (err) {
     next(); // em caso de erro de BD não bloquear operação
@@ -736,6 +747,12 @@ async function verificarLicencaTenant(req, res, next) {
 function resolverTenant(req, res, next) {
   if (req.user && req.user.tenantId) {
     req.tenantId = req.user.tenantId;
+  } else {
+    // O authMiddleware de cada router ainda não correu: lê-se o token aqui (13/11/2026), senão a
+    // verificação da licença e da adesão nunca sabia de que estabelecimento era o pedido.
+    const { lerTokenOpcional } = require('./middleware/auth');
+    const t = lerTokenOpcional(req);
+    if (t && t.tenantId) req.tenantId = t.tenantId;
   }
   next();
 }

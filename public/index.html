@@ -48,6 +48,30 @@
   </div>
 </div>
 
+<!-- ── CONTRATO DE ADESÃO (13/11/2026) ───────────────── -->
+<!-- Antes da operação: o administrador titular lê e assina a adesão à Plataforma Nuk_POS da GESTNUK AI. -->
+<div id="tela-adesao" class="tela-adesao" style="display:none">
+  <div class="adesao-card">
+    <div class="adesao-topo">
+      <span class="marca"><img src="/img/logo-nukpos-texto.png" alt="Nuk_POS" width="597" height="176"></span>
+      <button type="button" class="btn-secundario" id="adesao-sair">Sair</button>
+    </div>
+    <h2 class="adesao-titulo">Contrato de Adesão à Plataforma</h2>
+    <p id="adesao-intro" class="muted"></p>
+    <div id="adesao-texto" class="adesao-texto"></div>
+    <form id="form-adesao" style="display:none">
+      <div class="campo">
+        <label for="adesao-nome">O seu nome completo</label>
+        <input type="text" id="adesao-nome" minlength="5" maxlength="160" autocomplete="name" required>
+      </div>
+      <label class="adesao-aceito"><input type="checkbox" id="adesao-aceito" required> Li o contrato e aceito-o em nome do estabelecimento.</label>
+      <button type="submit" class="btn-primario btn-bloco" id="btn-adesao">Assinar o contrato</button>
+      <div id="adesao-erro" class="erro-msg" style="display:none"></div>
+    </form>
+    <div id="adesao-aviso" class="aviso-msg" style="display:none">O administrador titular do estabelecimento tem de assinar este contrato antes de a operação ficar disponível. Pode lê-lo acima.</div>
+  </div>
+</div>
+
 <!-- ── APP PRINCIPAL ──────────────────────────────────── -->
 <div id="app" style="display:none">
 
@@ -208,6 +232,7 @@
 <script src="/socket.io/socket.io.js"></script>
 <script src="/js/pwa.js" defer></script>
 <script src="/js/nukpos.js"></script>
+<script src="/js/adesao.js"></script>
 <script src="/js/modulos.js"></script>
 <script src="/js/venda.js"></script>
 <script src="/js/caixa.js"></script>

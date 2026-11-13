@@ -1497,6 +1497,12 @@ async function modulo_configuracoes(el) {
         <button class="btn-primario" data-on-click="guardarConfiguracoes()">Guardar Configurações</button>
       </div>
 
+      <div class="card mt-2" style="max-width:500px">
+        <h3 style="margin-top:0">📄 Contrato de Adesão</h3>
+        <div class="muted texto-pequeno" style="margin-bottom:.75rem">Contrato entre o estabelecimento e a GESTNUK AI, titular da Plataforma Nuk_POS, assinado pelo administrador titular.</div>
+        <button class="btn-secundario" data-on-click="descarregarPdf('/adesao/documento.pdf', 'contrato-adesao-nukpos.pdf')">Descarregar o contrato (PDF)</button>
+      </div>
+
       <div class="card mt-2" style="max-width:700px">
         <div class="card-titulo mb-2">DASHBOARD — ITENS A CONTROLAR</div>
         <div class="muted" style="font-size:.82rem;margin-bottom:.75rem">Cada item aparece no Dashboard com a comparação de hoje, ontem e do mesmo dia da semana passada. Pode controlar um produto, uma categoria, vendas de quartos ou criar contadores manuais (ex.: pessoas na piscina) e pendências (ex.: reclamações).</div>

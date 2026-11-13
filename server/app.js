@@ -1,10 +1,10 @@
 // Nuk_POS — Servidor Principal (refactored)
 // Stack: Node.js + Express + PostgreSQL + Socket.io
 // SaaS multi-tenant: cada empresa tem tenant_id em todas as operações
-// v2026.11.08.1-conta-por-pagar
+// v2026.11.13.1-adesao-gestnuk
 
 require('dotenv').config();
-console.log('[NukPOS] server/app.js v2026.11.08.1-conta-por-pagar a arrancar');
+console.log('[NukPOS] server/app.js v2026.11.13.1-adesao-gestnuk a arrancar');
 
 const express = require('express');
 const http = require('http');
@@ -143,6 +143,7 @@ app.use('/api/saas', saasRouter);
 // C-01 fix: resolverTenant corre PRIMEIRO para popular req.tenantId a partir do JWT,
 // depois verificarLicencaTenant valida a licença usando esse tenantId.
 app.use('/api/auth',           require('./routes/auth'));
+app.use('/api/adesao',         resolverTenant, require('./routes/adesao'));
 app.use('/api/dashboard',      resolverTenant, verificarLicencaTenant, require('./routes/dashboard'));
 app.use('/api/funcionarios',   resolverTenant, verificarLicencaTenant, exigirModulo('funcionarios'), require('./routes/funcionarios'));
 app.use('/api/mesas',          resolverTenant, verificarLicencaTenant, exigirLicenca('restauracao'), require('./routes/mesas'));

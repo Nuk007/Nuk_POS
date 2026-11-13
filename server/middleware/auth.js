@@ -46,6 +46,17 @@ function authMiddleware(req, res, next) {
   }
 }
 
+/**
+ * Lê o JWT sem responder (13/11/2026): devolve o payload, ou null se faltar ou for inválido.
+ * Serve o `resolverTenant`, que corre ANTES do `authMiddleware` de cada router: sem isto o
+ * `verificarLicencaTenant` nunca via o estabelecimento e licenças expiradas/suspensas passavam.
+ */
+function lerTokenOpcional(req) {
+  const h = req.headers['authorization'];
+  if (!h || !h.startsWith('Bearer ')) return null;
+  try { return jwt.verify(h.slice(7), JWT_SECRET_EFFECTIVE); } catch (_) { return null; }
+}
+
 function requerNivel(niveis) {
   return (req, res, next) => {
     if (!niveis.includes(req.user.nivel_acesso)) {
@@ -62,5 +73,6 @@ module.exports = {
   isUUID,
   validarUUID,
   authMiddleware,
+  lerTokenOpcional,
   requerNivel,
 };

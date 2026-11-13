@@ -521,6 +521,22 @@ async function initDB() {
       await client.query(`ALTER TABLE ${t} ADD CONSTRAINT ${t}_${c}_fkey FOREIGN KEY (${c}) REFERENCES ${ref}(id) ON DELETE ${acao}`);
     }
 
+    // Contrato de Adesão à Plataforma (GESTNUK AI) — espelha a migração 1750500000000
+    await client.query(`CREATE TABLE IF NOT EXISTS adesoes_plataforma (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      versao VARCHAR(40) NOT NULL,
+      texto TEXT NOT NULL,
+      texto_hash CHAR(64) NOT NULL,
+      assinado_por UUID REFERENCES funcionarios(id) ON DELETE SET NULL,
+      nome_escrito VARCHAR(160) NOT NULL,
+      assinado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      ip VARCHAR(60),
+      dispositivo VARCHAR(200),
+      hash CHAR(64) NOT NULL,
+      UNIQUE (tenant_id, versao)
+    )`);
+
     // Património e origens LAZER/LOJA — espelha a migração 1750300000000
     await client.query(`CREATE TABLE IF NOT EXISTS patrimonio_bens (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -39,6 +39,8 @@ async function api(metodo, path, dados) {
   if (!r.ok) {
     // Só faz logout em 401 se já estiver autenticado (não durante o próprio login)
     if (r.status === 401 && NUK.token && path !== '/auth/login') { logout(); return; }
+    // Contrato de Adesão por assinar (13/11/2026): mostra o ecrã de assinatura em vez de um erro solto.
+    if (r.status === 428 && json.codigo === 'ADESAO_PENDENTE' && typeof mostrarAdesao === 'function') { mostrarAdesao(); }
     throw new Error(json.erro || `Erro ${r.status}`);
   }
   return json;
@@ -78,12 +80,21 @@ function logout() {
   localStorage.removeItem('nukpos_user');
   if (NUK.socket) NUK.socket.disconnect();
   document.getElementById('app').style.display = 'none';
+  document.getElementById('tela-adesao').style.display = 'none';
   document.getElementById('tela-login').style.display = 'flex';
 }
 
 // ── Arranque da app ───────────────────────────────────────────
-function iniciarApp() {
+// Primeiro confirma o Contrato de Adesão (13/11/2026): por assinar, abre o ecrã de assinatura e só depois
+// de assinado arranca a operação.
+async function iniciarApp() {
   document.getElementById('tela-login').style.display = 'none';
+  if (typeof verificarAdesao === 'function' && await verificarAdesao()) return;
+  arrancarOperacao();
+}
+
+function arrancarOperacao() {
+  document.getElementById('tela-adesao').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
 
   // Info do utilizador na sidebar
