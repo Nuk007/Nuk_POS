@@ -30,6 +30,9 @@ describe('Contrato de Adesão', () => {
     expect(txt).toContain('Tribunal da Comarca de Luanda');
     expect(txt).toContain('14/26');
     expect(txt).toContain('Documento sem validade fiscal');
+    // Contrato próprio do Nuk_POS (v2, 13/11/2026): não refere outras plataformas da GESTNUK AI.
+    for (const outra of ['EasyCrédito', 'ATC46', 'AviationMoney', 'plataformas']) expect(txt).not.toContain(outra);
+    expect(txt).toContain('titular da Plataforma Nuk_POS');
   });
 
   test('só o titular assina; nome completo e aceitação obrigatórios; depois a operação abre e não se assina duas vezes', async () => {
