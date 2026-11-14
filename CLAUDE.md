@@ -63,7 +63,9 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 - Um pedido/reserva só tem um documento activo (FT/FR sem NC); depois de anulado pode facturar-se de novo (ex.: NIF corrigido). `cliente_id` do corpo tem de ser do próprio estabelecimento (404).
 - **Imutável**: o trigger `nukpos_documento_fiscal_imutavel` recusa UPDATE/DELETE em `faturas` e `fatura_linhas` (excepto a cascata ao apagar o estabelecimento). Nunca acrescentar FK com `ON DELETE SET NULL` a estas tabelas (seria um UPDATE recusado); por isso `emitida_por` não tem FK.
 - Cadeia de integridade com a estrutura AGT (`dia;registo;número;total;assinatura anterior da série`) em `assinar()`; hoje SHA-256. **Falta para a certificação**: chave RSA do produtor em `assinar()`, séries comunicadas à AGT, SAF-T (AO), envio JSON em tempo real (DE 683/25) com contingência, QR e restantes elementos obrigatórios do documento — depende das especificações oficiais e da constituição da GESTNUK AI.
-- Testes: `tests/integration/fiscal.int.test.js` (numeração, linhas, FR/NC, isolamento, imutabilidade) e cálculos em `tests/financeiro.test.js`.
+- UI (Administração → Finanças, `modulo_financeiro` em modulos.js): «+ Emitir documento» com tipo FT/FR e descrição obrigatória; lista com tipo e situação (Válida / Anulada (NC…) / Anula FT…); «Anular» só ADMIN/GERENTE e só em FT/FR válidas → `pedirNotaCredito` usa o `modalConfirmar` com o campo do motivo no texto.
+- Dívida: facturar um pedido ou uma reserva a partir do Caixa/Quartos (hoje a UI só emite valores manuais; a API já aceita `pedido_id`/`reserva_id`).
+- Testes: `tests/integration/fiscal.int.test.js` (numeração, linhas, FR/NC, isolamento, imutabilidade), cálculos em `tests/financeiro.test.js` e ecrã em `tests/frontend-modulos.test.js`.
 - Produto GESTNUK (filial da Technuk, Lda). O frontend descarrega os PDFs com `descarregarPdf()` (nukpos.js), sem abrir janelas (CSP).
 
 ## Seed e reset
@@ -98,7 +100,7 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 - 13 das 16 rotas ainda sem camada de serviço nem testes dedicados (financeiro e reservas prioritárias).
 - Cobertura unitária ~59% → meta 75%+.
 - Rate limiters em memória → Redis se houver multi-instância.
-- Certificação AGT: base feita (ver «Módulo fiscal»); faltam assinatura RSA, SAF-T (AO), envio em tempo real e QR. Os PDFs actuais não têm validade fiscal. UI ainda sem botão de nota de crédito nem escolha FT/FR.
+- Certificação AGT: base feita (ver «Módulo fiscal»); faltam assinatura RSA, SAF-T (AO), envio em tempo real e QR. Os PDFs actuais não têm validade fiscal.
 - Frontend (public/, ~4.800 linhas vanilla JS) sem testes.
 
 ## Quartos (configuração)

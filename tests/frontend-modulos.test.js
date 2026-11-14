@@ -174,7 +174,7 @@ describe('formulários usam as listas do estabelecimento', () => {
 describe('acções destrutivas pedem confirmação', () => {
   test('nenhum botão apaga/cancela/desactiva directamente: passa por pedirXxx → modalConfirmar', () => {
     const botoes = [...codigo.matchAll(/data-on-click="([^"]*)"/g)].map(m => m[1]);
-    const directos = botoes.filter(b => /^(apagarQuarto|apagarOpcaoLista|cancelarPedidoConfirmado|cancelarSolicitacaoConfirmada|desactivarFuncConfirmado|removerItemDashboard)\(/.test(b)
+    const directos = botoes.filter(b => /^(apagarQuarto|apagarOpcaoLista|emitirNotaCreditoConfirmada|cancelarPedidoConfirmado|cancelarSolicitacaoConfirmada|desactivarFuncConfirmado|removerItemDashboard)\(/.test(b)
       || /mudarStatusPedido\([^)]*CANCELADO/.test(b) || /actualizarSolicitacao\([^)]*CANCELADA/.test(b));
     // só o botão «Sim, confirmar» do modalConfirmar (construído com ${funcao}) pode chamá-las
     expect(directos).toEqual([]);
@@ -187,5 +187,60 @@ describe('acções destrutivas pedem confirmação', () => {
     expect(html).toContain('apagarQuarto(\'abc\')');
     expect(html).toContain('Sim, confirmar');
     expect(html).toContain('fecharModal()');
+  });
+});
+
+describe('Finanças — documentos fiscais', () => {
+  const docs = [
+    { id: 'f1', tipo_documento: 'FT', numero_fatura: 'FT 2026/000002', total: '1000.00', iva: '122.81', emitida_em: '2026-11-14T10:00:00Z', nome_cliente: 'Ana' },
+    { id: 'f2', tipo_documento: 'FR', numero_fatura: 'FR 2026/000001', total: '500.00', iva: '61.40', emitida_em: '2026-11-14T10:00:00Z', anulada_por_numero: 'NC 2026/000001' },
+    { id: 'f3', tipo_documento: 'NC', numero_fatura: 'NC 2026/000001', total: '500.00', iva: '61.40', emitida_em: '2026-11-14T10:00:00Z', documento_origem_numero: 'FR 2026/000001' },
+  ];
+  const resumo = { pedidos: { receita_total: 0, total_pedidos: 0, pedidos_fechados: 0 }, quartos: { receita_quartos: 0, total_reservas: 0 }, por_categoria: [] };
+  function ctxFin(nivel) {
+    const ctx = carregar({ nivel_acesso: nivel });
+    ctx.formatarData = v => String(v);
+    ctx.api = async (m, url, corpo) => {
+      if (url.startsWith('/financeiro/resumo')) return resumo;
+      if (url === '/financeiro/faturas' && m === 'GET') return docs;
+      ctx.enviado = { m, url, corpo };
+      return { numero_fatura: 'X 2026/000001' };
+    };
+    return ctx;
+  }
+
+  test('mostra tipo e situação; «Anular» só para chefia e só em FT/FR ainda válidas', async () => {
+    const admin = await render(ctxFin('ADMIN'), 'modulo_financeiro');
+    expect(admin).toContain('Factura-recibo');
+    expect(admin).toContain('Anulada (NC 2026/000001)');
+    expect(admin).toContain('Anula FR 2026/000001');
+    expect(admin).toContain("pedirNotaCredito('f1')");
+    expect(admin).not.toContain("pedirNotaCredito('f2')");
+    expect(admin).not.toContain("pedirNotaCredito('f3')");
+    const op = await render(ctxFin('OPERADOR'), 'modulo_financeiro');
+    expect(op).not.toContain('pedirNotaCredito(');
+  });
+
+  test('anular pede motivo e confirmação antes de chamar a API', async () => {
+    const ctx = ctxFin('ADMIN');
+    await render(ctx, 'modulo_financeiro');
+    let html = '';
+    ctx.abrirModal = (t, h) => { html = h; };
+    ctx.pedirNotaCredito('f1');
+    expect(html).toContain("emitirNotaCreditoConfirmada('f1')");
+    expect(html).toContain('Sim, confirmar');
+    expect(html).toContain('id="nc-motivo"');
+    expect(ctx.enviado).toBeUndefined();
+    ctx.document.getElementById = () => ({ value: 'curto' });
+    await ctx.emitirNotaCreditoConfirmada('f1');
+    expect(ctx.enviado).toMatchObject({ m: 'POST', url: '/financeiro/faturas/f1/nota-credito', corpo: { motivo: 'curto' } });
+  });
+
+  test('emitir envia tipo, descrição e valor', async () => {
+    const ctx = ctxFin('OPERADOR');
+    const v = { 'fat-tipo': 'FR', 'fat-desc': 'Aluguer do salão', 'fat-nome': '', 'fat-nif': '', 'fat-total': '25000' };
+    ctx.document.getElementById = id => ({ value: v[id] });
+    await ctx.emitirFatura();
+    expect(ctx.enviado).toMatchObject({ url: '/financeiro/faturas', corpo: { tipo: 'FR', descricao: 'Aluguer do salão', total_manual: 25000 } });
   });
 });
