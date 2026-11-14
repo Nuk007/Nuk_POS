@@ -1,10 +1,10 @@
 // Nuk_POS — Servidor Principal (refactored)
 // Stack: Node.js + Express + PostgreSQL + Socket.io
 // SaaS multi-tenant: cada empresa tem tenant_id em todas as operações
-// v2026.11.14.20-cadeias
+// v2026.11.14.21-agente-impressao
 
 require('dotenv').config();
-console.log('[NukPOS] server/app.js v2026.11.14.20-cadeias a arrancar');
+console.log('[NukPOS] server/app.js v2026.11.14.21-agente-impressao a arrancar');
 
 const express = require('express');
 const http = require('http');
@@ -150,6 +150,7 @@ app.use('/api/mesas',          resolverTenant, verificarLicencaTenant, exigirLic
 app.use('/api/produtos',       resolverTenant, verificarLicencaTenant, exigirLicenca(['restauracao', 'lazer', 'loja']), require('./routes/produtos'));
 app.use('/api/precos',         resolverTenant, verificarLicencaTenant, exigirLicenca(['restauracao', 'lazer', 'loja']), require('./routes/precos'));
 app.use('/api/cozinha',        resolverTenant, verificarLicencaTenant, exigirLicenca('restauracao'), exigirModulo('cozinha'), require('./routes/cozinha'));
+app.use('/api/agente-impressao', require('./routes/agente-impressao')); // programa local, autenticado pelo token do agente
 app.use('/api/impressao',      resolverTenant, verificarLicencaTenant, exigirLicenca(['restauracao', 'lazer', 'loja']), require('./routes/impressao'));
 app.use('/api/pedidos',        resolverTenant, verificarLicencaTenant, exigirLicenca(['restauracao', 'lazer', 'loja']), require('./routes/pedidos'));
 app.use('/api/caixa',          resolverTenant, verificarLicencaTenant, exigirLicenca('caixa'), exigirModulo('caixa'), require('./routes/caixa'));
@@ -181,6 +182,12 @@ app.get('/api/health', async (req, res) => {
   const r = await require('./services/saude.service').verificar();
   if (r.http !== 200) logger.error({ problemas: r.corpo.problemas }, 'Health check: serviço degradado');
   res.status(r.http).json(r.corpo);
+});
+
+// Programa do agente local de impressão em rede (descarregado em Configurações → Impressão em rede)
+app.get('/descargas/agente-impressao.js', (req, res) => {
+  res.set({ 'Content-Type': 'application/javascript; charset=utf-8', 'Content-Disposition': 'attachment; filename="agente.js"', 'Cache-Control': 'no-cache' });
+  res.sendFile(require('path').join(__dirname, '..', 'agente-impressao', 'agente.js'));
 });
 
 // ── SPA fallback ─────────────────────────────────────────────

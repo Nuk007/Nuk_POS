@@ -719,6 +719,8 @@ async function initDB() {
     for (const sql of require('./migrations-data/portal-reservas')) await client.query(sql);
     // Cadeias de estabelecimentos (migração 1751800000000)
     for (const sql of require('./migrations-data/cadeias')) await client.query(sql);
+    // Agente local de impressão em rede (migração 1751900000000)
+    for (const sql of require('./migrations-data/agente-impressao')) await client.query(sql);
 
     // Avaliacoes de staff
     await client.query(`

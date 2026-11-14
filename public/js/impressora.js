@@ -104,10 +104,40 @@ async function impEscolher(tipo) {
     modalImpressora();
   } catch (e) { if (e && e.name !== 'NotFoundError') toast(e.message || 'Não foi possível ligar a impressora', 'erro'); }
 }
+// ── Rede (IP:9100) pelo agente local: o navegador põe o trabalho na fila e o agente entrega-o ──
+function impBase64(bytes) {
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+function impLigacaoRede(ip) {
+  return { nome: `Rede ${ip}`, rede: true, enviar: async bytes => api('POST', '/impressao/rede', { impressora: ip, dados: impBase64(bytes) }) };
+}
+function impEscolherRede() {
+  const ip = (document.getElementById('imp-ip') || {}).value || '';
+  if (!/^\d{1,3}(\.\d{1,3}){3}(:\d{4})?$/.test(ip.trim())) { toast('Escreva o IP da impressora (ex.: 192.168.1.50:9100)', 'erro'); return; }
+  const c = impConfig(); c.ligacao = 'REDE'; c.ip = ip.trim(); impGuardar(c);
+  _impLigacao = impLigacaoRede(c.ip);
+  toast(`Impressora de rede: ${c.ip}`, 'sucesso');
+  modalImpressora();
+}
+/** Espera o agente entregar o trabalho (só no teste: os automáticos seguem sem esperar). */
+async function impEsperarRede(id, maxMs = 15000) {
+  const ate = Date.now() + maxMs;
+  while (Date.now() < ate) {
+    const t = await api('GET', `/impressao/rede/${id}`);
+    if (t.estado === 'ENVIADO') return t;
+    if (t.estado === 'FALHOU') throw new Error(`O agente não conseguiu imprimir: ${t.erro || ''}`);
+    await new Promise(r => setTimeout(r, 1500));
+  }
+  throw new Error('O agente de impressão não respondeu (está ligado no computador da rede?)');
+}
+
 /** Volta a ligar sem perguntar (USB e série lembram a autorização; Bluetooth precisa de novo toque). */
 async function impReligar() {
   const c = impConfig();
   if (_impLigacao) return _impLigacao;
+  if (c.ligacao === 'REDE' && c.ip) return (_impLigacao = impLigacaoRede(c.ip));
   try {
     if (c.ligacao === 'USB' && navigator.usb) { const [d] = await navigator.usb.getDevices(); if (d) _impLigacao = await impLigarUSB(d); }
     if (c.ligacao === 'SERIE' && navigator.serial) { const [p] = await navigator.serial.getPorts(); if (p) _impLigacao = await impLigarSerie(p); }
@@ -117,8 +147,11 @@ async function impReligar() {
 async function impEnviar(doc) {
   const lig = await impReligar();
   if (!lig) throw new Error('Impressora não ligada. Toque em 🖨️ para a ligar.');
-  try { await lig.enviar(impCodificar(doc)); }
-  catch (e) { _impLigacao = null; throw new Error('A impressora não respondeu: ' + (e.message || e)); }
+  try { return await lig.enviar(impCodificar(doc)); }
+  catch (e) {
+    if (lig.rede) throw e; // erro do servidor (sem agente, IP não permitido…): a mensagem já diz o que fazer
+    _impLigacao = null; throw new Error('A impressora não respondeu: ' + (e.message || e));
+  }
 }
 
 // ── Recibos do Caixa ────────────────────────────────────────
@@ -163,7 +196,7 @@ function impArrancar() {
 // ── Configuração deste dispositivo ──────────────────────────
 function modalImpressora() {
   const c = impConfig();
-  const ligada = _impLigacao ? `<b style="color:var(--c-success)">Ligada: ${esc(_impLigacao.nome)}</b>` : c.ligacao === 'NENHUMA' ? 'Sem impressora directa (usa o PDF)' : `<span style="color:#f59e0b">${{ USB: 'USB', SERIE: 'Porta série', BLUETOOTH: 'Bluetooth' }[c.ligacao]}: por ligar — toque em «Ligar» abaixo</span>`;
+  const ligada = _impLigacao ? `<b style="color:var(--c-success)">Ligada: ${esc(_impLigacao.nome)}</b>` : c.ligacao === 'NENHUMA' ? 'Sem impressora directa (usa o PDF)' : c.ligacao === 'REDE' ? `<b style="color:var(--c-success)">Rede: ${esc(c.ip || '')} (pelo agente local)</b>` : `<span style="color:#f59e0b">${{ USB: 'USB', SERIE: 'Porta série', BLUETOOTH: 'Bluetooth' }[c.ligacao]}: por ligar — toque em «Ligar» abaixo</span>`;
   const sup = { USB: !!navigator.usb, SERIE: !!navigator.serial, BLUETOOTH: !!navigator.bluetooth };
   abrirModal('🖨️ Impressora deste dispositivo', `
     <p style="margin-bottom:.6rem">${ligada}</p>
@@ -171,6 +204,8 @@ function modalImpressora() {
       ${['USB', 'SERIE', 'BLUETOOTH'].map(t => `<button class="btn-secundario" ${sup[t] ? '' : 'disabled title="Não suportado neste navegador"'} data-on-click="impEscolher('${t}')">Ligar por ${{ USB: 'USB', SERIE: 'porta série', BLUETOOTH: 'Bluetooth' }[t]}</button>`).join('')}
       ${c.ligacao !== 'NENHUMA' ? '<button class="btn-secundario" data-on-click="impDesligar()">Deixar de usar</button>' : ''}
     </div>
+    <div class="campo"><label>Impressora de rede (Wi-Fi/cabo), pelo agente local</label>
+      <div style="display:flex;gap:.4rem"><input id="imp-ip" placeholder="192.168.1.50:9100" value="${esc(c.ip || '')}" style="flex:1"><button class="btn-secundario" data-on-click="impEscolherRede()">Usar rede</button></div></div>
     <div class="campo"><label>Largura do papel</label><select id="imp-colunas">${[[32, '58 mm (32 colunas)'], [42, '80 mm (42 colunas)'], [48, '80 mm (48 colunas)']].map(([v, r]) => `<option value="${v}" ${Number(c.colunas) === v ? 'selected' : ''}>${r}</option>`).join('')}</select></div>
     <div class="campo"><label>Acentos</label><select id="imp-acentos"><option value="CP860" ${c.acentos === 'CP860' ? 'selected' : ''}>Português (CP860)</option><option value="SEM" ${c.acentos === 'SEM' ? 'selected' : ''}>Sem acentos (se aparecerem caracteres estranhos)</option></select></div>
     <div class="campo"><label class="negrito">Este dispositivo imprime</label>
@@ -183,7 +218,7 @@ function modalImpressora() {
       <button class="btn-primario" style="flex:2" data-on-click="impGuardarModal()">Guardar</button>
       <button class="btn-secundario" style="flex:1" data-on-click="impTeste()">Imprimir teste</button>
     </div>
-    <p class="muted texto-pequeno" style="margin-top:.6rem">Funciona no Chrome ou Edge. Impressoras de rede (Wi-Fi/cabo) precisam de um pequeno programa local — fale connosco.</p>`);
+    <p class="muted texto-pequeno" style="margin-top:.6rem">USB, série e Bluetooth funcionam no Chrome ou Edge. As impressoras de rede precisam do agente local a correr num computador da mesma rede (Configurações → Impressão em rede).</p>`);
 }
 function impGuardarModal() {
   const c = impConfig();
@@ -195,15 +230,16 @@ function impGuardarModal() {
   toast('Impressora configurada neste dispositivo', 'sucesso');
   impArrancar();
 }
-function impDesligar() { const c = impConfig(); c.ligacao = 'NENHUMA'; impGuardar(c); _impLigacao = null; impArrancar(); modalImpressora(); }
+function impDesligar() { const c = impConfig(); c.ligacao = 'NENHUMA'; delete c.ip; impGuardar(c); _impLigacao = null; impArrancar(); modalImpressora(); }
 async function impTeste() {
   const c = impConfig();
   const w = c.colunas;
   try {
-    await impEnviar({ colunas: w, cortar: true, gaveta: false, linhas: [
+    const r = await impEnviar({ colunas: w, cortar: true, gaveta: false, linhas: [
       { t: 'Nuk_POS', a: 'c', n: true, g: true }, { t: 'Teste de impressão', a: 'c' }, { sep: true },
       { t: 'Acentos: ação, pão, café, Açúcar' }, { t: `Largura: ${w} colunas` }, { t: '1234567890'.repeat(5).slice(0, w) }, { sep: true },
       { t: new Date().toLocaleString('pt-PT', { timeZone: 'Africa/Luanda' }), a: 'c' }] });
-    toast('Teste enviado', 'sucesso');
+    if (c.ligacao === 'REDE' && r && r.id) { toast('Enviado ao agente… a aguardar a impressora', 'info'); await impEsperarRede(r.id); }
+    toast('Teste impresso', 'sucesso');
   } catch (e) { toast(e.message, 'erro'); }
 }

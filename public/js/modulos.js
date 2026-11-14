@@ -1634,6 +1634,46 @@ async function alternarPratoDoDia(id, ativo) {
   catch (e) { toast(e.message, 'erro'); }
 }
 
+// ─── Configurações → Impressão em rede (agente local) ───
+async function carregarAgentesImpressao() {
+  const box = document.getElementById('cfg-agentes');
+  if (!box) return;
+  try {
+    const lista = await api('GET', '/impressao/agentes') || [];
+    const activos = lista.filter(a => !a.revogado_em);
+    box.innerHTML = `
+      <div class="card-titulo mb-2">🖨️ IMPRESSÃO EM REDE (AGENTE LOCAL)</div>
+      <div class="muted" style="font-size:.82rem;margin-bottom:.75rem">Para impressoras térmicas Wi-Fi/cabo (IP:9100): corra o agente num computador da mesma rede. Depois, em cada dispositivo, 🖨️ → «Usar rede» com o IP da impressora.</div>
+      ${activos.length ? activos.map(a => `<div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;padding:.35rem 0;border-bottom:1px solid var(--c-border)">
+        <div><b>${esc(a.nome)}</b> <span class="texto-pequeno" style="color:${a.online ? 'var(--c-success)' : 'var(--c-muted)'}">${a.online ? '● ligado' : '○ desligado'}</span>${a.fila ? ` <span class="muted texto-pequeno">${a.fila} na fila</span>` : ''}</div>
+        <button class="btn-perigo" style="padding:.25rem .6rem;font-size:.78rem" data-on-click="pedirRevogarAgente('${esc(a.id)}')">Revogar</button></div>`).join('') : '<div class="muted" style="margin-bottom:.5rem">Nenhum agente.</div>'}
+      <div style="margin-top:.8rem;display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-end">
+        <div class="campo" style="flex:1;min-width:12rem;margin:0"><label>Nome do computador</label><input id="ag-nome" maxlength="80" placeholder="Ex.: PC da cozinha"></div>
+        <button class="btn-primario" data-on-click="criarAgenteImpressao()">Criar agente</button>
+        <a class="btn-secundario" style="text-decoration:none" href="/descargas/agente-impressao.js" download>Descarregar o programa</a>
+      </div>`;
+  } catch (e) { box.innerHTML = ''; }
+}
+async function criarAgenteImpressao() {
+  const nome = document.getElementById('ag-nome').value.trim();
+  try {
+    const a = await api('POST', '/impressao/agentes', { nome });
+    abrirModal('Agente criado', `
+      <p>Copie o token agora: <b>não volta a aparecer</b>.</p>
+      <pre style="white-space:pre-wrap;word-break:break-all;background:var(--c-surface-2,#111);padding:.6rem;border-radius:8px">${esc(a.token)}</pre>
+      <p class="muted texto-pequeno">No computador da rede (com Node.js 18+): <code>node agente.js --token ${esc(a.token)}</code></p>`);
+    carregarAgentesImpressao();
+  } catch (e) { toast(e.message, 'erro'); }
+}
+function pedirRevogarAgente(id) {
+  modalConfirmar('Revogar agente', 'O token deste agente <b>deixa de funcionar</b> e as impressoras de rede param até criar outro. Continuar?', 'revogarAgenteConfirmado', id);
+}
+async function revogarAgenteConfirmado(id) {
+  fecharModal();
+  try { await api('POST', `/impressao/agentes/${id}/revogar`, {}); toast('Agente revogado', 'sucesso'); carregarAgentesImpressao(); }
+  catch (e) { toast(e.message, 'erro'); }
+}
+
 // ─── Configurações → Resumo diário para o dono (WhatsApp) ───
 function cartaoResumoDiario(cfg) {
   const ativo = cfg.resumo_diario_ativo === 'true';
@@ -1770,6 +1810,7 @@ async function modulo_configuracoes(el) {
         <button class="btn-secundario" data-on-click="modalPostosPreparacao()">Definir postos por categoria</button></div>` : ''}
       ${lic('caixa') ? cartaoContasCorrentes(contasCC, clientesCC) : ''}
       ${lic('financas') ? cartaoResumoDiario(cfg) : ''}
+      ${(lic('restauracao') || lic('lazer') || lic('loja')) ? '<div class="card mt-2" style="max-width:700px" id="cfg-agentes"></div>' : ''}
 
       <div class="card mt-2" style="max-width:700px">
         <div class="card-titulo mb-2">DASHBOARD — ITENS A CONTROLAR</div>
@@ -1860,6 +1901,7 @@ async function modulo_configuracoes(el) {
         </div>
       </div>
     `;
+    carregarAgentesImpressao();
   } catch (e) {
     el.innerHTML = `<div class="erro-msg">Erro: ${e.message}</div>`;
   }

@@ -64,3 +64,29 @@ describe('Dispositivo', () => {
     expect(pedidos).toEqual(['/impressao/recibo']);
   });
 });
+
+describe('Impressora de rede (agente local)', () => {
+  test('com ligação REDE o recibo vai para a fila do servidor em base64 com o IP guardado', async () => {
+    const chamadas = [];
+    const ctx = carregar({
+      guardado: { ligacao: 'REDE', ip: '192.168.1.50:9100', colunas: 32, acentos: 'SEM', recibos: true },
+      api: async (m, url, corpo) => { chamadas.push([m, url, corpo]); return url === '/impressao/recibo' ? { colunas: 32, linhas: [{ t: 'Ola' }], cortar: false, gaveta: false } : { id: 't1' }; },
+    });
+    ctx.btoa = s => Buffer.from(s, 'binary').toString('base64');
+    await ctx.imprimirRecibo(['p1']);
+    const fila = chamadas.find(c => c[1] === '/impressao/rede');
+    expect(fila[2].impressora).toBe('192.168.1.50:9100');
+    expect(Buffer.from(fila[2].dados, 'base64').toString('binary')).toContain('Ola');
+  });
+  test('«Usar rede» valida o IP e grava a ligação neste dispositivo', () => {
+    const ctx = carregar();
+    const campo = { value: 'abc' };
+    ctx.document.getElementById = id => (id === 'imp-ip' ? campo : null);
+    ctx.impEscolherRede();
+    expect(ctx._toast[1]).toBe('erro');
+    campo.value = '192.168.1.60:9100';
+    ctx.impEscolherRede();
+    expect(JSON.parse(ctx._store.nuk_impressora)).toMatchObject({ ligacao: 'REDE', ip: '192.168.1.60:9100' });
+    expect(ctx._modal).toContain('Rede 192.168.1.60:9100');
+  });
+});

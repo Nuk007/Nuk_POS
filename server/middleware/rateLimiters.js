@@ -8,6 +8,7 @@
  *   - loginLimiter:      10 req / 15 min  — POST /api/auth/login
  *   - saasLimiter:       5 req / 15 min   — criação de tenants (superadmin)
  *   - stockMovLimiter:   30 req / min     — movimentos de stock (transacções)
+ *   - agenteLimiter:    120 req / min     — agente local de impressão em rede (fora do global)
  */
 
 const rateLimit = require('express-rate-limit');
@@ -18,6 +19,17 @@ const globalLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { erro: 'Demasiados pedidos. Tente novamente mais tarde.' },
+  // o agente local de impressão consulta a fila a cada 3 s: tem limitador próprio (agenteLimiter)
+  skip: (req) => req.path.startsWith('/agente-impressao'),
+});
+
+/** Agente local de impressão em rede: consulta a fila a cada 3 s e confirma cada trabalho. */
+const agenteLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { erro: 'Demasiados pedidos do agente de impressão.' },
 });
 
 const loginLimiter = rateLimit({
@@ -43,7 +55,7 @@ const apiWriteLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { erro: 'Demasiados pedidos de escrita. Tente novamente em breve.' },
-  skip: (req) => req.method === 'GET' || req.method === 'HEAD',
+  skip: (req) => req.method === 'GET' || req.method === 'HEAD' || req.path.startsWith('/agente-impressao'),
 });
 
 const stockMovLimiter = rateLimit({
@@ -54,4 +66,4 @@ const stockMovLimiter = rateLimit({
   message: { erro: 'Demasiados movimentos de stock em simultâneo.' },
 });
 
-module.exports = { globalLimiter, loginLimiter, saasLimiter, apiWriteLimiter, stockMovLimiter };
+module.exports = { globalLimiter, agenteLimiter, loginLimiter, saasLimiter, apiWriteLimiter, stockMovLimiter };
