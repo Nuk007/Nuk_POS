@@ -1507,6 +1507,55 @@ function listaContratada(lista) {
   if (lista === 'CATEGORIA_PATRIMONIO') return licenciadoModulo('patrimonio');
   return true;
 }
+// ─── Configurações → Contas correntes (crédito a clientes; só ADMIN) ───
+function cartaoContasCorrentes(contas, clientes) {
+  const ativas = contas.filter(c => c.conta_corrente_ativa);
+  return `
+      <div class="card mt-2" style="max-width:700px">
+        <div class="card-titulo mb-2">📒 CONTAS CORRENTES (CRÉDITO A CLIENTES)</div>
+        <div class="muted" style="font-size:.82rem;margin-bottom:.75rem">Clientes autorizados podem consumir a crédito até ao limite: no Caixa → Receber escolhe-se «Conta corrente». A dívida paga-se em Caixa → Contas correntes.</div>
+        ${ativas.length ? ativas.map(c => `
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;padding:.35rem 0;border-bottom:1px solid var(--c-border);flex-wrap:wrap">
+            <div style="min-width:0"><b>${esc(c.nome)}</b> <span class="muted" style="font-size:.78rem">dívida ${formatarMoeda(c.saldo)}</span></div>
+            <div class="row-acoes" style="align-items:center">
+              <input type="number" id="cc-lim-${esc(c.id)}" min="0" value="${Number(c.limite_credito)}" style="width:8rem" title="Limite de crédito (Kz)">
+              <button class="btn-secundario" style="padding:.25rem .6rem;font-size:.78rem" data-on-click="guardarLimiteConta('${esc(c.id)}')">Guardar limite</button>
+              <button class="btn-perigo" style="padding:.25rem .6rem;font-size:.78rem" data-on-click="pedirRetirarConta('${esc(c.id)}')">Retirar</button>
+            </div>
+          </div>`).join('') : '<div class="muted" style="margin-bottom:.5rem">Nenhum cliente com conta corrente.</div>'}
+        <div style="margin-top:.9rem;display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-end">
+          <div class="campo" style="flex:2;min-width:12rem;margin:0"><label>Autorizar cliente</label><select id="cc-cliente">
+            <option value="">— escolher cliente registado —</option>
+            ${clientes.map(c => `<option value="${esc(c.id)}">${esc(c.nome)}${c.telefone ? ' · ' + esc(c.telefone) : ''}</option>`).join('')}
+          </select></div>
+          <div class="campo" style="flex:1;min-width:8rem;margin:0"><label>Limite (Kz)</label><input type="number" id="cc-limite" min="0" placeholder="0"></div>
+          <button class="btn-primario" data-on-click="autorizarContaCorrente()">Autorizar</button>
+        </div>
+      </div>`;
+}
+async function autorizarContaCorrente() {
+  const id = document.getElementById('cc-cliente').value;
+  const limite = parseFloat(document.getElementById('cc-limite').value);
+  if (!id) { toast('Escolha o cliente', 'erro'); return; }
+  if (!(limite > 0)) { toast('Indique o limite de crédito', 'erro'); return; }
+  try { await api('PUT', `/caixa/conta-corrente/${id}`, { ativa: true, limite }); toast('Conta corrente autorizada', 'sucesso'); carregarModulo('configuracoes'); }
+  catch (e) { toast(e.message, 'erro'); }
+}
+async function guardarLimiteConta(id) {
+  const limite = parseFloat(document.getElementById(`cc-lim-${id}`).value);
+  if (!(limite >= 0)) { toast('Limite inválido', 'erro'); return; }
+  try { await api('PUT', `/caixa/conta-corrente/${id}`, { limite }); toast('Limite actualizado', 'sucesso'); carregarModulo('configuracoes'); }
+  catch (e) { toast(e.message, 'erro'); }
+}
+function pedirRetirarConta(id) {
+  modalConfirmar('Retirar conta corrente', 'O cliente deixa de poder consumir a crédito. A dívida que já tem <b>mantém-se</b> e continua a poder ser paga no Caixa.', 'retirarContaConfirmado', id);
+}
+async function retirarContaConfirmado(id) {
+  fecharModal();
+  try { await api('PUT', `/caixa/conta-corrente/${id}`, { ativa: false }); toast('Conta corrente retirada', 'sucesso'); carregarModulo('configuracoes'); }
+  catch (e) { toast(e.message, 'erro'); }
+}
+
 async function modulo_configuracoes(el) {
   if (!['ADMIN'].includes(NUK.utilizador.nivel_acesso)) {
     el.innerHTML = '<div class="erro-msg">Acesso restrito ao Administrador</div>';
@@ -1523,6 +1572,10 @@ async function modulo_configuracoes(el) {
     const servAtivos = lic('servicos') ? await api('GET', '/servicos/ativos') : [];
     const servPlanos = lic('servicos') ? await api('GET', '/servicos/manutencoes') : [];
     const listas = await api('GET', '/listas') || {};
+    const rCC = lic('caixa') ? await api('GET', '/caixa/conta-corrente') : [];
+    const contasCC = Array.isArray(rCC) ? rCC : [];
+    const resCli = lic('caixa') ? await api('GET', '/clientes?limit=500') : [];
+    const clientesCC = (Array.isArray(resCli) ? resCli : (resCli && resCli.data) || []).filter(c => !contasCC.some(x => x.id === c.id && x.conta_corrente_ativa));
     const dsh = await api('GET', '/dashboard/itens') || { itens: [], servicos: {} };
     window._cfgDash = { produtos, categorias: (listas.CATEGORIA_PRODUTO?.opcoes || []).filter(o => o.ativo).map(o => o.valor), servicos: dsh.servicos };
 
@@ -1559,6 +1612,8 @@ async function modulo_configuracoes(el) {
         <div class="muted texto-pequeno" style="margin-bottom:.75rem">Contrato entre o estabelecimento e a GESTNUK AI, titular da Plataforma Nuk_POS, assinado pelo administrador titular.</div>
         <button class="btn-secundario" data-on-click="descarregarPdf('/adesao/documento.pdf', 'contrato-adesao-nukpos.pdf')">Descarregar o contrato (PDF)</button>
       </div>
+
+      ${lic('caixa') ? cartaoContasCorrentes(contasCC, clientesCC) : ''}
 
       <div class="card mt-2" style="max-width:700px">
         <div class="card-titulo mb-2">DASHBOARD — ITENS A CONTROLAR</div>

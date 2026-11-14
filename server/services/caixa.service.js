@@ -10,9 +10,10 @@ const { broadcast } = require('../middleware/broadcast');
 const { withTx, erro } = require('./shared');
 const portal = require('./portal.service');
 const ocupacao = require('./ocupacao.service');
+const contaCorrente = require('./conta-corrente.service');
 
 const METODOS_BALCAO = ['CASH', 'TPA', 'TRANSFERENCIA', 'EXPRESS'];
-const METODOS_RECEBIMENTO = [...METODOS_BALCAO, 'NUKCOIN', 'CARTAO'];
+const METODOS_RECEBIMENTO = [...METODOS_BALCAO, 'NUKCOIN', 'CARTAO', 'CONTA']; // CONTA = conta corrente do cliente (crédito)
 const CARTAO_MIN = 1000, CARTAO_MAX = 500000;
 const MAX_PARCELAS = 4; // pagamento misto: até 4 formas numa só conta
 const arred = n => Math.round(n * 100) / 100;
@@ -184,7 +185,7 @@ function parcelasDe({ pagamentos, metodo, pin, cliente_id, codigo_cartao, valor_
     if (!Number.isFinite(c) || c <= 0) throw erro(400, 'Cada forma de pagamento precisa de um valor positivo');
     return { metodo: m, cent: c, pin: x.pin, cliente_id: x.cliente_id, codigo_cartao: x.codigo_cartao, valor_entregue: x.valor_entregue };
   });
-  for (const m of ['CASH', 'NUKCOIN', 'CARTAO']) {
+  for (const m of ['CASH', 'NUKCOIN', 'CARTAO', 'CONTA']) {
     if (parcelas.filter(x => x.metodo === m).length > 1) throw erro(400, 'Cada forma de pagamento só pode aparecer uma vez');
   }
   const soma = parcelas.reduce((a, x) => a + x.cent, 0);
@@ -247,6 +248,12 @@ async function receber({ tenantId, userId, pedido_ids, ...dados }) {
         if (atual < valor) throw erro(400, 'Saldo Nuk-Coin insuficiente', { saldo_atual: atual, total_necessario: valor });
         x.saldo = atual; x.clienteId = cliId;
       }
+      if (x.metodo === 'CONTA') {
+        const cid = x.cliente_id || (pedidos.every(p => p.cliente_id && p.cliente_id === pedidos[0].cliente_id) ? pedidos[0].cliente_id : null);
+        if (!cid) throw erro(400, 'Indique o cliente com conta corrente');
+        await contaCorrente.verificarCredito(db, { tenantId, clienteId: cid, valorCent: x.cent });
+        x.clienteId = cid;
+      }
       if (x.metodo === 'CARTAO') {
         const c = await db.query(`SELECT id, saldo FROM cartoes_consumo WHERE tenant_id = $1 AND codigo = $2 FOR UPDATE`, [tenantId, normCodigo(x.codigo_cartao)]);
         if (!c.rows[0]) throw erro(404, 'Cartão não encontrado');
@@ -269,6 +276,11 @@ async function receber({ tenantId, userId, pedido_ids, ...dados }) {
         const depois = arred(x.saldo - v);
         await db.query(`INSERT INTO movimentos_cartao (cartao_id, tipo, valor, saldo_antes, saldo_depois, pedido_id) VALUES ($1,'CONSUMO',$2,$3,$4,$5)`, [x.cartaoId, v, x.saldo, depois, p.id]);
         x.saldo = depois;
+      }
+      if (x.metodo === 'CONTA') {
+        // Não entra dinheiro no caixa: a dívida fica na conta corrente do cliente
+        await contaCorrente.lancarDebito(db, { tenantId, clienteId: x.clienteId, valor: v, pedidoId: p.id, sessaoId: s.id, userId });
+        continue;
       }
       await registar(db, { tenantId, sessaoId: s.id, tipo: 'RECEBIMENTO', metodo: x.metodo, valor: v, descricao: parcelas.length > 1 ? 'Recebimento de pedido (pagamento misto)' : 'Recebimento de pedido', pedidoId: p.id, clienteId: x.clienteId || p.cliente_id, cartaoId: x.cartaoId, userId });
     }

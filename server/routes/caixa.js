@@ -4,13 +4,14 @@
  */
 const express = require('express');
 const router = express.Router();
-const { authMiddleware, isUUID } = require('../middleware/auth');
+const { authMiddleware, requerNivel, isUUID } = require('../middleware/auth');
 const svc = require('../services/caixa.service');
+const cc = require('../services/conta-corrente.service');
 
 const h = fn => async (req, res, next) => {
   try { await fn(req, res); }
   catch (e) {
-    if (e.statusCode) return res.status(e.statusCode).json({ erro: e.message, ...(e.codigo ? { codigo: e.codigo } : {}), ...(e.saldo_atual !== undefined ? { saldo_atual: e.saldo_atual, total_necessario: e.total_necessario } : {}) });
+    if (e.statusCode) return res.status(e.statusCode).json({ erro: e.message, ...(e.codigo ? { codigo: e.codigo } : {}), ...(e.disponivel !== undefined ? { disponivel: e.disponivel } : {}), ...(e.divida !== undefined ? { divida: e.divida } : {}), ...(e.saldo_atual !== undefined ? { saldo_atual: e.saldo_atual, total_necessario: e.total_necessario } : {}) });
     next(e);
   }
 };
@@ -136,6 +137,49 @@ router.post('/receber', authMiddleware, h(async (req, res) => {
   const { metodo, pin, cliente_id, codigo_cartao, valor_entregue, pagamentos } = req.body;
   if (Array.isArray(pagamentos) && pagamentos.some(x => x && x.cliente_id && !isUUID(x.cliente_id))) return res.status(400).json({ erro: 'cliente_id inválido' });
   res.json(await svc.receber({ pedido_ids: ids, metodo, pin, cliente_id, codigo_cartao, valor_entregue, pagamentos, ...base(req) }));
+}));
+
+/**
+ * @openapi
+ * /api/caixa/conta-corrente:
+ *   get:
+ *     summary: Clientes com conta corrente autorizada ou em dívida (saldo, limite, disponível)
+ *     tags: [Caixa]
+ *     security: [{ bearerAuth: [] }]
+ *     responses: { 200: { description: Lista } }
+ * /api/caixa/conta-corrente/{clienteId}:
+ *   get:
+ *     summary: Extracto da conta corrente (até 200 movimentos, com saldo acumulado)
+ *     tags: [Caixa]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ in: path, name: clienteId, required: true, schema: { type: string, format: uuid } }]
+ *     responses: { 200: { description: "{ cliente, movimentos }" }, 404: { description: Cliente não encontrado } }
+ *   put:
+ *     summary: Autorizar/retirar conta corrente e fixar o limite de crédito (só ADMIN; ecrã em Configurações)
+ *     tags: [Caixa]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody: { content: { application/json: { schema: { type: object, properties: { ativa: { type: boolean }, limite: { type: number } } } } } }
+ *     responses: { 200: { description: Cliente actualizado }, 403: { description: Só ADMIN } }
+ * /api/caixa/conta-corrente/{clienteId}/pagamentos:
+ *   post:
+ *     summary: Liquidação (total ou parcial) da dívida; entra no caixa do dia como CONTA_PAGAMENTO
+ *     tags: [Caixa]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody: { content: { application/json: { schema: { type: object, required: [valor, metodo], properties: { valor: { type: number }, metodo: { type: string, enum: [CASH, TPA, TRANSFERENCIA, EXPRESS] }, observacoes: { type: string } } } } } }
+ *     responses: { 201: { description: "{ pago, metodo, saldo }" }, 409: { description: Caixa fechado, sem dívida ou valor acima da dívida } }
+ */
+router.get('/conta-corrente', authMiddleware, h(async (req, res) => res.json(await cc.listar(base(req)))));
+router.get('/conta-corrente/:clienteId', authMiddleware, h(async (req, res) => {
+  if (!isUUID(req.params.clienteId)) return res.status(400).json({ erro: 'clienteId inválido' });
+  res.json(await cc.extracto({ clienteId: req.params.clienteId, ...base(req) }));
+}));
+router.put('/conta-corrente/:clienteId', authMiddleware, requerNivel(['ADMIN']), h(async (req, res) => {
+  if (!isUUID(req.params.clienteId)) return res.status(400).json({ erro: 'clienteId inválido' });
+  res.json(await cc.configurar({ ativa: req.body.ativa, limite: req.body.limite, clienteId: req.params.clienteId, ...base(req) }));
+}));
+router.post('/conta-corrente/:clienteId/pagamentos', authMiddleware, h(async (req, res) => {
+  if (!isUUID(req.params.clienteId)) return res.status(400).json({ erro: 'clienteId inválido' });
+  res.status(201).json(await cc.pagar({ valor: req.body.valor, metodo: req.body.metodo, observacoes: req.body.observacoes, clienteId: req.params.clienteId, ...base(req) }));
 }));
 
 module.exports = router;

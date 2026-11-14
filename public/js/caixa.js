@@ -5,8 +5,8 @@
  * Sem handlers inline (CSP): data-on-click / data-on-change com argumentos literais.
  */
 const FORMAS_BALCAO = { CASH: 'Dinheiro', TPA: 'TPA', TRANSFERENCIA: 'Transferência', EXPRESS: 'Express' };
-const FORMAS_RECEBER = { ...FORMAS_BALCAO, NUKCOIN: 'Nuk-Coin (PIN)', CARTAO: 'Cartão de consumo' };
-const ROTULO_MOV = { NUKCOIN_CARREGAMENTO: 'Nuk-Coin', CARTAO_VENDA: 'Cartão de consumo', RECEBIMENTO: 'Recebimento', COMPRA: 'Compra' };
+const FORMAS_RECEBER = { ...FORMAS_BALCAO, NUKCOIN: 'Nuk-Coin (PIN)', CARTAO: 'Cartão de consumo', CONTA: 'Conta corrente (crédito)' };
+const ROTULO_MOV = { NUKCOIN_CARREGAMENTO: 'Nuk-Coin', CARTAO_VENDA: 'Cartão de consumo', RECEBIMENTO: 'Recebimento', COMPRA: 'Compra', CONTA_PAGAMENTO: 'Pagamento de conta corrente' };
 const optsFormas = (f, sel = 'CASH') => Object.entries(f).map(([k, v]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${v}</option>`).join('');
 const hora = d => new Date(d).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Luanda' });
 
@@ -194,6 +194,7 @@ function modalReceber(i) {
   const total = c.pedidos.reduce((a, p) => a + parseFloat(p.total), 0);
   window._contaActual = { i, total, misto: false };
   window._parcelas = [];
+  window._contasCC = null;
   abrirModal(`Receber · ${c.titulo}`, `
     <p style="margin-bottom:.6rem;font-size:1.2rem">Total: <b class="texto-primario">${formatarMoeda(total)}</b></p>
     <div id="rc-simples" class="campo"><label>Forma de pagamento</label><select id="rc-metodo" data-on-change="receberMetodo(this.value)">${optsFormas(FORMAS_RECEBER)}</select>
@@ -202,12 +203,28 @@ function modalReceber(i) {
     <div id="rc-cash" class="campo"><label id="rc-cash-rot">Valor entregue (Kz, opcional para calcular o troco)</label><input id="rc-entregue" type="number" min="0" data-on-input="receberTroco()"><div id="rc-troco" class="muted texto-pequeno"></div></div>
     <div id="rc-pin" class="campo" style="display:none"><label>PIN do cliente (4 dígitos)</label><input id="rc-pin-v" type="password" inputmode="numeric" maxlength="4" autocomplete="off"></div>
     <div id="rc-cartao" class="campo" style="display:none"><label>Código do cartão de consumo</label><input id="rc-codigo" placeholder="CCXXXXXXXX"></div>
+    <div id="rc-conta" class="campo" style="display:none"><label>Cliente com conta corrente</label><select id="rc-conta-cli"><option value="">A carregar…</option></select><div id="rc-conta-info" class="muted texto-pequeno"></div></div>
     <button class="btn-primario btn-bloco" data-on-click="confirmarReceber()">Confirmar recebimento</button>`);
 }
 function receberMetodo(m) {
   document.getElementById('rc-cash').style.display = m === 'CASH' ? '' : 'none';
   document.getElementById('rc-pin').style.display = m === 'NUKCOIN' ? '' : 'none';
   document.getElementById('rc-cartao').style.display = m === 'CARTAO' ? '' : 'none';
+  mostrarConta(m === 'CONTA');
+}
+/** Campo «cliente com conta corrente»: carrega só os autorizados, com o crédito disponível. */
+async function mostrarConta(ver) {
+  const box = document.getElementById('rc-conta');
+  box.style.display = ver ? '' : 'none';
+  if (!ver || window._contasCC) return;
+  try {
+    window._contasCC = (await api('GET', '/caixa/conta-corrente') || []).filter(c => c.conta_corrente_ativa);
+    const c = window._contas[window._contaActual.i];
+    const doPedido = (c.pedidos.find(p => p.cliente_id) || {}).cliente_id;
+    document.getElementById('rc-conta-cli').innerHTML = window._contasCC.length
+      ? window._contasCC.map(x => `<option value="${esc(x.id)}" ${x.id === doPedido ? 'selected' : ''}>${esc(x.nome)} · disponível ${formatarMoeda(x.disponivel)}</option>`).join('')
+      : '<option value="">Nenhum cliente com conta corrente (autorize em Configurações)</option>';
+  } catch (e) { toast(e.message, 'erro'); }
 }
 
 // ── Pagamento misto (ex.: parte em dinheiro, resto no TPA) ──
@@ -237,6 +254,7 @@ function desenharParcelas() {
   document.getElementById('rc-cash-rot').textContent = 'Dinheiro entregue pelo cliente (Kz, opcional para calcular o troco da parte em dinheiro)';
   document.getElementById('rc-pin').style.display = usados.includes('NUKCOIN') ? '' : 'none';
   document.getElementById('rc-cartao').style.display = usados.includes('CARTAO') ? '' : 'none';
+  mostrarConta(usados.includes('CONTA'));
   actualizarFalta();
 }
 function parcelaMetodo(i, m) { window._parcelas[i].metodo = m; desenharParcelas(); }
@@ -284,6 +302,7 @@ async function confirmarReceber() {
       if (x.metodo === 'CASH') { const e = document.getElementById('rc-entregue').value; if (e !== '') p.valor_entregue = parseFloat(e); }
       if (x.metodo === 'NUKCOIN') { p.pin = document.getElementById('rc-pin-v').value; if (cli) p.cliente_id = cli.cliente_id; }
       if (x.metodo === 'CARTAO') p.codigo_cartao = document.getElementById('rc-codigo').value;
+      if (x.metodo === 'CONTA') p.cliente_id = document.getElementById('rc-conta-cli').value || undefined;
       return p;
     });
   } else {
@@ -292,6 +311,7 @@ async function confirmarReceber() {
     if (metodo === 'CASH') { const e = document.getElementById('rc-entregue').value; if (e !== '') corpo.valor_entregue = parseFloat(e); }
     if (metodo === 'NUKCOIN') { corpo.pin = document.getElementById('rc-pin-v').value; if (cli) corpo.cliente_id = cli.cliente_id; }
     if (metodo === 'CARTAO') corpo.codigo_cartao = document.getElementById('rc-codigo').value;
+    if (metodo === 'CONTA') corpo.cliente_id = document.getElementById('rc-conta-cli').value || undefined;
   }
   try {
     const r = await api('POST', '/caixa/receber', corpo);
@@ -299,5 +319,60 @@ async function confirmarReceber() {
     const formas = r.pagamentos && r.pagamentos.length > 1 ? ` (${r.pagamentos.map(x => `${FORMAS_RECEBER[x.metodo] || x.metodo} ${formatarMoeda(x.valor)}`).join(' + ')})` : '';
     toast(`Recebido ${formatarMoeda(r.total)}${formas}` + (r.troco ? ` · troco ${formatarMoeda(r.troco)}` : '') + (r.saldo_restante !== null && r.saldo_restante !== undefined ? ` · saldo ${formatarMoeda(r.saldo_restante)}` : ''), 'sucesso', 7000);
     carregarModulo('recebimentos');
+  } catch (e) { toast(e.message, 'erro'); }
+}
+
+// ── Contas correntes (crédito a clientes) ───────────────────
+async function modulo_contas(el) {
+  try {
+    const lista = await api('GET', '/caixa/conta-corrente') || [];
+    window._listaCC = lista;
+    const divida = lista.reduce((a, c) => a + Number(c.saldo || 0), 0);
+    el.innerHTML = `<div class="toolbar"><span class="secao-titulo">📒 Contas correntes</span><span class="muted">Em dívida: <b class="texto-primario">${formatarMoeda(divida)}</b></span></div>
+      <div class="muted texto-pequeno" style="margin-bottom:.6rem">O consumo entra na conta em Receber mesas → «Conta corrente». Os pagamentos da dívida exigem o caixa aberto. Autorizar clientes e limites: Configurações (administrador).</div>
+      ${lista.length ? `<div class="card"><div class="tabela-wrapper"><table>
+        <thead><tr><th>Cliente</th><th>Limite</th><th>Em dívida</th><th>Disponível</th><th></th></tr></thead>
+        <tbody>${lista.map(c => `<tr>
+          <td><b>${esc(c.nome)}</b>${c.telefone ? `<div class="muted texto-pequeno">${esc(c.telefone)}</div>` : ''}${c.conta_corrente_ativa ? '' : '<div class="texto-pequeno" style="color:var(--c-danger)">Conta retirada</div>'}</td>
+          <td class="muted">${formatarMoeda(c.limite_credito)}</td>
+          <td class="negrito ${Number(c.saldo) > 0 ? 'texto-primario' : 'muted'}">${formatarMoeda(c.saldo)}</td>
+          <td class="muted">${formatarMoeda(c.disponivel)}</td>
+          <td style="white-space:nowrap"><button class="btn-secundario" style="padding:.25rem .6rem;font-size:.75rem" data-on-click="modalExtractoConta('${esc(c.id)}')">Extracto</button>
+            ${Number(c.saldo) > 0 ? `<button class="btn-primario" style="padding:.25rem .6rem;font-size:.75rem" data-on-click="modalPagarConta('${esc(c.id)}')">Receber pagamento</button>` : ''}</td>
+        </tr>`).join('')}</tbody></table></div></div>` : '<div class="card muted">Ainda não há clientes com conta corrente. O administrador autoriza-os em Configurações.</div>'}`;
+  } catch (e) { el.innerHTML = `<div class="erro-msg">Erro: ${esc(e.message)}</div>`; }
+}
+function modalPagarConta(id) {
+  const c = (window._listaCC || []).find(x => x.id === id); if (!c) return;
+  abrirModal(`Pagamento · ${c.nome}`, `
+    <p style="margin-bottom:.6rem">Em dívida: <b class="texto-primario">${formatarMoeda(c.saldo)}</b></p>
+    <div class="campo"><label>Valor a pagar (Kz)</label><input id="ccp-valor" type="number" min="0" value="${Number(c.saldo)}"></div>
+    <div class="campo"><label>Forma de pagamento</label><select id="ccp-metodo">${optsFormas(FORMAS_BALCAO)}</select></div>
+    <div class="campo"><label>Observações (opcional)</label><input id="ccp-obs" maxlength="200" placeholder="Ex.: transferência ref. 1234"></div>
+    <button class="btn-primario btn-bloco" data-on-click="confirmarPagarConta('${esc(c.id)}')">Registar pagamento</button>`);
+}
+async function confirmarPagarConta(id) {
+  const valor = parseFloat(document.getElementById('ccp-valor').value);
+  if (!(valor > 0)) { toast('Valor inválido', 'erro'); return; }
+  try {
+    const r = await api('POST', `/caixa/conta-corrente/${id}/pagamentos`, { valor, metodo: document.getElementById('ccp-metodo').value, observacoes: document.getElementById('ccp-obs').value });
+    fecharModal();
+    toast(`Pagamento de ${formatarMoeda(r.pago)} registado · em dívida ${formatarMoeda(r.saldo)}`, 'sucesso', 7000);
+    carregarModulo('contas');
+  } catch (e) { toast(e.message, 'erro'); }
+}
+async function modalExtractoConta(id) {
+  try {
+    const x = await api('GET', `/caixa/conta-corrente/${id}`);
+    abrirModal(`Extracto · ${x.cliente.nome}`, `
+      <p style="margin-bottom:.6rem">Em dívida: <b class="texto-primario">${formatarMoeda(x.cliente.saldo)}</b> · limite ${formatarMoeda(x.cliente.limite_credito)}</p>
+      <div class="tabela-wrapper" style="max-height:60vh;overflow:auto"><table>
+        <thead><tr><th>Data</th><th>Movimento</th><th>Valor</th><th>Saldo</th></tr></thead>
+        <tbody>${x.movimentos.length ? x.movimentos.map(m => `<tr>
+          <td class="muted texto-pequeno">${new Date(m.criado_em).toLocaleString('pt-PT', { timeZone: 'Africa/Luanda' })}</td>
+          <td>${m.tipo === 'DEBITO' ? 'Consumo' : `Pagamento (${FORMAS_BALCAO[m.metodo] || m.metodo})`}${m.funcionario ? `<div class="muted texto-pequeno">${esc(m.funcionario)}</div>` : ''}</td>
+          <td class="negrito">${m.tipo === 'DEBITO' ? '' : '−'}${formatarMoeda(m.valor)}</td>
+          <td class="muted">${formatarMoeda(m.saldo_apos)}</td></tr>`).join('') : '<tr><td colspan="4" class="muted">Sem movimentos</td></tr>'}</tbody>
+      </table></div>`);
   } catch (e) { toast(e.message, 'erro'); }
 }

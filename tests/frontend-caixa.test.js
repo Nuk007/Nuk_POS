@@ -188,3 +188,32 @@ describe('Pagamento misto no Receber mesas', () => {
     expect(ctx._toast[1]).toBe('erro');
   });
 });
+
+describe('Contas correntes (frontend)', () => {
+  const lista = [{ id: 'c1', nome: 'Empresa Lda', telefone: '+244', conta_corrente_ativa: true, limite_credito: 20000, saldo: 12000, disponivel: 8000 },
+    { id: 'c2', nome: 'Antiga', conta_corrente_ativa: false, limite_credito: 0, saldo: 0, disponivel: 0 }];
+  test('lista dívidas; «Receber pagamento» só com dívida; pagamento envia valor e forma', async () => {
+    const ctx = carregar({ '/caixa/conta-corrente': lista, '/caixa/conta-corrente/c1/pagamentos': { pago: 5000, saldo: 7000 } });
+    const el = { innerHTML: '' };
+    await ctx.modulo_contas(el);
+    expect(el.innerHTML).toContain("modalPagarConta('c1')");
+    expect(el.innerHTML).not.toContain("modalPagarConta('c2')");
+    expect(el.innerHTML).toContain('Conta retirada');
+    ctx.modalPagarConta('c1');
+    ctx._els['ccp-valor'] = { value: '5000' }; ctx._els['ccp-metodo'] = { value: 'TPA' }; ctx._els['ccp-obs'] = { value: '' };
+    await ctx.confirmarPagarConta('c1');
+    expect(ctx._chamadas).toContainEqual(['POST', '/caixa/conta-corrente/c1/pagamentos', { valor: 5000, metodo: 'TPA', observacoes: '' }]);
+  });
+  test('Receber com «Conta corrente» envia o cliente escolhido', async () => {
+    const ctx = carregar({ '/caixa': { aberta: true, sessao, resumo, movimentos: [] }, '/caixa/conta-corrente': lista, '/caixa/por-receber': [{ id: 'p1', total: '5000', cliente_id: 'c1', itens: [] }], '/caixa/receber': { total: 5000 } });
+    await ctx.modulo_recebimentos({ innerHTML: '' });
+    ctx.modalReceber(0);
+    expect(ctx._modal).toContain('Conta corrente (crédito)');
+    await ctx.mostrarConta(true);
+    expect(ctx._els['rc-conta-cli'].innerHTML).toContain('value="c1" selected');
+    expect(ctx._els['rc-conta-cli'].innerHTML).not.toContain('c2');
+    ctx._els['rc-metodo'] = { value: 'CONTA' }; ctx._els['rc-conta-cli'].value = 'c1';
+    await ctx.confirmarReceber();
+    expect(ctx._chamadas.find(c => c[1] === '/caixa/receber')[2]).toEqual({ pedido_ids: ['p1'], metodo: 'CONTA', cliente_id: 'c1' });
+  });
+});
