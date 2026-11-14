@@ -217,7 +217,10 @@ async function verTenant(id) {
         ${t.notas ? `<div class="detail-item full"><div class="di-label">NOTAS</div><div class="di-val" style="color:var(--muted);font-size:13px">${t.notas}</div></div>` : ''}
       </div>
       <div class="detail-item full" style="margin-top:14px"><div class="di-label">MÓDULOS CONTRATADOS</div>
-        <div id="det-modulos" class="mod-grid" style="margin-top:6px">${htmlModulos(cat, marcados, 'det-mod')}</div></div>`;
+        <div id="det-modulos" class="mod-grid" style="margin-top:6px">${htmlModulos(cat, marcados, 'det-mod')}</div></div>
+      <div class="detail-item full" style="margin-top:14px"><div class="di-label">CADEIA (VÁRIOS ESTABELECIMENTOS DO MESMO DONO)</div>
+        <div style="display:flex;gap:8px;margin-top:6px"><input type="text" id="det-cadeia" maxlength="120" placeholder="Nome da cadeia (vazio = nenhuma)" value="${escAttr(t.cadeia || '')}" style="flex:1">
+        <button class="btn btn-ghost btn-sm" data-action="guardar-cadeia" data-id="${t.id}">Guardar cadeia</button></div></div>`;
     footer.innerHTML = `
       <button class="btn btn-ghost btn-sm" data-action="close-modal" data-modal="modal-tenant">Fechar</button>
       <button class="btn btn-primary btn-sm" data-action="guardar-modulos" data-id="${t.id}">Guardar módulos</button>
@@ -358,6 +361,15 @@ async function guardarModulos(id) {
   } catch (e) { toast(e.message, 'err'); }
 }
 
+const escAttr = v => String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+async function guardarCadeia(id) {
+  const nome = document.getElementById('det-cadeia').value.trim();
+  try {
+    await api(`/api/saas/tenants/${id}/cadeia`, { method: 'PUT', body: { nome } });
+    toast(nome ? `Estabelecimento na cadeia «${nome}»` : 'Estabelecimento retirado da cadeia');
+  } catch (e) { toast(e.message, 'err'); }
+}
+
 // ── NOVO TENANT ──────────────────────────────────────
 document.getElementById('btn-criar-tenant').addEventListener('click', criarTenant);
 
@@ -466,6 +478,7 @@ document.addEventListener('click', e => {
   else if (action === 'alterar-estado')    alterarEstado(btn.dataset.id, btn.dataset.estado, btn.dataset.nome);
   else if (action === 'renovar-licenca')   renovarLicenca(btn.dataset.id, btn.dataset.nome);
   else if (action === 'guardar-modulos')    guardarModulos(btn.dataset.id);
+  else if (action === 'guardar-cadeia')     guardarCadeia(btn.dataset.id);
   else if (action === 'reenviar-wa')       reenviarWA(btn.dataset.key, btn.dataset.nome);
   else if (action === 'reenviar-wa-by-id') reenviarWAById(btn.dataset.id, btn.dataset.nome);
   else if (action === 'navigate')          navigate(btn.dataset.view);

@@ -69,3 +69,47 @@ describe('Resumo de ontem (frontend)', () => {
     expect(ctx._chamadas).toContain('/relatorios/resumo-diario/enviar');
   });
 });
+
+describe('Cadeia (frontend)', () => {
+  const fs2 = require('fs'), path2 = require('path'), vm2 = require('vm');
+  function cadeia(nivel, dados) {
+    const els = {};
+    const ctx = {
+      console, window: {}, Promise, NUK: { utilizador: { nivel_acesso: nivel } }, location: { reload() { ctx._recarregou = true; } },
+      localStorage: { setItem() {} }, document: { getElementById: id => els[id] || (els[id] = { innerHTML: '', value: '', style: {}, textContent: '' }) },
+      api: async (m, url, corpo) => { (ctx._chamadas = ctx._chamadas || []).push([m, url, corpo]); const k = Object.keys(dados).find(x => url.startsWith(x)); if (dados[k] instanceof Error) throw dados[k]; return dados[k]; },
+      formatarMoeda: v => `${v} Kz`, toast: (...a) => { ctx._toast = a; }, esc: v => String(v ?? ''), abrirModal: (t, h) => { ctx._modal = h; },
+    };
+    ctx._els = els;
+    vm2.createContext(ctx);
+    vm2.runInContext(fs2.readFileSync(path2.join(__dirname, '../public/js/cadeia.js'), 'utf8'), ctx);
+    return ctx;
+  }
+  const lista = { actual: 'ta', cadeia: { nome: 'Grupo X' }, estabelecimentos: [{ tenant_id: 'ta', nome: 'Casa A', actual: true, nivel_acesso: 'ADMIN' }, { tenant_id: 'tb', nome: 'Casa B', actual: false, nivel_acesso: 'ADMIN' }] };
+  test('botão 🏢 só com mais de um estabelecimento; troca envia a palavra-passe e recarrega', async () => {
+    const ctx = cadeia('ADMIN', { '/cadeia/estabelecimentos': lista, '/cadeia/trocar': { token: 'novo', funcionario: { nome: 'Dono' } } });
+    await ctx.cadeiaArrancar();
+    expect(ctx._els['btn-cadeia'].style.display).toBe('');
+    expect(ctx._els['btn-cadeia'].textContent).toContain('Casa A');
+    ctx.modalCadeia();
+    expect(ctx._modal).toContain("pedirTrocaEstabelecimento('tb')");
+    ctx.pedirTrocaEstabelecimento('tb');
+    ctx._els['cadeia-pp'].value = '222222';
+    await ctx.confirmarTrocaEstabelecimento();
+    expect(ctx._chamadas).toContainEqual(['POST', '/cadeia/trocar', { tenant_id: 'tb', palavra_passe: '222222' }]);
+    expect(ctx.NUK.token).toBe('novo');
+    expect(ctx._recarregou).toBe(true);
+    const so = cadeia('ADMIN', { '/cadeia/estabelecimentos': { ...lista, estabelecimentos: [lista.estabelecimentos[0]] } });
+    await so.cadeiaArrancar();
+    expect(so._els['btn-cadeia'].style.display).toBe('none');
+  });
+  test('consolidado: tabela com total para ADMIN; sem cadeia não mostra nada', async () => {
+    const ctx = cadeia('ADMIN', { '/cadeia/consolidado': { cadeia: { nome: 'Grupo X' }, estabelecimentos: [{ nome: 'Casa A', receita: 10, pedidos: 1, ticket_medio: 10, despesas: 0, resultado: 10, por_receber: 0, actual: true }, { nome: 'Casa B', receita: 7, pedidos: 1, ticket_medio: 7, despesas: 0, resultado: 7, por_receber: 0 }], total: { receita: 17, pedidos: 2, ticket_medio: 8, despesas: 0, resultado: 17, por_receber: 0 } } });
+    await ctx.carregarConsolidadoCadeia('2026-11-13', '2026-11-13');
+    expect(ctx._els['rel-cadeia'].innerHTML).toContain('Total');
+    expect(ctx._els['rel-cadeia'].innerHTML).toContain('17 Kz');
+    const sem = cadeia('ADMIN', { '/cadeia/consolidado': Object.assign(new Error('sem cadeia'), {}) });
+    await sem.carregarConsolidadoCadeia('2026-11-13', '2026-11-13');
+    expect(sem._els['rel-cadeia'].innerHTML).toBe('');
+  });
+});

@@ -7,33 +7,12 @@ const { pool } = require('../db');
 const { gerarToken } = require('../middleware/auth');
 const { efectivasLicenciadas, licenciados } = require('./acessos');
 
-async function login({ email, password }) {
-  if (!email || !password) {
-    const err = new Error('Email e password são obrigatórios'); err.statusCode = 400; throw err;
-  }
+const CONTA_SQL = `SELECT f.*, t.slug as tenant_slug, t.nome as tenant_nome, t.estado as tenant_estado, t.modulos as tenant_modulos
+     FROM funcionarios f LEFT JOIN tenants t ON f.tenant_id = t.id`;
 
-  const r = await pool.query(
-    `SELECT f.*, t.slug as tenant_slug, t.nome as tenant_nome, t.estado as tenant_estado, t.modulos as tenant_modulos
-     FROM funcionarios f
-     LEFT JOIN tenants t ON f.tenant_id = t.id
-     WHERE LOWER(f.email) = LOWER($1) AND f.ativo = true`,
-    [email.trim()]
-  );
-
-  const funcionario = r.rows[0];
-  if (!funcionario) {
-    const err = new Error('Credenciais inválidas'); err.statusCode = 401; throw err;
-  }
-
-  if (funcionario.tenant_id && funcionario.tenant_estado !== 'ACTIVA') {
-    const err = new Error('Conta suspensa. Contacte o administrador.'); err.statusCode = 403; throw err;
-  }
-
-  const ok = await bcrypt.compare(password, funcionario.password_hash);
-  if (!ok) {
-    const err = new Error('Credenciais inválidas'); err.statusCode = 401; throw err;
-  }
-
+/** Token e dados da sessão de uma conta (login e troca de estabelecimento). */
+function sessaoDe(funcionario) {
+  const permissoes = efectivasLicenciadas(funcionario, funcionario.tenant_modulos);
   const payload = {
     id: funcionario.id,
     email: funcionario.email,
@@ -42,9 +21,8 @@ async function login({ email, password }) {
     tenantId: funcionario.tenant_id,
     tenantSlug: funcionario.tenant_slug,
     tenantNome: funcionario.tenant_nome,
-    permissoes: efectivasLicenciadas(funcionario, funcionario.tenant_modulos),
+    permissoes,
   };
-
   return {
     token: gerarToken(payload),
     funcionario: {
@@ -57,10 +35,34 @@ async function login({ email, password }) {
       titular: !!funcionario.titular,
       pode_vender_quartos: !!funcionario.pode_vender_quartos,
       arruma_quartos: !!funcionario.arruma_quartos,
-      permissoes: efectivasLicenciadas(funcionario, funcionario.tenant_modulos),
+      permissoes,
       modulos: funcionario.tenant_id ? licenciados(funcionario.tenant_modulos) : null,
     },
   };
+}
+
+/**
+ * Login por email e palavra-passe. O mesmo email pode ter conta em vários estabelecimentos (dono de uma cadeia):
+ * entra na primeira conta activa cuja palavra-passe confere (titular primeiro, depois a mais antiga); antes
+ * olhava só para a primeira conta encontrada e recusava a palavra-passe certa das outras.
+ */
+async function login({ email, password }) {
+  if (!email || !password) {
+    const err = new Error('Email e password são obrigatórios'); err.statusCode = 400; throw err;
+  }
+  const r = await pool.query(
+    `${CONTA_SQL} WHERE LOWER(f.email) = LOWER($1) AND f.ativo = true
+      ORDER BY (t.estado = 'ACTIVA' OR f.tenant_id IS NULL) DESC, f.titular DESC NULLS LAST, f.criado_em LIMIT 10`,
+    [email.trim()]
+  );
+  let suspensa = false;
+  for (const funcionario of r.rows) {
+    if (!(await bcrypt.compare(password, funcionario.password_hash))) continue;
+    if (funcionario.tenant_id && funcionario.tenant_estado !== 'ACTIVA') { suspensa = true; continue; }
+    return sessaoDe(funcionario);
+  }
+  if (suspensa) { const err = new Error('Conta suspensa. Contacte o administrador.'); err.statusCode = 403; throw err; }
+  const err = new Error('Credenciais inválidas'); err.statusCode = 401; throw err;
 }
 
 async function obterPerfil({ userId }) {
@@ -79,4 +81,4 @@ async function obterPerfil({ userId }) {
   return { ...resto, permissoes: efectivasLicenciadas(r.rows[0], tenant_modulos), modulos: r.rows[0].tenant_id ? licenciados(tenant_modulos) : null };
 }
 
-module.exports = { login, obterPerfil };
+module.exports = { login, obterPerfil, sessaoDe, CONTA_SQL };

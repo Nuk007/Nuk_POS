@@ -34,6 +34,7 @@ async function modulo_relatorios(el) {
         </span>
       </div>
       <div id="rel-resumo" class="mb-3"></div>
+      <div id="rel-cadeia"></div>
       <div class="kpi-grid mb-3">
         <div class="kpi-card"><div class="kpi-label">Vendas</div><div class="kpi-valor texto-primario">${formatarMoeda(t.valor)}</div><div class="kpi-sub">${t.pedidos} pedidos · ticket médio ${formatarMoeda(t.ticket_medio)}</div></div>
         <div class="kpi-card"><div class="kpi-label">Por receber</div><div class="kpi-valor">${formatarMoeda(t.por_receber)}</div><div class="kpi-sub">Contas fechadas ainda não pagas</div></div>
@@ -63,6 +64,7 @@ async function modulo_relatorios(el) {
           s.diferenca !== null && s.diferenca !== undefined ? `<span style="color:${Number(s.diferenca) < 0 ? 'var(--c-danger)' : 'inherit'}">${formatarMoeda(s.diferenca)}</span>` : '—',
           `<button class="btn-secundario" style="padding:.25rem .6rem;font-size:.75rem" data-on-click="descarregarPdf('/relatorios/caixa/${esc(s.id)}/talao.pdf','fecho-caixa-${esc(String(s.id).slice(0, 8))}.pdf')">Talão Z</button>`]), '')}</div>` : ''}`;
     carregarResumoDiario();
+    if (typeof carregarConsolidadoCadeia === 'function') carregarConsolidadoCadeia(f.de, f.ate);
   } catch (e) { el.innerHTML = `<div class="erro-msg">Erro: ${esc(e.message)}</div>`; }
 }
 

@@ -111,6 +111,7 @@ function arrancarOperacao() {
   aplicarAcessos();
   if (typeof actualizarPonto === 'function') actualizarPonto();
   if (typeof impArrancar === 'function') impArrancar();
+  if (typeof cadeiaArrancar === 'function') cadeiaArrancar();
 
   // WebSocket
   iniciarWebSocket();

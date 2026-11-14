@@ -344,9 +344,10 @@ router.post('/tenants', saasLimiter, superAdminAuth, async (req, res) => {
 router.get('/tenants/:id', superAdminAuth, async (req, res) => {
   try {
     const tenant = await pool.query(`
-      SELECT t.*, p.nome AS plano_nome, p.max_funcionarios, p.max_produtos, p.preco_mensal
+      SELECT t.*, p.nome AS plano_nome, p.max_funcionarios, p.max_produtos, p.preco_mensal, g.nome AS cadeia
       FROM tenants t
       LEFT JOIN planos_assinatura p ON p.id = t.plano_id
+      LEFT JOIN grupos g ON g.id = t.grupo_id
       WHERE t.id = $1
     `, [req.params.id]);
 
@@ -390,6 +391,16 @@ router.put('/tenants/:id/modulos', superAdminAuth, async (req, res) => {
     if (e.statusCode) return res.status(e.statusCode).json({ erro: e.message });
     res.status(500).json({ erro: 'Erro interno do servidor' });
   }
+});
+
+// GET /api/saas/cadeias — cadeias existentes; PUT /api/saas/tenants/:id/cadeia { nome } — agrupa (vazio = tira)
+router.get('/cadeias', superAdminAuth, async (req, res) => {
+  try { res.json(await require('./services/cadeia.service').listarCadeias()); } catch (e) { res.status(500).json({ erro: 'Erro interno do servidor' }); }
+});
+router.put('/tenants/:id/cadeia', superAdminAuth, async (req, res) => {
+  if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return res.status(400).json({ erro: 'id inválido' });
+  try { res.json(await require('./services/cadeia.service').definirCadeia({ tenantId: req.params.id, nome: (req.body || {}).nome })); }
+  catch (e) { if (e.statusCode) return res.status(e.statusCode).json({ erro: e.message }); res.status(500).json({ erro: 'Erro interno do servidor' }); }
 });
 
 // PATCH /api/saas/tenants/:id/estado
