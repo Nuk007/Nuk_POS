@@ -109,6 +109,7 @@ function arrancarOperacao() {
   });
 
   aplicarAcessos();
+  if (typeof actualizarPonto === 'function') actualizarPonto();
 
   // WebSocket
   iniciarWebSocket();
@@ -242,7 +243,7 @@ function carregarModulo(modulo) {
     dashboard: '📊 Dashboard', pedidos: '🍽️ Pedidos', mesas: '🪑 Mesa', balcao: '🧾 Balcão', remota: '📱 Remota', takeaway: '🥡 Take Away',
     quartos: '🛏️ Quartos', caixa: '💵 Caixa do dia', nukcoin: '💜 Nuk-Coin', cartoes: '💳 Cartões de consumo', recebimentos: '🧾 Receber mesas', contas: '📒 Contas correntes', compras: '🛒 Compras pontuais', servicos: '🛠️ Avarias e danos', lazer: '🎯 Lazer', loja: '🛍️ Loja', patrimonio: '🏛️ Património', manutencao: '🗓️ Prazos de manutenção', solicitacoes: '🔔 Solicitações', produtos: '📋 Produtos', stock: '📦 Stock',
     financeiro: '💰 Financeiro', relatorios: '📈 Relatórios', clientes: '👥 Clientes',
-    funcionarios: '👨‍💼 Funcionários', configuracoes: '⚙️ Configurações',
+    funcionarios: '👨‍💼 Funcionários', assiduidade: '🕒 Assiduidade', configuracoes: '⚙️ Configurações',
   };
   document.getElementById('topbar-titulo').textContent = titulos[modulo] || modulo;
 

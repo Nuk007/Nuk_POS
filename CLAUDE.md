@@ -140,6 +140,12 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 - **Relatórios** (`services/relatorios.service.js`, `/api/relatorios`, só ADMIN/GERENTE, acesso `relatorios` na licença `financas`, menu Administração → Finanças → Relatórios, `public/js/relatorios.js`): `GET /vendas?de=&ate=` (dias de Luanda, máx. 1 ano) — totais, ticket médio, descontos, por receber, recebido por forma (inclui CONTA lançado em conta corrente), por funcionário (com nº de cancelamentos), top 30 produtos, por hora, lista de cancelamentos com quem/motivo. `GET /caixa/:sessaoId` e `/caixa/:sessaoId/talao.pdf` = fecho de caixa (Z) 80 mm (`talaoFechoCaixa` em documentos.service.js).
 - Testes: `tests/integration/relatorios.int.test.js`, `tests/frontend-relatorios.test.js`.
 
+## Assiduidade do pessoal (14/11/2026)
+- `services/assiduidade.service.js`, `/api/ponto` (licença `rh`), migração 1750900000000 (`registos_ponto`, um registo aberto por funcionário — índice único parcial). `public/js/assiduidade.js`.
+- Botão 🕒 na barra de topo (`#btn-ponto`): cada funcionário regista a SUA entrada/saída (id do token; o corpo é ignorado). A saída pede confirmação.
+- Administração → RH → Assiduidade (acesso `assiduidade`, só ADMIN/GERENTE; o OPERADOR não o tem por omissão): horas e dias por funcionário no período, registos, entradas abertas há mais de 24 h marcadas «Saída esquecida»; «Corrigir saída» (`PATCH /api/ponto/:id/saida`) com hora real e observação obrigatória, guarda quem corrigiu.
+- Dívida: sem escalas/horários previstos nem atrasos; sem exportação para processamento salarial.
+
 ## Compras pontuais
 - Menu Compras → «Compras pontuais» (acesso `compras`, licença `compras`); `services/compras.service.js` + `routes/compras.js` (`/api/compras`) + `public/js/compras.js`. Tabela `compras_pontuais`; `caixa_movimentos.compra_id`.
 - Regras: exige caixa aberto (409 `CAIXA_FECHADO`); só itens **cadastrados** em `stock_items` do próprio estabelecimento (404 caso contrário); só dinheiro (CASH) e nunca acima do dinheiro disponível na gaveta (409 com `disponivel`).

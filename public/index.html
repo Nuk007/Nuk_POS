@@ -170,6 +170,9 @@
         <button class="nav-item admin-only" data-modulo="funcionarios">
           <span class="nav-icon">👨‍💼</span><span>Funcionários</span>
         </button>
+        <button class="nav-item admin-only" data-modulo="assiduidade">
+          <span class="nav-icon">🕒</span><span>Assiduidade</span>
+        </button>
         </div>
         <div class="nav-sub"><div class="nav-subtitulo">Finanças</div>
         <button class="nav-item" data-modulo="financeiro">
@@ -212,6 +215,7 @@
       <button class="btn-menu" data-action="toggle-sidebar">☰</button>
       <h2 id="topbar-titulo">Dashboard</h2>
       <div class="topbar-direita">
+        <button id="btn-ponto" class="btn-secundario" style="display:none;padding:.3rem .7rem;font-size:.8rem" data-on-click="clicarPonto()">🕒 Registar entrada</button>
         <span id="ws-status" class="ws-badge ws-desconectado" title="WebSocket">●</span>
         <span id="hora-atual" class="hora-atual"></span>
       </div>
@@ -243,6 +247,7 @@
 <script src="/js/venda.js"></script>
 <script src="/js/caixa.js"></script>
 <script src="/js/relatorios.js"></script>
+<script src="/js/assiduidade.js"></script>
 <script src="/js/compras.js"></script>
 <script src="/js/servicos.js"></script>
 <script src="/js/patrimonio.js"></script>
