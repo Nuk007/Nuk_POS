@@ -212,13 +212,18 @@ function modalConfirmar(titulo, texto, funcao, ...args) {
 }
 
 function pedirCancelarPedido(id) {
-  modalConfirmar('Cancelar pedido', 'Tem a certeza que quer <b>cancelar este pedido</b>? O stock é devolvido e, se foi pago com Nuk-Coin, o valor é estornado. Não pode ser desfeito.', 'cancelarPedidoConfirmado', id);
+  modalConfirmar('Cancelar pedido', `Tem a certeza que quer <b>cancelar este pedido</b>? O stock é devolvido e, se foi pago com Nuk-Coin, o valor é estornado. Não pode ser desfeito. Fica registado quem cancelou.<br><br>
+    <label for="canc-motivo" class="negrito">Motivo</label><br><input type="text" id="canc-motivo" maxlength="200" placeholder="Ex.: cliente desistiu, pedido em duplicado" style="width:100%;margin-top:.35rem">`, 'cancelarPedidoConfirmado', id);
 }
-function cancelarPedidoConfirmado(id) { fecharModal(); mudarStatusPedido(id, 'CANCELADO'); }
+function cancelarPedidoConfirmado(id) {
+  const m = document.getElementById('canc-motivo');
+  const motivo = m && m.value ? m.value.trim() : '';
+  fecharModal(); mudarStatusPedido(id, 'CANCELADO', motivo);
+}
 
-async function mudarStatusPedido(id, status) {
+async function mudarStatusPedido(id, status, motivo) {
   try {
-    await api('PATCH', `/pedidos/${id}/status`, { status });
+    await api('PATCH', `/pedidos/${id}/status`, motivo ? { status, motivo } : { status });
     toast(`Pedido marcado como: ${status}`, 'sucesso');
     carregarModulo('pedidos');
   } catch (e) { toast(e.message, 'erro'); }

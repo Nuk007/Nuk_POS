@@ -198,7 +198,7 @@ function pedirRecusarRemoto(id) {
 }
 async function recusarRemotoConfirmado(id) {
   fecharModal();
-  try { await api('PATCH', `/pedidos/${id}/status`, { status: 'CANCELADO' }); toast('Pedido recusado', 'sucesso'); carregarModulo('remota'); actualizarBadgeRemota(); }
+  try { await api('PATCH', `/pedidos/${id}/status`, { status: 'CANCELADO', motivo: 'Pedido remoto recusado pelo caixa' }); toast('Pedido recusado', 'sucesso'); carregarModulo('remota'); actualizarBadgeRemota(); }
   catch (e) { toast(e.message, 'erro'); }
 }
 async function actualizarBadgeRemota() {

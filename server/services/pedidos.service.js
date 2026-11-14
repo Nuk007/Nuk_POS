@@ -226,11 +226,13 @@ async function criarPedido({ tenantId, userId, mesa_id, quarto_id, cliente_id, i
  *  - CANCELADO estorna o que foi pago em Nuk-Coin (livro-razão: movimento ESTORNO) — uma só vez.
  *  - A mesa é libertada quando o último pedido activo fecha ou é cancelado.
  */
-async function actualizarStatusPedido({ tenantId, pedidoId, status, userId }) {
+async function actualizarStatusPedido({ tenantId, pedidoId, status, userId, motivo }) {
   const STATUSES_VALIDOS = ['ABERTO', 'EM_PREPARO', 'PRONTO', 'FECHADO', 'CANCELADO'];
   if (!STATUSES_VALIDOS.includes(status)) {
     const err = new Error('Status inválido'); err.statusCode = 400; throw err;
   }
+  const motivoTxt = motivo == null ? '' : String(motivo).trim();
+  if (motivoTxt.length > 200) { const err = new Error('Motivo demasiado longo (máximo 200)'); err.statusCode = 400; throw err; }
 
   const libertas = { mesas: [], quartos: [] };
   const pedido = await withTx(async db => {
@@ -260,9 +262,12 @@ async function actualizarStatusPedido({ tenantId, pedidoId, status, userId }) {
       // sair do «por validar» (qualquer estado menos cancelar) é o caixa a validar o pedido remoto
       `UPDATE pedidos SET status = $1::text, atualizado_em = NOW(),
               validado_em  = CASE WHEN $1::text <> 'CANCELADO' THEN COALESCE(validado_em, NOW()) ELSE validado_em END,
-              validado_por = CASE WHEN $1::text <> 'CANCELADO' THEN COALESCE(validado_por, $3::uuid) ELSE validado_por END
+              validado_por = CASE WHEN $1::text <> 'CANCELADO' THEN COALESCE(validado_por, $3::uuid) ELSE validado_por END,
+              cancelado_em = CASE WHEN $1::text = 'CANCELADO' THEN NOW() ELSE cancelado_em END,
+              cancelado_por = CASE WHEN $1::text = 'CANCELADO' THEN $3::uuid ELSE cancelado_por END,
+              motivo_cancelamento = CASE WHEN $1::text = 'CANCELADO' THEN $4::text ELSE motivo_cancelamento END
        WHERE id = $2 RETURNING *`,
-      [status, pedidoId, userId || null]
+      [status, pedidoId, userId || null, motivoTxt || null]
     );
 
     if (status === 'CANCELADO' && parseFloat(p.nukcoin_pago) > 0 && p.cliente_id) {

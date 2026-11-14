@@ -1,10 +1,10 @@
 // Nuk_POS — Servidor Principal (refactored)
 // Stack: Node.js + Express + PostgreSQL + Socket.io
 // SaaS multi-tenant: cada empresa tem tenant_id em todas as operações
-// v2026.11.14.5-conta-corrente
+// v2026.11.14.6-relatorios
 
 require('dotenv').config();
-console.log('[NukPOS] server/app.js v2026.11.14.5-conta-corrente a arrancar');
+console.log('[NukPOS] server/app.js v2026.11.14.6-relatorios a arrancar');
 
 const express = require('express');
 const http = require('http');
@@ -160,6 +160,7 @@ app.use('/api/solicitacoes-hospedagem', resolverTenant, verificarLicencaTenant, 
 app.use('/api/solicitacoes-portal', resolverTenant, verificarLicencaTenant, exigirLicenca(['restauracao', 'hospedagem', 'lazer', 'loja']), require('./routes/solicitacoes-portal'));
 app.use('/api/stock',          resolverTenant, verificarLicencaTenant, exigirModulo('stock'), require('./routes/stock'));
 app.use('/api/financeiro',     resolverTenant, verificarLicencaTenant, exigirModulo('financeiro'), require('./routes/financeiro'));
+app.use('/api/relatorios',     resolverTenant, verificarLicencaTenant, exigirModulo('relatorios'), require('./routes/relatorios'));
 app.use('/api/clientes',       resolverTenant, verificarLicencaTenant, exigirModulo('clientes'), require('./routes/clientes'));
 app.use('/api/chamadas',       resolverTenant, verificarLicencaTenant, exigirLicenca('restauracao'), require('./routes/chamadas'));
 app.use('/api/configuracoes',  resolverTenant, verificarLicencaTenant, require('./routes/configuracoes'));

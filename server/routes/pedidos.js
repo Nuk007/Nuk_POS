@@ -216,6 +216,7 @@ router.patch('/:id/status', authMiddleware, validarUUID('id'), async (req, res, 
       tenantId: req.tenantId,
       pedidoId: req.params.id,
       status:   req.body.status,
+      motivo:   req.body.motivo,
       userId:   req.user && req.user.id,
     });
     res.json(pedido);

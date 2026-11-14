@@ -20,7 +20,7 @@ const fiscalValido = () => process.env.AGT_CERTIFICADO === 'true';
 const T = t => t || null;
 const kz = n => `${Number(n || 0).toLocaleString('pt-PT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Kz`;
 const dataLuanda = d => new Date(d).toLocaleString('pt-PT', { timeZone: 'Africa/Luanda', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-const METODOS = { CASH: 'Dinheiro', TPA: 'TPA / Multicaixa', EXPRESS: 'Multicaixa Express', TRANSFERENCIA: 'Transferência', NUKCOIN: 'Nuk-Coin' };
+const METODOS = { CASH: 'Dinheiro', TPA: 'TPA / Multicaixa', EXPRESS: 'Multicaixa Express', TRANSFERENCIA: 'Transferência', NUKCOIN: 'Nuk-Coin', CARTAO: 'Cartão de consumo', CONTA: 'Conta corrente', MISTO: 'Vários' };
 
 function renderizar(doc) {
   return new Promise((resolve, reject) => {
@@ -154,4 +154,37 @@ async function facturaPdf({ tenantId, faturaId }) {
   return renderizar(doc);
 }
 
-module.exports = { talaoPedido, facturaPdf, tenantInfo };
+/** Talão de fecho de caixa (relatório Z), 80 mm. */
+async function talaoFechoCaixa({ tenantId, sessaoId }) {
+  const z = await require('./relatorios.service').sessaoCaixa({ tenantId, sessaoId });
+  const t = await tenantInfo(tenantId);
+  const s = z.sessao;
+  const W = 226, M = 10, util = W - 2 * M;
+  const ROT = { NUKCOIN_CARREGAMENTO: 'Carregamentos Nuk-Coin', CARTAO_VENDA: 'Cartões de consumo vendidos', RECEBIMENTO: 'Recebimentos', COMPRA: 'Compras pontuais', CONTA_PAGAMENTO: 'Pagamentos de conta corrente' };
+  const linhasMov = z.movimentos_por_tipo.length + Object.keys(z.por_metodo).length + z.por_funcionario.length;
+  const doc = new PDFDocument({ size: [W, 330 + linhasMov * 13], margin: M, info: { Title: 'Fecho de caixa', Author: 'Nuk_POS' } });
+  const linha = (a, b, bold) => { doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(8).fillColor('#000'); const y = doc.y; doc.text(a, M, y, { width: util - 80 }); doc.text(b, M + util - 80, y, { width: 80, align: 'right' }); doc.moveDown(0.15); };
+  const titulo = x => { doc.moveDown(0.4).font('Helvetica-Bold').fontSize(8.5).fillColor(NAVY).text(x, M, doc.y, { width: util }); doc.moveDown(0.15); };
+  doc.font('Helvetica-Bold').fontSize(10).fillColor('#000').text(t.nome, M, M, { width: util, align: 'center' });
+  if (t.nif) doc.font('Helvetica').fontSize(7.5).text(`NIF ${t.nif}`, { width: util, align: 'center' });
+  doc.moveDown(0.4).font('Helvetica-Bold').fontSize(11).fillColor(LARANJA).text('FECHO DE CAIXA (Z)', { width: util, align: 'center' });
+  doc.font('Helvetica').fontSize(7.5).fillColor(CINZA);
+  doc.text(`Aberto: ${dataLuanda(s.aberta_em)} · ${s.aberta_por_nome || '—'}`, { width: util });
+  doc.text(s.fechada_em ? `Fechado: ${dataLuanda(s.fechada_em)} · ${s.fechada_por_nome || '—'}` : 'Sessão ainda aberta (relatório parcial)', { width: util });
+  titulo('Por tipo de movimento');
+  z.movimentos_por_tipo.forEach(m => linha(`${ROT[m.tipo] || m.tipo} · ${METODOS[m.metodo] || m.metodo} (${m.n})`, kz(m.valor)));
+  if (z.lancado_em_conta.n) linha(`Lançado em conta corrente (${z.lancado_em_conta.n})`, kz(z.lancado_em_conta.valor));
+  titulo('Por forma de pagamento');
+  Object.entries(z.por_metodo).forEach(([m, v]) => linha(METODOS[m] || m, kz(v)));
+  titulo('Por funcionário');
+  z.por_funcionario.forEach(f => linha(`${f.nome} · ${METODOS[f.metodo] || f.metodo}`, kz(f.valor)));
+  titulo('Gaveta');
+  linha('Fundo inicial', kz(z.fundo_inicial));
+  linha('Dinheiro esperado', kz(z.dinheiro_esperado), true);
+  if (z.contado !== null) { linha('Dinheiro contado', kz(z.contado)); linha('Diferença', kz(z.diferenca), true); }
+  if (s.observacoes) { doc.moveDown(0.3).font('Helvetica').fontSize(7.5).fillColor(CINZA).text(`Obs.: ${s.observacoes}`, M, doc.y, { width: util }); }
+  doc.moveDown(0.6).font('Helvetica').fontSize(6.5).fillColor(CINZA).text(`Documento interno · ${EMPRESA}`, M, doc.y, { width: util, align: 'center' });
+  return renderizar(doc);
+}
+
+module.exports = { talaoPedido, facturaPdf, tenantInfo, talaoFechoCaixa };

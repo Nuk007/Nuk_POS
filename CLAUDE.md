@@ -135,6 +135,11 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 - Dívida: sem factura a crédito automática ao lançar na conta (emitir FT em Finanças); sem aviso de vencimento/extracto por WhatsApp; sem juros.
 - Testes: `tests/integration/conta-corrente.int.test.js`, `tests/frontend-caixa.test.js`.
 
+## Relatórios e cancelamentos (14/11/2026)
+- **Cancelamentos**: a regra dos 5 minutos mantém-se (ninguém anula depois, nem a chefia — decisão do dono). Cada cancelamento grava `pedidos.cancelado_em/cancelado_por/motivo_cancelamento` (migração 1750800000000, SQL em `server/migrations-data/cancelamentos.js`); `PATCH /api/pedidos/:id/status` aceita `motivo` (≤200, opcional). O modal de cancelar pede o motivo; a recusa de pedido remoto grava «Pedido remoto recusado pelo caixa».
+- **Relatórios** (`services/relatorios.service.js`, `/api/relatorios`, só ADMIN/GERENTE, acesso `relatorios` na licença `financas`, menu Administração → Finanças → Relatórios, `public/js/relatorios.js`): `GET /vendas?de=&ate=` (dias de Luanda, máx. 1 ano) — totais, ticket médio, descontos, por receber, recebido por forma (inclui CONTA lançado em conta corrente), por funcionário (com nº de cancelamentos), top 30 produtos, por hora, lista de cancelamentos com quem/motivo. `GET /caixa/:sessaoId` e `/caixa/:sessaoId/talao.pdf` = fecho de caixa (Z) 80 mm (`talaoFechoCaixa` em documentos.service.js).
+- Testes: `tests/integration/relatorios.int.test.js`, `tests/frontend-relatorios.test.js`.
+
 ## Compras pontuais
 - Menu Compras → «Compras pontuais» (acesso `compras`, licença `compras`); `services/compras.service.js` + `routes/compras.js` (`/api/compras`) + `public/js/compras.js`. Tabela `compras_pontuais`; `caixa_movimentos.compra_id`.
 - Regras: exige caixa aberto (409 `CAIXA_FECHADO`); só itens **cadastrados** em `stock_items` do próprio estabelecimento (404 caso contrário); só dinheiro (CASH) e nunca acima do dinheiro disponível na gaveta (409 com `disponivel`).
