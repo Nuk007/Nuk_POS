@@ -50,6 +50,8 @@ async function api(metodo, path, dados) {
     if (r.status === 401 && NUK.token && path !== '/auth/login') { logout(); return; }
     // Contrato de Adesão por assinar (13/11/2026): mostra o ecrã de assinatura em vez de um erro solto.
     if (r.status === 428 && json.codigo === 'ADESAO_PENDENTE' && typeof mostrarAdesao === 'function') { mostrarAdesao(); }
+    // Licença expirada / conta suspensa (14/11/2026): ecrã próprio em vez do erro solto em cada módulo.
+    if (r.status === 403 && ['LICENCA_EXPIRADA', 'TENANT_SUSPENSA'].includes(json.codigo) && typeof mostrarLicencaBloqueada === 'function') { mostrarLicencaBloqueada(json); }
     throw new Error(json.erro || `Erro ${r.status}`);
   }
   if (metodo === 'GET' && typeof offlineGuardarLeitura === 'function') offlineGuardarLeitura(path, json);
@@ -91,6 +93,7 @@ function logout() {
   if (NUK.socket) NUK.socket.disconnect();
   document.getElementById('app').style.display = 'none';
   document.getElementById('tela-adesao').style.display = 'none';
+  const telaLic = document.getElementById('tela-licenca'); if (telaLic) telaLic.style.display = 'none';
   document.getElementById('tela-login').style.display = 'flex';
 }
 
@@ -99,12 +102,14 @@ function logout() {
 // de assinado arranca a operação.
 async function iniciarApp() {
   document.getElementById('tela-login').style.display = 'none';
+  if (typeof verificarLicenca === 'function' && await verificarLicenca()) return;
   if (typeof verificarAdesao === 'function' && await verificarAdesao()) return;
   arrancarOperacao();
 }
 
 function arrancarOperacao() {
   document.getElementById('tela-adesao').style.display = 'none';
+  const telaLic = document.getElementById('tela-licenca'); if (telaLic) telaLic.style.display = 'none';
   document.getElementById('app').style.display = 'flex';
 
   // Info do utilizador na sidebar

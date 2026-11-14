@@ -72,6 +72,24 @@
   </div>
 </div>
 
+<!-- ── LICENÇA EXPIRADA / CONTA SUSPENSA (14/11/2026) ─────────── -->
+<div id="tela-licenca" class="tela-adesao tela-licenca" style="display:none">
+  <div class="adesao-card licenca-card">
+    <div class="adesao-topo">
+      <span class="marca"><img src="/img/logo-nukpos-texto.png" alt="Nuk_POS" width="597" height="176"></span>
+      <button type="button" class="btn-secundario" id="licenca-sair">Sair</button>
+    </div>
+    <div class="licenca-icone" aria-hidden="true">🔒</div>
+    <h2 class="adesao-titulo" id="licenca-titulo">A licença expirou</h2>
+    <p id="licenca-texto"></p>
+    <p id="licenca-dados" class="muted"></p>
+    <div class="licenca-accoes">
+      <a id="licenca-suporte" class="btn-primario" target="_blank" rel="noopener" style="display:none">💬 Falar com o suporte no WhatsApp</a>
+      <button type="button" class="btn-secundario" id="licenca-tentar">Já renovei — entrar</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── APP PRINCIPAL ──────────────────────────────────── -->
 <div id="app" style="display:none">
 
@@ -226,6 +244,11 @@
         <span id="hora-atual" class="hora-atual"></span>
       </div>
     </header>
+    <div id="aviso-licenca" class="aviso-licenca" style="display:none" role="status">
+      <span id="aviso-licenca-texto"></span>
+      <a id="aviso-licenca-suporte" class="btn-secundario" target="_blank" rel="noopener" style="display:none">Renovar</a>
+      <button type="button" class="btn-fechar-modal" id="aviso-licenca-fechar" title="Fechar">✕</button>
+    </div>
     <div id="main-content" class="content-area">
       <div class="loading-spinner">A carregar...</div>
     </div>
@@ -249,6 +272,7 @@
 <script src="/js/pwa.js" defer></script>
 <script src="/js/nukpos.js"></script>
 <script src="/js/adesao.js"></script>
+<script src="/js/licenca.js"></script>
 <script src="/js/modulos.js"></script>
 <script src="/js/venda.js"></script>
 <script src="/js/caixa.js"></script>

@@ -440,8 +440,8 @@
     <!-- Form section (shown after successful GET) -->
     <div id="form-section" style="display:none">
       <div class="card-header">
-        <h1>Activação de Licença</h1>
-        <p>Preencha os dados do administrador para activar o sistema</p>
+        <h1 id="form-titulo">Activação de Licença</h1>
+        <p id="form-sub">Preencha os dados do administrador para activar o sistema</p>
       </div>
       <div class="card-body">
 
@@ -453,6 +453,7 @@
 
         <!-- Fields -->
         <form id="activation-form" novalidate>
+          <div id="campos-admin">
           <div class="form-grid">
 
             <div class="field full">
@@ -486,6 +487,9 @@
             </div>
             <span class="field-error" id="err-pw">A palavra-passe tem de ter entre 6 e 8 dígitos</span>
           </div>
+          </div>
+
+          <span class="field-error" id="err-geral"></span>
 
           <button type="submit" class="btn-activate" id="btn-submit">
             <div class="spinner" id="submit-spinner"></div>

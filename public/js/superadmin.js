@@ -243,20 +243,14 @@ async function alterarEstado(id, s, nome) {
 }
 
 async function renovarLicenca(id, nome) {
-  miniPrompt(`Renovar licença de "${nome}" — dias a adicionar:`, '30', async (val) => {
+  miniPrompt(`Renovar licença de "${nome}" — dias a acrescentar ao prazo actual:`, '30', async (val) => {
     if (!val || isNaN(+val)) return;
     try {
       const r = await api(`/api/saas/tenants/${id}/renovar`, { method: 'POST', body: { duracao_dias: +val } });
-      if (r.whatsapp_enviado) {
-        toast('Licença renovada — link de activação enviado via WhatsApp');
-      } else if (r.whatsapp_manual) {
-        // Mesmo padrão do AviationMoney: renovação nunca fica bloqueada por falha no envio
-        // automático — abre-se o wa.me com a mensagem já escrita (01/11/2026).
-        window.open(r.whatsapp_manual, '_blank');
-        toast('Licença renovada — envio automático indisponível, abri o WhatsApp para enviar à mão', 'err');
-      } else {
-        toast('Licença renovada');
-      }
+      // Renovação directa (14/11/2026): já está activa; o prazo soma-se ao que faltava.
+      toast(`Licença renovada — válida até ${r.valido_ate}${r.suspensa ? ' (a conta continua suspensa)' : ''}`);
+      // Aviso ao cliente pelo WhatsApp com a mensagem já escrita (só se houver número).
+      if (r.whatsapp_manual && /wa\.me\/\d{9,}/.test(r.whatsapp_manual)) window.open(r.whatsapp_manual, '_blank');
       closeModal('modal-tenant'); loadTenants(); loadDashboard();
     } catch (e) { toast(e.message, 'err'); }
   });

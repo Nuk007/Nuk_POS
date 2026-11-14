@@ -2,6 +2,10 @@
 const path = window.location.pathname; // /activate/SOMEKEY
 const key = path.split('/').filter(Boolean).pop();
 
+// Chave de renovação (o estabelecimento já tem titular, 14/11/2026): só se confirma; não se pedem
+// os dados do administrador nem se muda a palavra-passe.
+let RENOVACAO = false;
+
 // ── UI helpers ──
 function show(id) { document.getElementById(id).classList.add('visible'); }
 function hide(id) { document.getElementById(id).classList.remove('visible'); }
@@ -66,6 +70,14 @@ async function loadLicense() {
       container.appendChild(tag);
     });
 
+    if (data.renovacao) {
+      RENOVACAO = true;
+      document.getElementById('campos-admin').style.display = 'none';
+      document.getElementById('form-titulo').textContent = 'Renovação de Licença';
+      document.getElementById('form-sub').textContent = 'Confirme para prolongar o prazo. As contas e as palavras-passe ficam como estão.';
+      document.getElementById('btn-label').textContent = 'Renovar licença';
+    }
+
     document.getElementById('tenant-banner').classList.add('visible');
     showBlock('form-section');
 
@@ -100,6 +112,7 @@ document.getElementById('password').addEventListener('input', function () {
 // ── Form validation & submit ──
 document.getElementById('activation-form').addEventListener('submit', async function (e) {
   e.preventDefault();
+  if (RENOVACAO) return confirmarRenovacao();
 
   const nome    = document.getElementById('nome_admin').value.trim();
   const email   = document.getElementById('email_admin').value.trim();
@@ -200,6 +213,35 @@ document.getElementById('activation-form').addEventListener('submit', async func
     errEl.classList.add('visible');
   }
 });
+
+// ── Renovação: confirma sem dados do administrador ──
+async function confirmarRenovacao() {
+  const btn = document.getElementById('btn-submit');
+  const spinner = document.getElementById('submit-spinner');
+  const btnLabel = document.getElementById('btn-label');
+  const errEl = document.getElementById('err-geral');
+  errEl.classList.remove('visible');
+  btn.disabled = true; spinner.style.display = 'block'; btnLabel.textContent = 'A renovar…';
+  try {
+    const r = await fetch(`/api/saas/activate/${encodeURIComponent(key)}/confirmar`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.erro || 'Erro ao renovar. Tente novamente.');
+    document.getElementById('s-empresa').textContent  = data.tenant || '—';
+    document.getElementById('s-plano').textContent    = data.plano  || '—';
+    document.getElementById('s-email').textContent    = 'Sem alterações';
+    document.getElementById('s-validade').textContent = data.valido_ate || '—';
+    if (data.slug) document.getElementById('btn-access').href = `/${data.slug}`;
+    document.getElementById('success-body').textContent =
+      `A licença de ${data.tenant} foi renovada até ${data.valido_ate}. Entre com as credenciais de sempre.`;
+    showBlock('success-state');
+  } catch (err) {
+    btn.disabled = false; spinner.style.display = 'none'; btnLabel.textContent = 'Renovar licença';
+    errEl.textContent = err.message.startsWith('Failed') ? 'Erro de ligação. Verifique a sua internet e tente novamente.' : err.message;
+    errEl.classList.add('visible');
+  }
+}
 
 // ── Init ──
 loadLicense();

@@ -478,45 +478,34 @@ router.post('/licencas/:key/reenviar', superAdminAuth, async (req, res) => {
 // Body: { duracao_dias, plano_nome }
 // ──────────────────────────────────────────────────────────────
 router.post('/tenants/:id/renovar', superAdminAuth, async (req, res) => {
+  // Renovação directa (14/11/2026): a licença fica logo activa e o prazo soma-se ao que ainda falta.
+  // Não passa pela página de activação (que pedia de novo o administrador e mudava a palavra-passe do titular).
   const { duracao_dias = 30, plano_nome, notas = 'Renovação' } = req.body;
+  const licencaSvc = require('./services/licenca.service');
+  const { withTx } = require('./services/shared');
   try {
-    const tenant = await pool.query(`SELECT * FROM tenants WHERE id = $1`, [req.params.id]);
-    if (tenant.rows.length === 0) return res.status(404).json({ erro: 'Tenant não encontrado' });
-
-    let planoId = tenant.rows[0].plano_id;
+    let planoId = null;
     if (plano_nome) {
       const p = await pool.query(`SELECT id FROM planos_assinatura WHERE nome = $1`, [plano_nome]);
       if (p.rows.length > 0) planoId = p.rows[0].id;
     }
-
     const licenseKey = gerarLicenseKey();
-    await pool.query(`
-      INSERT INTO licencas (tenant_id, license_key, plano_id, duracao_dias, estado, notas)
-      VALUES ($1, $2, $3, $4, 'PENDENTE', $5)
-    `, [req.params.id, licenseKey, planoId, duracao_dias, notas]);
-
-    const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
-    let whatsappEnviado = false;
-    let whatsappManual = null;
-    const activationLink = `${baseUrl}/activate/${licenseKey}`;
-
-    try {
-      await enviarWhatsAppActivacao(tenant.rows[0].telefone_whatsapp, tenant.rows[0].nome, licenseKey, baseUrl);
-      await pool.query(`UPDATE licencas SET whatsapp_enviado_em = NOW() WHERE license_key = $1`, [licenseKey]);
-      whatsappEnviado = true;
-    } catch (e) {
-      console.warn('WhatsApp não enviado:', e.message);
-      whatsappManual = linkManualWhatsApp(tenant.rows[0].telefone_whatsapp, textoActivacao(tenant.rows[0].nome, activationLink));
-    }
-
+    const r = await withTx(client => licencaSvc.activarRenovacao(client, {
+      tenantId: req.params.id, duracaoDias: Number(duracao_dias), planoId, notas, licenseKey,
+    }));
+    const t = await pool.query(`SELECT nome, telefone_whatsapp FROM tenants WHERE id = $1`, [req.params.id]);
+    const validoAte = r.fim.toLocaleDateString('pt-PT', { timeZone: 'Africa/Luanda' });
+    const texto = `Olá! A licença do Nuk_POS de ${t.rows[0].nome} foi renovada e está válida até ${validoAte}. Obrigado pela confiança.`;
     res.json({
       ok: true,
       license_key: licenseKey,
-      activation_link: activationLink,
-      whatsapp_enviado: whatsappEnviado,
-      whatsapp_manual: whatsappManual,
+      valido_ate: validoAte,
+      fim: r.fim,
+      suspensa: r.suspensa,
+      whatsapp_manual: linkManualWhatsApp(t.rows[0].telefone_whatsapp, texto),
     });
   } catch (err) {
+    if (err.statusCode) return res.status(err.statusCode).json({ erro: err.message });
     res.status(500).json({ erro: 'Erro interno do servidor' });
   }
 });
@@ -555,8 +544,12 @@ router.get('/activate/:key', async (req, res) => {
       return res.status(403).json({ erro: 'Esta licença foi revogada. Contacte o suporte.' });
     }
 
+    // Chave de um estabelecimento que já tem titular = renovação: não se pedem dados do administrador.
+    const renovacao = await require('./services/licenca.service').temTitular(pool, lic.tenant_id);
+
     res.json({
       valida: true,
+      renovacao,
       tenant_nome: lic.tenant_nome,
       plano: lic.plano_nome,
       max_funcionarios: lic.max_funcionarios,
@@ -577,6 +570,34 @@ router.get('/activate/:key', async (req, res) => {
 // ──────────────────────────────────────────────────────────────
 router.post('/activate/:key/confirmar', async (req, res) => {
   const { nome_admin, telefone_admin, email_admin, password } = req.body;
+  const licencaSvc = require('./services/licenca.service');
+
+  // Chave de renovação (o estabelecimento já tem titular): só activa e prolonga o prazo, sem tocar nas
+  // contas — antes escrevia por cima da palavra-passe do titular (14/11/2026).
+  try {
+    const k = await pool.query(`SELECT id, tenant_id, estado, duracao_dias FROM licencas WHERE license_key = $1`, [req.params.key]);
+    if (k.rows.length && k.rows[0].estado === 'PENDENTE' && await licencaSvc.temTitular(pool, k.rows[0].tenant_id)) {
+      const { withTx } = require('./services/shared');
+      const r = await withTx(async client => {
+        const l = await client.query(`SELECT estado FROM licencas WHERE id = $1 FOR UPDATE`, [k.rows[0].id]);
+        if (l.rows[0].estado !== 'PENDENTE') throw Object.assign(new Error(`Licença já foi ${l.rows[0].estado.toLowerCase()}`), { statusCode: 400 });
+        return licencaSvc.activarRenovacao(client, {
+          tenantId: k.rows[0].tenant_id, duracaoDias: k.rows[0].duracao_dias, licencaId: k.rows[0].id, ip: req.ip,
+        });
+      });
+      const t = await pool.query(`SELECT t.nome, t.slug, p.nome AS plano FROM tenants t LEFT JOIN planos_assinatura p ON p.id = t.plano_id WHERE t.id = $1`, [k.rows[0].tenant_id]);
+      return res.json({
+        ok: true, renovacao: true,
+        mensagem: 'Licença renovada com sucesso!',
+        tenant: t.rows[0].nome, plano: t.rows[0].plano, slug: t.rows[0].slug,
+        valido_ate: r.fim.toLocaleDateString('pt-PT', { timeZone: 'Africa/Luanda' }),
+      });
+    }
+  } catch (err) {
+    if (err.statusCode) return res.status(err.statusCode).json({ erro: err.message });
+    console.error('Renovação por chave:', err.message);
+    return res.status(400).json({ erro: 'Erro ao activar licença' });
+  }
 
   // Palavra-passe de 6 a 8 dígitos (decisão do dono de 14/11/2026).
   if (!nome_admin || !require('./services/shared').PALAVRA_PASSE_RE.test(String(password || ''))) {
@@ -692,6 +713,20 @@ router.post('/activate/:key/confirmar', async (req, res) => {
 });
 
 // ──────────────────────────────────────────────────────────────
+// ESTABELECIMENTO — ESTADO DA LICENÇA (aviso antes do fim e ecrã de bloqueio)
+// GET /api/saas/licenca   (token do funcionário; responde mesmo com a licença expirada)
+// ──────────────────────────────────────────────────────────────
+router.get('/licenca', require('./middleware/auth').authMiddleware, async (req, res, next) => {
+  try {
+    if (!req.user || !req.user.tenantId) return res.status(404).json({ erro: 'Estabelecimento não encontrado' });
+    res.json(await require('./services/licenca.service').estado({ tenantId: req.user.tenantId }));
+  } catch (e) {
+    if (e.statusCode) return res.status(e.statusCode).json({ erro: e.message });
+    next(e);
+  }
+});
+
+// ──────────────────────────────────────────────────────────────
 // MIDDLEWARE: verificar se tenant tem licença activa
 // Exportado para uso em app.js
 // ──────────────────────────────────────────────────────────────
@@ -733,6 +768,7 @@ async function verificarLicencaTenant(req, res, next) {
       return res.status(403).json({
         erro: 'Licença expirada. Renove a sua assinatura.',
         codigo: 'LICENCA_EXPIRADA',
+        fim: fim || null,
       });
     }
 

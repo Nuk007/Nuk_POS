@@ -640,3 +640,14 @@ tr:hover td { background: rgba(255,255,255,.02); }
 .adesao-texto p { margin: 0 0 .6rem; text-align: justify; }
 .adesao-aceito { display: flex; gap: .5rem; align-items: flex-start; margin: .5rem 0 1rem; cursor: pointer; }
 .aviso-msg { background: #FCE4D6; color: #5a2a00; border-radius: 10px; padding: .75rem 1rem; }
+
+/* Licença expirada / suspensa e aviso dos 7 dias (14/11/2026) */
+.licenca-card { max-width: 520px; text-align: center; margin-top: 8vh; }
+.licenca-card .adesao-topo { text-align: left; }
+.licenca-icone { font-size: 2.6rem; margin: .5rem 0 0; }
+.licenca-card p { line-height: 1.5; margin: .5rem 0; }
+.licenca-accoes { display: flex; flex-direction: column; gap: .6rem; margin-top: 1.25rem; }
+.licenca-accoes a, .licenca-accoes button { justify-content: center; text-decoration: none; padding: .75rem 1rem; }
+.aviso-licenca { display: flex; align-items: center; gap: .75rem; padding: .6rem 1rem; background: rgba(245, 158, 11, .12); border-bottom: 1px solid var(--c-warning); color: var(--c-warning); font-size: .88rem; }
+.aviso-licenca span { flex: 1; }
+.aviso-licenca a { padding: .3rem .8rem; font-size: .8rem; text-decoration: none; }
