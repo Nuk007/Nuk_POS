@@ -96,7 +96,7 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 - `GET /api/solicitacoes-hospedagem` (antigo) filtra por `clientes.tenant_id`, por isso não lista pedidos de convidados; usar `solicitacoes_portal`.
 - @openapi parcial no portal (faltam hospedagem, perfil, eventos).
 - Testar a UI em navegador real (Playwright) ainda não faz parte do CI.
-- 13 das 16 rotas ainda sem camada de serviço nem testes dedicados (financeiro e reservas prioritárias).
+- Rotas ainda sem camada de serviço: reservas (prioritária), clientes, mesas, chamadas.
 - Cobertura unitária ~59% → meta 75%+.
 - Rate limiters em memória → Redis se houver multi-instância.
 - Certificação AGT: base feita (ver «Módulo fiscal»); faltam assinatura RSA, SAF-T (AO), envio em tempo real e QR. Os PDFs actuais não têm validade fiscal.
@@ -144,7 +144,7 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 - «Recebido» = `pago_em` preenchido; só se recebe pedidos FECHADOS.
 - **Dividir conta** (14/11/2026): `POST /api/caixa/dividir { pedido_id, itens: [{ item_id, quantidade }] }` (`dividirConta`) passa itens (ou parte das quantidades) de um pedido FECHADO por receber para um pedido novo da mesma mesa/quarto/origem (FECHADO, mesmo `criado_em` e `tabela_preco_id`); recalcula os dois totais; o stock não mexe. Recusa: tudo passado (400), quantidade a mais (400), item de outro pedido (404), conta paga (409), com desconto ou Nuk-Coin (409), já facturada (409). UI: «Dividir conta» no cartão de Receber mesas (`modalDividir`) e, com várias contas na mesa, «Receber esta» (`modalReceber(i, j)`) ao lado de «Receber tudo»; a mesa só fica livre quando todas estiverem pagas.
 - **Pagamento misto** (benchmarking WinREST, 14/11/2026): `POST /api/caixa/receber` aceita `pagamentos: [{ metodo, valor, pin?, cliente_id?, codigo_cartao?, valor_entregue? }]` — 1 a 4 formas, soma igual ao total ao cêntimo, Dinheiro/Nuk-Coin/Cartão no máximo uma vez cada; o troco é da parte em dinheiro. O formato antigo (`metodo`) continua a funcionar (uma parcela pelo total). As parcelas repartem-se pelos pedidos por ordem (`repartir`, em cêntimos) e cada fatia pedido × forma é uma linha em `caixa_movimentos` com o método real (o esperado na gaveta continua a ser fundo + Σ CASH); `pedidos.pago_metodo = 'MISTO'` quando há mais de uma forma; `nukcoin_pago` acumula só a parte Nuk-Coin. UI: «Dividir por várias formas de pagamento» no modal de Receber (`receberMisto`, botão «Resto» preenche o que falta, valida a soma antes de enviar). Pedidos legados FECHADOS ficam como pagos; pedidos remotos pagos com Nuk-Coin nascem pagos.
-- Dívida: receita/financeiro ainda conta FECHADO (não `pago_em`); sem desconto Nuk-Coin no caixa (o portal aplica `nukcoin_desconto_pct`); `exigirModulo('caixa')` protege todo o `/api/caixa`, logo nukcoin/cartoes/recebimentos só são separados na UI; Compras pontuais: ver a secção própria.
+- Dívida: o resumo do dia e o relatório de vendas ainda contam FECHADO (o Resultado do Financeiro já conta `pago_em`); sem desconto Nuk-Coin no caixa (o portal aplica `nukcoin_desconto_pct`); `exigirModulo('caixa')` protege todo o `/api/caixa`, logo nukcoin/cartoes/recebimentos só são separados na UI; Compras pontuais: ver a secção própria.
 
 ## Conta corrente de clientes (crédito, 14/11/2026)
 - `services/conta-corrente.service.js`, rotas em `/api/caixa/conta-corrente` (guarda `caixa`), migração 1750700000000 (SQL em `server/migrations-data/conta-corrente.js`, espelhado em db.js). Acesso/menu `contas` (licença `caixa`): Caixa → «Contas correntes» (`modulo_contas` em caixa.js).
@@ -178,12 +178,18 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 ## Comissões do pessoal (14/11/2026)
 - `funcionarios.comissao_pct` (0–100, CHECK; ficha do funcionário, só ADMIN). O relatório de vendas devolve por funcionário `comissao_pct` e `comissao` = % × vendas FECHADAS do período (valor com IVA). Dívida: sem regras por categoria/produto nem fecho mensal de comissões.
 
+## Resultado, margens e despesas (14/11/2026)
+- `services/financeiro.service.js` (o resumo do dia saiu da rota para `resumoDia`, mesmo contrato). Rotas em `routes/financeiro.js`: `GET /resultado?de=&ate=`, `GET/POST /despesas`, `POST /despesas/:id/anular` (só ADMIN/GERENTE). UI no módulo Financeiro (`#fin-resultado`, `public/js/financas.js`).
+- **Receita** = pedidos com `pago_em` no período (recebidos no Caixa ou lançados em conta corrente) + alojamento (reservas não canceladas). **Custo das vendas** = Σ quantidade × custo da receita do produto (`produto_ingredientes` × `stock_items.custo_unitario` ACTUAL; `custosProdutos`). Produtos sem receita/custo: custo 0 e `receita_sem_custo` avisa. **Resultado** = receita − custo − despesas. As compras pontuais não são despesa do resultado (viram stock → custo quando se vende); aparecem só nas saídas de caixa.
+- Despesas (`despesas`, migração 1751400000000, SQL em `server/migrations-data/despesas.js`): categorias fixas (SALARIOS, RENDA, ENERGIA, AGUA, COMBUSTIVEL, MANUTENCAO, MARKETING, IMPOSTOS, OUTRA), data não futura. «Paga pela gaveta» exige caixa aberto e dinheiro suficiente → `caixa_movimentos` tipo `DESPESA` negativo. Nunca se apagam: anular com motivo (confirmação); se saiu da gaveta, só no caixa em curso (o dinheiro volta).
+- Testes: `tests/integration/financeiro-resultado.int.test.js`, ecrã em `tests/frontend-modulos.test.js`.
+
 ## Compras pontuais
 - Menu Compras → «Compras pontuais» (acesso `compras`, licença `compras`); `services/compras.service.js` + `routes/compras.js` (`/api/compras`) + `public/js/compras.js`. Tabela `compras_pontuais`; `caixa_movimentos.compra_id`.
 - Regras: exige caixa aberto (409 `CAIXA_FECHADO`); só itens **cadastrados** em `stock_items` do próprio estabelecimento (404 caso contrário); só dinheiro (CASH) e nunca acima do dinheiro disponível na gaveta (409 com `disponivel`).
 - Efeitos: movimento CASH negativo no caixa, entrada no stock (`movimentos_stock` COMPRA) e `custo_unitario` = último preço pago.
 - Nunca se apaga: «Anular» (com confirmação) só no caixa em curso e só se o stock comprado ainda não foi consumido; faz o movimento contrário.
-- Dívida: o financeiro/relatórios ainda não contam as compras como despesa; sem anexo de talão/factura do fornecedor; quem tem licença `compras` sem `caixa` não consegue abrir caixa.
+- Dívida: sem anexo de talão/factura do fornecedor; quem tem licença `compras` sem `caixa` não consegue abrir caixa.
 
 ## Serviços (avarias, danos e prazos de manutenção)
 - Grupo **Serviços** no menu: «Avarias e danos» (acesso `servicos`) e «Prazos de manutenção» (acesso `manutencao`); licença `servicos`. `services/servicos.service.js` + `routes/servicos.js` (`/api/servicos`, guarda `exigirModulo(['servicos','manutencao'])` — agora aceita uma lista, basta uma chave) + `public/js/servicos.js`. Migração 1750100000000 espelhada em db.js: `ativos_servico`, `ocorrencias_servico`, `manutencoes_plano`, `manutencoes_registo`.

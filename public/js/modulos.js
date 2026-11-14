@@ -1028,6 +1028,7 @@ async function modulo_financeiro(el) {
         </div>
       </div>` : ''}
 
+      ${['ADMIN', 'GERENTE'].includes(NUK.utilizador && NUK.utilizador.nivel_acesso) ? '<div id="fin-resultado" class="mb-3"></div>' : ''}
       <div class="card">
         <div class="card-header">
           <span class="card-titulo">Últimos documentos</span>
@@ -1044,6 +1045,7 @@ async function modulo_financeiro(el) {
         </div>
       </div>
     `;
+    if (document.getElementById('fin-resultado') && typeof carregarResultadoFinanceiro === 'function') carregarResultadoFinanceiro();
   } catch (e) {
     el.innerHTML = `<div class="erro-msg">Erro: ${e.message}</div>`;
   }

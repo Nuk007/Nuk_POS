@@ -4,57 +4,22 @@ const router = express.Router();
 const { pool } = require('../db');
 const { authMiddleware, requerNivel, isUUID } = require('../middleware/auth');
 
-// GET /api/financeiro/resumo
-router.get('/resumo', authMiddleware, async (req, res) => {
-  const { data } = req.query;
-  let dataFiltro = new Date().toLocaleDateString('sv-SE', { timeZone: 'Africa/Luanda' }); // dia civil em Luanda (UTC+1)
-  if (data && /^\d{4}-\d{2}-\d{2}$/.test(data)) {
-    const d = new Date(data + 'T00:00:00Z');
-    if (!isNaN(d.getTime()) && d.toISOString().startsWith(data)) {
-      dataFiltro = data;
-    }
-  }
-  const tenantId = req.tenantId;
-  try {
-    const [vendas, porCategoria, porStatus, quartos] = await Promise.all([
-      pool.query(`
-        SELECT COUNT(*) FILTER (WHERE status <> 'CANCELADO') as total_pedidos,
-               COALESCE(SUM(total) FILTER (WHERE status = 'FECHADO'),0) as receita_total,
-               COUNT(*) FILTER (WHERE status = 'FECHADO') as pedidos_fechados,
-               COUNT(*) FILTER (WHERE status = 'CANCELADO') as pedidos_cancelados
-        FROM pedidos WHERE (criado_em AT TIME ZONE 'Africa/Luanda')::date = $1 AND ($2::uuid IS NULL OR tenant_id=$2)
-      `, [dataFiltro, tenantId || null]),
-      pool.query(`
-        SELECT pr.categoria, COALESCE(SUM(ip.quantidade),0) as itens_vendidos, COALESCE(SUM(ip.quantidade * ip.preco_unitario),0) as total
-        FROM itens_pedido ip
-        JOIN produtos pr ON ip.produto_id = pr.id
-        JOIN pedidos p ON ip.pedido_id = p.id
-        WHERE (p.criado_em AT TIME ZONE 'Africa/Luanda')::date = $1 AND p.status = 'FECHADO'
-          AND ($2::uuid IS NULL OR p.tenant_id=$2)
-        GROUP BY pr.categoria ORDER BY total DESC
-      `, [dataFiltro, tenantId || null]),
-      pool.query(`
-        SELECT status, COUNT(*) as total, COALESCE(SUM(total),0) as valor
-        FROM pedidos WHERE (criado_em AT TIME ZONE 'Africa/Luanda')::date = $1 AND ($2::uuid IS NULL OR tenant_id=$2) GROUP BY status
-      `, [dataFiltro, tenantId || null]),
-      pool.query(`
-        SELECT COUNT(*) as total_reservas, COALESCE(SUM(rv.valor_total),0) as receita_quartos
-        FROM reservas rv JOIN quartos q ON rv.quarto_id=q.id
-        WHERE (rv.criado_em AT TIME ZONE 'Africa/Luanda')::date = $1 AND rv.status != 'CANCELADA'
-          AND ($2::uuid IS NULL OR q.tenant_id=$2)
-      `, [dataFiltro, tenantId || null]),
-    ]);
+const fin = require('../services/financeiro.service');
+const chefia = requerNivel(['ADMIN', 'GERENTE']);
 
-    res.json({
-      data: dataFiltro,
-      pedidos: vendas.rows[0],
-      por_categoria: porCategoria.rows,
-      por_status: porStatus.rows,
-      quartos: quartos.rows[0],
-    });
-  } catch (e) {
-    res.status(500).json({ erro: 'Erro interno do servidor' });
-  }
+/**
+ * @openapi
+ * /api/financeiro/resumo:
+ *   get:
+ *     tags: [Financeiro]
+ *     summary: Resumo de um dia (pedidos, categorias, estados, quartos)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ in: query, name: data, schema: { type: string, format: date } }]
+ *     responses: { 200: { description: Resumo } }
+ */
+router.get('/resumo', authMiddleware, async (req, res) => {
+  try { res.json(await fin.resumoDia({ tenantId: req.tenantId, data: req.query.data })); }
+  catch (e) { res.status(500).json({ erro: 'Erro interno do servidor' }); }
 });
 
 const svc = require('../services/fiscal/faturas.service');
@@ -152,6 +117,47 @@ router.post('/faturas/:id/nota-credito', authMiddleware, requerNivel(['ADMIN', '
   if (!isUUID(req.params.id)) return res.status(400).json({ erro: 'id inválido' });
   const nc = await svc.notaCredito({ ...base(req), faturaId: req.params.id, motivo: (req.body || {}).motivo });
   res.status(201).json(nc);
+}));
+
+/**
+ * @openapi
+ * /api/financeiro/resultado:
+ *   get:
+ *     tags: [Financeiro]
+ *     summary: Resultado do período (receita cobrada, custo das vendas, despesas, lucro) e margem por produto — ADMIN/GERENTE
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { in: query, name: de, schema: { type: string, format: date } }
+ *       - { in: query, name: ate, schema: { type: string, format: date } }
+ *     responses: { 200: { description: Resultado }, 400: { description: Datas inválidas } }
+ * /api/financeiro/despesas:
+ *   get:
+ *     tags: [Financeiro]
+ *     summary: Despesas do período (ADMIN/GERENTE)
+ *     security: [{ bearerAuth: [] }]
+ *     responses: { 200: { description: Lista } }
+ *   post:
+ *     tags: [Financeiro]
+ *     summary: Regista uma despesa (pela gaveta exige caixa aberto e dinheiro suficiente) — ADMIN/GERENTE
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody: { content: { application/json: { schema: { type: object, required: [categoria, descricao, valor], properties: { categoria: { type: string }, descricao: { type: string }, valor: { type: number }, data: { type: string, format: date }, pela_gaveta: { type: boolean } } } } } }
+ *     responses: { 201: { description: Registada }, 409: { description: Caixa fechado ou dinheiro insuficiente } }
+ * /api/financeiro/despesas/{id}/anular:
+ *   post:
+ *     tags: [Financeiro]
+ *     summary: Anula uma despesa com motivo (se saiu da gaveta, só no caixa em curso) — ADMIN/GERENTE
+ *     security: [{ bearerAuth: [] }]
+ *     responses: { 200: { description: Anulada }, 409: { description: Já anulada ou caixa fechado } }
+ */
+router.get('/resultado', authMiddleware, chefia, h(async (req, res) => res.json(await fin.resultado({ tenantId: req.tenantId, de: req.query.de, ate: req.query.ate }))));
+router.get('/despesas', authMiddleware, chefia, h(async (req, res) => res.json(await fin.listarDespesas({ tenantId: req.tenantId, de: req.query.de, ate: req.query.ate }))));
+router.post('/despesas', authMiddleware, chefia, h(async (req, res) => {
+  const b = req.body || {};
+  res.status(201).json(await fin.criarDespesa({ categoria: b.categoria, descricao: b.descricao, valor: b.valor, data: b.data, pela_gaveta: b.pela_gaveta, ...base(req) }));
+}));
+router.post('/despesas/:id/anular', authMiddleware, chefia, h(async (req, res) => {
+  if (!isUUID(req.params.id)) return res.status(400).json({ erro: 'id inválido' });
+  res.json(await fin.anularDespesa({ id: req.params.id, motivo: (req.body || {}).motivo, ...base(req) }));
 }));
 
 // GET /api/financeiro/faturas/:id/pdf — documento em A4

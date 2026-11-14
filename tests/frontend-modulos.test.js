@@ -174,7 +174,7 @@ describe('formulários usam as listas do estabelecimento', () => {
 describe('acções destrutivas pedem confirmação', () => {
   test('nenhum botão apaga/cancela/desactiva directamente: passa por pedirXxx → modalConfirmar', () => {
     const botoes = [...codigo.matchAll(/data-on-click="([^"]*)"/g)].map(m => m[1]);
-    const directos = botoes.filter(b => /^(apagarQuarto|apagarOpcaoLista|emitirNotaCreditoConfirmada|retirarContaConfirmado|apagarTabelaPrecoConfirmado|cancelarPedidoConfirmado|cancelarSolicitacaoConfirmada|desactivarFuncConfirmado|removerItemDashboard)\(/.test(b)
+    const directos = botoes.filter(b => /^(apagarQuarto|apagarOpcaoLista|emitirNotaCreditoConfirmada|retirarContaConfirmado|apagarTabelaPrecoConfirmado|anularDespesaConfirmado|cancelarPedidoConfirmado|cancelarSolicitacaoConfirmada|desactivarFuncConfirmado|removerItemDashboard)\(/.test(b)
       || /mudarStatusPedido\([^)]*CANCELADO/.test(b) || /actualizarSolicitacao\([^)]*CANCELADA/.test(b));
     // só o botão «Sim, confirmar» do modalConfirmar (construído com ${funcao}) pode chamá-las
     expect(directos).toEqual([]);
@@ -259,5 +259,27 @@ describe('Configurações — tabelas de preço e prato do dia', () => {
     expect(html).toContain("modalPrecosTabela('t1')");
     expect(html).toContain("pedirApagarTabelaPreco('t1')");
     expect(html).toContain('alternarPratoDoDia(');
+  });
+});
+
+describe('Finanças — resultado e despesas', () => {
+  test('mostra resultado, margens, aviso sem custo e anular despesa passa por confirmação', async () => {
+    const fs2 = require('fs'), path2 = require('path'), vm2 = require('vm');
+    const ctx = { console, window: {}, Promise, Date, NUK: { utilizador: { nivel_acesso: 'ADMIN' } }, formatarMoeda: v => `${v} Kz`, esc: v => String(v ?? ''), toast() {}, abrirModal() {}, fecharModal() {} };
+    const box = { innerHTML: '' };
+    ctx.document = { getElementById: id => (id === 'fin-resultado' ? box : { value: '' }) };
+    ctx.api = async url => (String(url).startsWith('/financeiro/resultado') || true) && (arguments, null);
+    ctx.api = async (m, url) => url.startsWith('/financeiro/resultado')
+      ? { receita: { total: 10800, vendas: 10800, alojamento: 0, pedidos: 2 }, por_receber: { valor: 0 }, custo_vendas: 3600, margem_bruta_pct: 66.7, total_despesas: 50000, resultado: -42800, receita_sem_custo: 1800,
+          despesas: [{ rotulo: 'Renda', valor: 50000 }], por_produto: [{ nome: 'Picanha', quantidade: 2, receita: 9000, custo: 3600, margem: 5400, margem_pct: 60 }, { nome: 'Cuca', quantidade: 3, receita: 1800, custo: 0, margem: 1800, margem_pct: 100, sem_receita: true }] }
+      : [{ id: 'd1', data: '2026-11-14', descricao: 'Renda de Novembro', rotulo: 'Renda', valor: 50000 }];
+    let confirmar = null;
+    ctx.modalConfirmar = (t, x, f) => { confirmar = f; };
+    vm2.createContext(ctx);
+    vm2.runInContext(fs2.readFileSync(path2.join(__dirname, '../public/js/financas.js'), 'utf8'), ctx);
+    await ctx.carregarResultadoFinanceiro();
+    ['Receita cobrada', '-42800 Kz', 'Picanha', 'sem receita de stock', 'Renda de Novembro', "pedirAnularDespesa('d1')", '1800 Kz de vendas'].forEach(t => expect(box.innerHTML).toContain(t));
+    ctx.pedirAnularDespesa('d1');
+    expect(confirmar).toBe('anularDespesaConfirmado');
   });
 });
