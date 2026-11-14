@@ -80,7 +80,8 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 ## Testes (obrigatórios para qualquer alteração)
 - `npm run test:unit` — 100+ testes com pool mockado (`tests/setup.js`, globals `mockPool`/`mockClient`). Queries em `Promise.all` exigem dois `mockResolvedValueOnce`.
 - `npm run test:integration` — testes contra PostgreSQL REAL (`tests/integration/`): o globalSetup arranca uma Postgres efémera (initdb/pg_ctl) ou usa `TEST_DATABASE_URL`. Fixture: `criarTenantFixture()` cria tenant+licença+admin+JWT. Cobrir: transacções/ROLLBACK, isolamento multi-tenant, constraints, concorrência.
-- CI (GitHub Actions): jobs unit + integration (serviço postgres:16) + verificação de sintaxe. Tudo verde antes de push.
+- `npm run test:e2e` — **navegador real** (Playwright + Chromium, `tests/e2e/*.spec.js`, `playwright.config.js`): `tests/e2e/servidor.js` arranca uma Postgres efémera (ou `E2E_DATABASE_URL`), o initDB real, um estabelecimento de demonstração (`dono@e2e.ao` / `246810`, 3 produtos, 4 mesas, quarto SUITE) e o servidor na porta 3999. Fluxos: entrar, vender ao balcão + receber no Caixa com factura-recibo (descarga do PDF), portal com os preços reais. Cada teste falha se houver erros na consola, violações da CSP, pedidos ao servidor falhados ou respostas 5xx. Localmente: `E2E_CHROME=/usr/bin/google-chrome npm run test:e2e`. Na estreia apanhou um erro real: `this.checked` não era aceite pela delegação `data-on-*` (agora é; `tests/frontend.test.js` verifica que todos os `this.*` usados são suportados).
+- CI (GitHub Actions): jobs unit + integration (serviço postgres:16) + e2e (Playwright, relatório e capturas guardados se falhar) + verificação de sintaxe. Tudo verde antes de push.
 
 ## Deploy e operações
 - Serviço Render: `srv-dbhpj3mtlv9c739coi00` → https://nukpos.onrender.com. Push para `master` = deploy automático.
@@ -98,7 +99,6 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 - Preços dos serviços extra do portal (piscina, sauna, lavandaria…) estão escritos à mão no `cliente.html` (indicativos, iguais para todos). O alojamento já usa os preços reais (ver «Reservas de quarto pelo portal»).
 - `GET /api/solicitacoes-hospedagem` (antigo) filtra por `clientes.tenant_id`, por isso não lista pedidos de convidados; usar `solicitacoes_portal`.
 - @openapi parcial no portal (faltam hospedagem, perfil, eventos).
-- Testar a UI em navegador real (Playwright) ainda não faz parte do CI.
 - Camada de serviço completa (14/11/2026): reservas, clientes, mesas e chamadas passaram para `reservas.service.js`, `clientes.service.js`, `mesas.service.js` (`listar`, `mudarEstado` em transacção) e `chamadas.service.js`; mudança de estado da reserva e da mesa com `FOR UPDATE`; pesquisa de clientes literal (`%`/`_` escapados). Teste: `tests/integration/camada-servicos.int.test.js`. Nos testes unitários com `withTx`, responder no `mockClient` por SQL (`mockImplementation`) e fazer `mockReset` no fim: `clearAllMocks` não limpa as filas `mockResolvedValueOnce`.
 - Cobertura unitária ~59% → meta 75%+.
 - Rate limiters em memória → Redis se houver multi-instância.

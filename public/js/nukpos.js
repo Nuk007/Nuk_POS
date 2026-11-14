@@ -453,6 +453,7 @@ function _parseArgs(txt, el) {
       let j = i; while (j < txt.length && txt[j] !== ',') j++;
       const t = txt.slice(i, j).trim(); i = j;
       if (t === 'this.value') args.push(el.value);
+      else if (t === 'this.checked') args.push(!!el.checked); // caixas de selecção (ex.: «Emitir factura-recibo»)
       else if (t === 'true') args.push(true); else if (t === 'false') args.push(false);
       else if (t === 'null') args.push(null); else if (t === 'undefined' || t === '') args.push(undefined);
       else if (!isNaN(Number(t))) args.push(Number(t));

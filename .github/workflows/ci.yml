@@ -69,6 +69,56 @@ jobs:
           JWT_SECRET: test-secret-jwt-jest-nukpos
           TEST_DATABASE_URL: postgresql://nukpos:nukpos@localhost:5432/nukpos_test
 
+  e2e:
+    name: Testes no navegador (Playwright)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: nukpos
+          POSTGRES_PASSWORD: nukpos
+          POSTGRES_DB: nukpos_e2e
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U nukpos"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Instalar o Chromium do Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Correr testes no navegador
+        run: npm run test:e2e
+        env:
+          CI: 'true'
+          E2E_DATABASE_URL: postgresql://nukpos:nukpos@localhost:5432/nukpos_e2e
+
+      - name: Guardar relatório e capturas (se falhar)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-relatorio
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
   lint:
     name: Verificação de sintaxe
     runs-on: ubuntu-latest
@@ -90,3 +140,4 @@ jobs:
         run: |
           find server -name "*.js" | xargs -I{} node --check {}
           find tests -name "*.js" | xargs -I{} node --check {}
+          node --check agente-impressao/agente.js

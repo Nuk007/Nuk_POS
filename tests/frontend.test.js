@@ -45,6 +45,17 @@ describe('delegação data-on-*', () => {
     ctx._executar("f('a\\'b', 12, true, null); g(this.value)", { value: 'v' });
     expect(chamadas).toEqual([['f', "a'b", 12, true, null], ['g', 'v']]);
   });
+  test('this.checked das caixas de selecção (antes rejeitado: os campos da factura-recibo nunca abriam)', () => {
+    chamadas.length = 0;
+    ctx._executar('f(this.checked)', { checked: true });
+    ctx._executar('g(this.checked)', {});
+    expect(chamadas).toEqual([['f', true], ['g', false]]);
+  });
+  test('todos os argumentos this.* usados nos ecrãs são suportados pela delegação', () => {
+    const codigo = ficheiros.map(f => ler(f)).join('\n');
+    const usados = new Set([...codigo.matchAll(/data-on-(?:click|change|input)="[^"]*?(this\.\w+)/g)].map(m => m[1]));
+    expect([...usados].filter(u => !['this.value', 'this.checked'].includes(u))).toEqual([]);
+  });
   test('rejeita funções inexistentes e expressões arbitrárias (sem eval)', () => {
     expect(() => ctx._executar('naoExiste()', {})).toThrow(/inválido/);
     expect(() => ctx._executar('f(window.x)', {})).toThrow(/não suportado/);
