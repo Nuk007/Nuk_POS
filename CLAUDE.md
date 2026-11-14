@@ -84,7 +84,8 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 
 ## Deploy e operações
 - Serviço Render: `srv-dbhpj3mtlv9c739coi00` → https://nukpos.onrender.com. Push para `master` = deploy automático.
-- Verificar após deploy: logs `[migrate] Migrações concluídas` + `🚀 a correr`, e `/api/health` (inclui latência DB).
+- Verificar após deploy: logs `[migrate] Migrações concluídas` + `🚀 a correr`, e `/api/health`.
+- **Saúde e alertas** (14/11/2026): `/api/health` (`services/saude.service.js`) responde 503 com `problemas` se a base de dados não responde, se o arranque (initDB) falhou ou se o agendador dos quartos ficou mais de 4 voltas sem correr; nunca expõe a mensagem do erro. Se o initDB falhar, o erro vai ao Sentry e o agendador arranca na mesma. O workflow `.github/workflows/uptime.yml` consulta-o de 10 em 10 min (3 tentativas de 90 s, por causa do arranque a frio) e abre um issue com a etiqueta `uptime` (email do GitHub ao dono); fecha-o sozinho quando o serviço volta. Pode correr-se à mão em Actions → Disponibilidade.
 - Segredos (JWT_SECRET, SENTRY_DSN, SUPERADMIN_KEY, DATABASE_URL) só nas env vars do Render — nunca no código.
 - Versão no topo de `server/app.js`: `v<data>.<n>-<resumo>` — actualizar em cada deploy relevante.
 

@@ -1,10 +1,10 @@
 // Nuk_POS — Servidor Principal (refactored)
 // Stack: Node.js + Express + PostgreSQL + Socket.io
 // SaaS multi-tenant: cada empresa tem tenant_id em todas as operações
-// v2026.11.14.16-camada-servicos
+// v2026.11.14.17-saude-alertas
 
 require('dotenv').config();
-console.log('[NukPOS] server/app.js v2026.11.14.16-camada-servicos a arrancar');
+console.log('[NukPOS] server/app.js v2026.11.14.17-saude-alertas a arrancar');
 
 const express = require('express');
 const http = require('http');
@@ -177,27 +177,9 @@ app.use('/api/cliente', portalClienteRouter);
 
 // ── Health check (uptime monitoring) ─────────────────────────
 app.get('/api/health', async (req, res) => {
-  const start = Date.now();
-  try {
-    await pool.query('SELECT 1');
-    res.json({
-      status: 'ok',
-      version: process.env.npm_package_version || '1.0.0',
-      env: process.env.NODE_ENV || 'development',
-      db: 'ok',
-      uptime: Math.floor(process.uptime()),
-      latency_ms: Date.now() - start,
-      ts: new Date().toISOString(),
-    });
-  } catch (err) {
-    logger.error({ err }, 'Health check: DB offline');
-    res.status(503).json({
-      status: 'degraded',
-      db: 'offline',
-      error: err.message,
-      ts: new Date().toISOString(),
-    });
-  }
+  const r = await require('./services/saude.service').verificar();
+  if (r.http !== 200) logger.error({ problemas: r.corpo.problemas }, 'Health check: serviço degradado');
+  res.status(r.http).json(r.corpo);
 });
 
 // ── SPA fallback ─────────────────────────────────────────────
@@ -241,10 +223,15 @@ if (executadoDirectamente || executadoPeloStart) {
     initDB()
       .then(() => {
         logger.info('✅ Base de dados pronta');
+        require('./services/saude.service').arranqueOk();
         require('./jobs/quartos-scheduler').iniciar(); // avisos de arrumação e escalada (30 s)
       })
       .catch((err) => {
+        require('./services/saude.service').arranqueFalhou();
+        require('./monitoring').captureException(err);
         logger.error({ err }, '❌ Falha ao inicializar base de dados — verifique DATABASE_URL');
+        // o agendador dos quartos não depende de schema novo: arranca na mesma (antes ficava parado em silêncio)
+        require('./jobs/quartos-scheduler').iniciar();
       });
   });
 }

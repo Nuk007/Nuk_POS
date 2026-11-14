@@ -1,0 +1,61 @@
+# Vigilante de disponibilidade do Nuk_POS (14/11/2026).
+# De 10 em 10 minutos consulta /api/health (base de dados, arranque e agendador dos quartos).
+# Em falha abre um issue «🔴 Nuk_POS indisponível» (o GitHub envia email ao dono); quando volta, comenta e fecha.
+# O GitHub pode atrasar execuções agendadas alguns minutos: serve para avisar, não para medir ao segundo.
+name: Disponibilidade
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      URL: https://nukpos.onrender.com/api/health
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      TITULO: '🔴 Nuk_POS indisponível'
+    steps:
+      - name: Consultar /api/health (3 tentativas, 90 s cada, por causa do arranque a frio)
+        id: saude
+        run: |
+          ok=0
+          for i in 1 2 3; do
+            codigo=$(curl -sS -o corpo.json -w '%{http_code}' --max-time 90 "$URL" || echo 000)
+            if [ "$codigo" = "200" ] && grep -q '"status":"ok"' corpo.json; then ok=1; break; fi
+            echo "Tentativa $i: HTTP $codigo"; sleep 20
+          done
+          echo "ok=$ok" >> "$GITHUB_OUTPUT"
+          echo "codigo=$codigo" >> "$GITHUB_OUTPUT"
+          { echo 'corpo<<FIM'; head -c 1500 corpo.json 2>/dev/null || true; echo; echo FIM; } >> "$GITHUB_OUTPUT"
+
+      - name: Abrir aviso (se ainda não houver)
+        if: steps.saude.outputs.ok != '1'
+        env:
+          CORPO: ${{ steps.saude.outputs.corpo }}
+          CODIGO: ${{ steps.saude.outputs.codigo }}
+        run: |
+          aberto=$(gh issue list --state open --label uptime --json number --jq '.[0].number' || true)
+          texto=$(printf 'A verificação de %s falhou (HTTP %s) às %s UTC.\n\nResposta:\n```\n%s\n```\nVer também os logs no Render (serviço srv-dbhpj3mtlv9c739coi00).' "$URL" "$CODIGO" "$(date -u '+%Y-%m-%d %H:%M')" "$CORPO")
+          if [ -z "$aberto" ]; then
+            gh label create uptime --color B60205 --description 'Vigilante de disponibilidade' 2>/dev/null || true
+            gh issue create --title "$TITULO" --label uptime --body "$texto"
+          fi
+          exit 1
+
+      - name: Fechar aviso quando volta
+        if: steps.saude.outputs.ok == '1'
+        run: |
+          for n in $(gh issue list --state open --label uptime --json number --jq '.[].number'); do
+            gh issue close "$n" --comment "✅ Voltou a responder às $(date -u '+%Y-%m-%d %H:%M') UTC."
+          done

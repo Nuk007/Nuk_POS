@@ -2,11 +2,14 @@
 /** Agendador dos quartos: avisos de arrumação (5 min antes do fim), fecho de ocupações e escalada para a chefia (30 min). */
 const { processarTick } = require('../services/quartos-vendas.service');
 const { logger } = require('../monitoring');
+const saude = require('../services/saude.service');
 
 let timer = null;
 function iniciar(intervaloMs = 30000) {
   if (timer) return timer;
-  const volta = () => processarTick().catch(err => logger.error({ err }, 'Agendador de quartos falhou'));
+  saude.agendadorIniciado(intervaloMs);
+  // a volta conta como viva mesmo que um tick falhe (o erro vai ao log); parado = sem voltas
+  const volta = () => processarTick().catch(err => logger.error({ err }, 'Agendador de quartos falhou')).finally(saude.agendadorVolta);
   timer = setInterval(volta, intervaloMs);
   timer.unref();
   volta();
