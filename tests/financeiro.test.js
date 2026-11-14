@@ -1,7 +1,7 @@
 'use strict';
 /**
  * Testes de integração — /api/financeiro
- * Cobre: GET /resumo, GET /faturas, POST /faturas
+ * Cobre: GET /resumo, GET /faturas, POST /faturas, nota de crédito, cálculos fiscais
  */
 
 const request = require('supertest');
@@ -118,103 +118,87 @@ describe('GET /api/financeiro/faturas', () => {
   });
 });
 
-// ─── POST /api/financeiro/faturas ────────────────────────────────────────────
+// ─── POST /api/financeiro/faturas (rota fina: o serviço fiscal tem testes de integração próprios) ──
 
-const tx = (...rs) => { mockClient.query.mockResolvedValueOnce({ rows: [] }); /* BEGIN */ rs.forEach(r => mockClient.query.mockResolvedValueOnce(r)); };
-const lockSeqIva = (prox = 1) => [{ rows: [] }, { rows: [{ prox }] }, { rows: [{ valor: '14' }] }]; // advisory lock, sequencial, IVA
+const svc = require('../server/services/fiscal/faturas.service');
+const erroSvc = (statusCode, message) => Object.assign(new Error(message), { statusCode });
 
 describe('POST /api/financeiro/faturas', () => {
-  /**
-   * Sequência de queries em POST /faturas:
-   *   1. SELECT MAX(sequencial) → prox
-   *   2. SELECT iva_padrao FROM configuracoes  (M-07 fix)
-   *   3. SELECT total FROM pedidos (quando pedido_id fornecido)
-   *   4. INSERT INTO faturas
-   */
+  afterEach(() => jest.restoreAllMocks());
 
-  it('emite fatura a partir de pedido_id', async () => {
-    tx(...lockSeqIva(1),
-      { rows: [{ total: '3200.00', status: 'FECHADO' }] },   // pedido
-      { rows: [] },                                          // ainda sem factura
-      { rows: [faturaRow()] });                              // INSERT fatura
-
-    const res = await request(app)
-      .post('/api/financeiro/faturas')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ pedido_id: PEDIDO_ID, nome_cliente: 'João Silva' });
-
+  it('emite e passa ao serviço o tenant e o utilizador do token (nunca do corpo)', async () => {
+    const spy = jest.spyOn(svc, 'emitir').mockResolvedValue({ ...faturaRow(), linhas: [] });
+    const res = await request(app).post('/api/financeiro/faturas').set('Authorization', `Bearer ${adminToken}`)
+      .send({ pedido_id: PEDIDO_ID, nome_cliente: 'João Silva', tenantId: null, userId: 'outro' });
     expect(res.status).toBe(201);
-    expect(res.body).toHaveProperty('numero_fatura');
-    expect(res.body.total).toBe('3200.00');
+    expect(res.body.numero_fatura).toBe('FT 2026/000001');
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ pedido_id: PEDIDO_ID, tenantId: TENANT_ID, userId: ADMIN_ID }));
   });
 
-  it('emite fatura com total_manual', async () => {
-    tx(...lockSeqIva(2), { rows: [faturaRow({ sequencial: 2, total: '5000.00' })] }); // INSERT
-
-    const res = await request(app)
-      .post('/api/financeiro/faturas')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ total_manual: 5000, nome_cliente: 'Maria Costa' });
-
-    expect(res.status).toBe(201);
+  it('retorna 400 com pedido_id, reserva_id ou cliente_id que não são UUID (sem chamar o serviço)', async () => {
+    const spy = jest.spyOn(svc, 'emitir');
+    for (const campo of ['pedido_id', 'reserva_id', 'cliente_id']) {
+      const res = await request(app).post('/api/financeiro/faturas').set('Authorization', `Bearer ${adminToken}`).send({ [campo]: 'nao-e-uuid' });
+      expect(res.status).toBe(400);
+    }
+    expect(spy).not.toHaveBeenCalled();
   });
 
-  it('retorna 400 sem pedido_id, reserva_id ou total_manual', async () => {
-    tx(...lockSeqIva(1));
-
-    const res = await request(app)
-      .post('/api/financeiro/faturas')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ nome_cliente: 'Sem valor' });
-
-    expect(res.status).toBe(400);
-    expect(res.body.erro).toMatch(/pedido_id|reserva_id|total_manual/i);
-  });
-
-  it('retorna 400 com total_manual negativo ou zero', async () => {
-    tx(...lockSeqIva(1));
-
-    const res = await request(app)
-      .post('/api/financeiro/faturas')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ total_manual: -100 });
-
-    expect(res.status).toBe(400);
-    expect(res.body.erro).toMatch(/positivo/i);
-  });
-
-  it('retorna 400 com pedido_id UUID inválido', async () => {
-    const res = await request(app)
-      .post('/api/financeiro/faturas')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ pedido_id: 'nao-e-uuid' });
-
-    expect(res.status).toBe(400);
-  });
-
-  it('retorna 409 ao facturar um pedido que não está FECHADO', async () => {
-    tx(...lockSeqIva(1), { rows: [{ total: '3200.00', status: 'ABERTO' }] });
-    const res = await request(app).post('/api/financeiro/faturas')
-      .set('Authorization', `Bearer ${adminToken}`).send({ pedido_id: PEDIDO_ID });
-    expect(res.status).toBe(409);
-  });
-
-  it('retorna 409 quando o pedido já tem factura', async () => {
-    tx(...lockSeqIva(1), { rows: [{ total: '3200.00', status: 'FECHADO' }] }, { rows: [{ numero_fatura: 'FT 2026/000001' }] });
-    const res = await request(app).post('/api/financeiro/faturas')
-      .set('Authorization', `Bearer ${adminToken}`).send({ pedido_id: PEDIDO_ID });
+  it('mapeia os erros do serviço (409) e a corrida na numeração (23505)', async () => {
+    jest.spyOn(svc, 'emitir').mockRejectedValueOnce(erroSvc(409, 'Este pedido já foi facturado (FT 2026/000001)'));
+    let res = await request(app).post('/api/financeiro/faturas').set('Authorization', `Bearer ${adminToken}`).send({ pedido_id: PEDIDO_ID });
     expect(res.status).toBe(409);
     expect(res.body.erro).toMatch(/já foi facturado/);
+    svc.emitir.mockRejectedValueOnce(Object.assign(new Error('dup'), { code: '23505' }));
+    res = await request(app).post('/api/financeiro/faturas').set('Authorization', `Bearer ${adminToken}`).send({ total_manual: 1000 });
+    expect(res.status).toBe(409);
+  });
+});
+
+describe('POST /api/financeiro/faturas/:id/nota-credito', () => {
+  afterEach(() => jest.restoreAllMocks());
+  const FID = 'ffffffff-ffff-ffff-ffff-000000000001';
+
+  it('OPERADOR não emite notas de crédito (403)', async () => {
+    const spy = jest.spyOn(svc, 'notaCredito');
+    const res = await request(app).post(`/api/financeiro/faturas/${FID}/nota-credito`).set('Authorization', `Bearer ${operadorToken}`).send({ motivo: 'Engano no NIF' });
+    expect(res.status).toBe(403);
+    expect(spy).not.toHaveBeenCalled();
   });
 
-  it('retorna 404 quando pedido não existe', async () => {
-    tx(...lockSeqIva(1), { rows: [] });                    // pedido não encontrado
+  it('ADMIN emite (201) e o id tem de ser UUID', async () => {
+    jest.spyOn(svc, 'notaCredito').mockResolvedValue({ numero_fatura: 'NC 2026/000001', linhas: [] });
+    const ok = await request(app).post(`/api/financeiro/faturas/${FID}/nota-credito`).set('Authorization', `Bearer ${adminToken}`).send({ motivo: 'Engano no NIF' });
+    expect(ok.status).toBe(201);
+    const mau = await request(app).post('/api/financeiro/faturas/xyz/nota-credito').set('Authorization', `Bearer ${adminToken}`).send({ motivo: 'Engano no NIF' });
+    expect(mau.status).toBe(400);
+  });
+});
 
-    const res = await request(app)
-      .post('/api/financeiro/faturas')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ pedido_id: PEDIDO_ID });
+// ─── Cálculos do serviço fiscal (sem base de dados) ──────────────────────────
 
-    expect(res.status).toBe(404);
+describe('serviço fiscal — cálculos', () => {
+  const { totais, separarIva, assinar, linha } = svc._interno;
+
+  it('separa o IVA de um valor com IVA incluído em cêntimos exactos', () => {
+    expect(separarIva(320000, 14)).toEqual({ semIva: 280702, iva: 39298 });
+    expect(separarIva(100000, 0)).toEqual({ semIva: 100000, iva: 0 });
+  });
+
+  it('o desconto do documento reduz a base e o IVA; base + IVA = total', () => {
+    const ls = [linha(1, { descricao: 'A', quantidade: 2, precoCent: 150000, taxa: 14 }), linha(2, { descricao: 'B', quantidade: 1, precoCent: 50000, taxa: 14 })];
+    const t = totais(ls, 300000); // soma 350 000, paga 300 000
+    expect(t.brutoCent).toBe(350000);
+    expect(t.descontoCent).toBe(50000);
+    expect(t.semIvaCent + t.ivaCent).toBe(300000);
+    expect(t.semIvaCent).toBe(separarIva(300000, 14).semIva);
+  });
+
+  it('a assinatura depende da assinatura anterior (cadeia)', () => {
+    const d = new Date('2026-11-14T10:00:00Z');
+    const a = assinar({ emitidaEm: d, numero: 'FT 2026/000002', totalCent: 100000, anterior: 'x' });
+    const b = assinar({ emitidaEm: d, numero: 'FT 2026/000002', totalCent: 100000, anterior: 'y' });
+    expect(a).not.toBe(b);
+    expect(a).toMatch(/^[0-9a-f]{64}$/);
   });
 });

@@ -693,6 +693,8 @@ async function initDB() {
 
     await client.query(`ALTER TABLE faturas ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_faturas_tenant ON faturas(tenant_id)`);
+    // Módulo fiscal (migração 1750600000000): numeração por estabelecimento, FT/FR/NC, linhas, imutabilidade
+    for (const sql of require('./migrations-data/fiscal-base')) await client.query(sql);
 
     // Avaliacoes de staff
     await client.query(`

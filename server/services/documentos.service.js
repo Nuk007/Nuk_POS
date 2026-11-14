@@ -98,19 +98,19 @@ async function talaoPedido({ tenantId, pedidoId }) {
   return renderizar(doc);
 }
 
-/** Factura em A4. */
+/** Documento fiscal em A4: factura (FT), factura-recibo (FR) ou nota de crédito (NC). */
 async function facturaPdf({ tenantId, faturaId }) {
-  const f = await pool.query(`SELECT f.*, c.nome AS cliente_nome FROM faturas f LEFT JOIN clientes c ON c.id = f.cliente_id WHERE f.id = $1 AND ($2::uuid IS NULL OR f.tenant_id = $2)`, [faturaId, T(tenantId)]);
-  const fat = f.rows[0];
-  if (!fat) throw erro(404, 'Factura não encontrada');
+  const fat = await require('./fiscal/faturas.service').obter({ tenantId, faturaId });
   const t = await tenantInfo(tenantId || fat.tenant_id);
-  let itens = [];
-  if (fat.pedido_id) itens = (await carregarPedido(fat.tenant_id, fat.pedido_id)).itens;
+  let itens = fat.linhas.map(l => [l.descricao, Number(l.quantidade), Number(l.preco_unitario)]);
+  // Documentos anteriores ao módulo fiscal não têm linhas guardadas: usa os itens do pedido
+  if (!itens.length && fat.pedido_id) itens = (await carregarPedido(fat.tenant_id, fat.pedido_id)).itens.map(i => [i.nome, Number(i.quantidade), Number(i.preco_unitario)]);
+  const TITULOS = { FT: 'FACTURA', FR: 'FACTURA-RECIBO', NC: 'NOTA DE CRÉDITO' };
 
   const doc = new PDFDocument({ size: 'A4', margin: 40, info: { Title: fat.numero_fatura, Author: 'Nuk_POS' } });
   const L = 40, R = 555, util = R - L;
   cabecalhoLogo(doc, L, 36, 170, 82);
-  doc.font('Helvetica-Bold').fontSize(18).fillColor(NAVY).text('FACTURA', 300, 40, { width: util - 260, align: 'right' });
+  doc.font('Helvetica-Bold').fontSize(18).fillColor(NAVY).text(TITULOS[fat.tipo_documento] || 'FACTURA', 260, 40, { width: util - 220, align: 'right' });
   doc.fontSize(11).fillColor(LARANJA).text(fat.numero_fatura, 300, 62, { width: util - 260, align: 'right' });
   doc.font('Helvetica').fontSize(9).fillColor(CINZA).text(`Emitida em ${dataLuanda(fat.emitida_em)}`, 300, 80, { width: util - 260, align: 'right' });
   doc.text(fiscalValido() ? 'Original' : 'Documento sem validade fiscal', 300, 93, { width: util - 260, align: 'right' });
@@ -123,11 +123,18 @@ async function facturaPdf({ tenantId, faturaId }) {
   doc.text(fat.nif_cliente ? `NIF ${fat.nif_cliente}` : 'NIF não indicado', 340);
 
   let y = 230;
+  if (fat.tipo_documento === 'NC') {
+    doc.font('Helvetica-Bold').fontSize(9).fillColor('#000').text(`Referente a ${fat.documento_origem_numero || ''}`, L, 205);
+    doc.font('Helvetica').fillColor(CINZA).text(`Motivo: ${fat.motivo || ''}`, L, 217, { width: util });
+    y = 240;
+  } else if (fat.anulada_por_numero) {
+    doc.font('Helvetica-Bold').fontSize(9).fillColor('#b91c1c').text(`Anulada pela ${fat.anulada_por_numero}`, L, 210);
+  }
   doc.rect(L, y, util, 20).fill(NAVY);
   doc.font('Helvetica-Bold').fontSize(9).fillColor('#fff');
   doc.text('Descrição', L + 8, y + 6); doc.text('Qtd', 340, y + 6, { width: 40, align: 'right' }); doc.text('Preço', 385, y + 6, { width: 75, align: 'right' }); doc.text('Total', 465, y + 6, { width: 82, align: 'right' });
   y += 26; doc.font('Helvetica').fillColor('#000');
-  const linhas = itens.length ? itens.map(i => [i.nome, Number(i.quantidade), Number(i.preco_unitario)]) : [['Serviços prestados', 1, Number(fat.total)]];
+  const linhas = itens.length ? itens : [['Serviços prestados', 1, Number(fat.total)]];
   for (const [nome, q, p] of linhas) {
     if (y > 700) { doc.addPage(); y = 50; }
     doc.fontSize(9).text(nome, L + 8, y, { width: 280 }); doc.text(String(q), 340, y, { width: 40, align: 'right' });
@@ -136,6 +143,7 @@ async function facturaPdf({ tenantId, faturaId }) {
   }
   y += 10;
   const tot = (rot, val, bold) => { doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(bold ? 11 : 9.5).fillColor(bold ? NAVY : '#000'); doc.text(rot, 330, y, { width: 120 }); doc.text(val, 440, y, { width: 107, align: 'right' }); y += bold ? 20 : 16; };
+  if (Number(fat.desconto) > 0) tot('Desconto', kz(fat.desconto));
   tot('Total sem IVA', kz(fat.total_sem_iva));
   tot(`IVA (${Number(fat.taxa_iva)}%)`, kz(fat.iva));
   tot('TOTAL', kz(fat.total), true);

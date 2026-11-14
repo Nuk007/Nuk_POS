@@ -1,11 +1,8 @@
 'use strict';
 const express = require('express');
-const crypto = require('crypto');
-const { v4: uuidv4 } = require('uuid');
 const router = express.Router();
 const { pool } = require('../db');
-const { authMiddleware, isUUID } = require('../middleware/auth');
-const { withTx, erro } = require('../services/shared');
+const { authMiddleware, requerNivel, isUUID } = require('../middleware/auth');
 
 // GET /api/financeiro/resumo
 router.get('/resumo', authMiddleware, async (req, res) => {
@@ -60,109 +57,108 @@ router.get('/resumo', authMiddleware, async (req, res) => {
   }
 });
 
-// GET /api/financeiro/faturas
-router.get('/faturas', authMiddleware, async (req, res) => {
-  const tenantId = req.tenantId;
-  try {
-    const r = await pool.query(`
-      SELECT f.*, c.nome as cliente_nome
-      FROM faturas f LEFT JOIN clientes c ON f.cliente_id = c.id
-      WHERE ($1::uuid IS NULL OR f.tenant_id = $1)
-      ORDER BY f.emitida_em DESC LIMIT 100
-    `, [tenantId || null]);
-    res.json(r.rows);
-  } catch (e) {
-    res.status(500).json({ erro: 'Erro interno do servidor' });
-  }
-});
+const svc = require('../services/fiscal/faturas.service');
 
-// GET /api/financeiro/faturas/:id/pdf — factura em A4
-router.get('/faturas/:id/pdf', authMiddleware, async (req, res) => {
-  if (!isUUID(req.params.id)) return res.status(400).json({ erro: 'id inválido' });
-  try {
-    const pdf = await require('../services/documentos.service').facturaPdf({ tenantId: req.tenantId, faturaId: req.params.id });
-    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="factura-${req.params.id.slice(0, 8)}.pdf"`, 'Cache-Control': 'no-store' }).send(pdf);
-  } catch (e) {
+/** Mapeia os erros dos serviços (err.statusCode) e o 23505 de corrida na numeração. */
+const h = fn => async (req, res) => {
+  try { await fn(req, res); }
+  catch (e) {
     if (e.statusCode) return res.status(e.statusCode).json({ erro: e.message });
+    if (e.code === '23505') return res.status(409).json({ erro: 'Factura duplicada' });
+    console.error(`${req.method} /financeiro${req.path}:`, e.message);
     res.status(500).json({ erro: 'Erro interno do servidor' });
   }
-});
+};
+const base = req => ({ tenantId: req.tenantId, userId: req.user && req.user.id });
 
-// POST /api/financeiro/faturas
-router.post('/faturas', authMiddleware, async (req, res) => {
-  const { pedido_id, reserva_id, cliente_id, nif_cliente, nome_cliente } = req.body;
-  const tenantId = req.tenantId;
+/**
+ * @openapi
+ * /api/financeiro/faturas:
+ *   get:
+ *     tags: [Financeiro]
+ *     summary: Últimos 100 documentos fiscais (FT, FR, NC), com a nota de crédito que anulou cada um
+ *     security: [{ bearerAuth: [] }]
+ *     responses: { 200: { description: Lista de documentos } }
+ *   post:
+ *     tags: [Financeiro]
+ *     summary: Emite factura (FT) ou factura-recibo (FR) de um pedido FECHADO, de uma reserva ou de um valor manual
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               tipo: { type: string, enum: [FT, FR], default: FT }
+ *               pedido_id: { type: string, format: uuid }
+ *               reserva_id: { type: string, format: uuid }
+ *               total_manual: { type: number }
+ *               descricao: { type: string, description: Descrição da linha quando o valor é manual }
+ *               cliente_id: { type: string, format: uuid }
+ *               nif_cliente: { type: string }
+ *               nome_cliente: { type: string }
+ *     responses:
+ *       201: { description: Documento emitido com as linhas }
+ *       400: { description: Dados inválidos }
+ *       404: { description: Pedido, reserva ou cliente não encontrado }
+ *       409: { description: Pedido não FECHADO, já facturado, ou FR de conta por receber }
+ */
+router.get('/faturas', authMiddleware, h(async (req, res) => {
+  res.json(await svc.listar(base(req)));
+}));
 
+router.post('/faturas', authMiddleware, h(async (req, res) => {
+  const { tipo, pedido_id, reserva_id, cliente_id, total_manual, descricao, nif_cliente, nome_cliente } = req.body || {};
   if (pedido_id && !isUUID(pedido_id)) return res.status(400).json({ erro: 'pedido_id inválido' });
   if (reserva_id && !isUUID(reserva_id)) return res.status(400).json({ erro: 'reserva_id inválido' });
   if (cliente_id && !isUUID(cliente_id)) return res.status(400).json({ erro: 'cliente_id inválido' });
+  const f = await svc.emitir({ tipo, pedido_id, reserva_id, cliente_id, total_manual, descricao, nif_cliente, nome_cliente, ...base(req) });
+  res.status(201).json(f);
+}));
 
-  try {
-    const ano = parseInt(new Date().toLocaleDateString('sv-SE', { timeZone: 'Africa/Luanda' }).slice(0, 4), 10);
-    const fatura = await withTx(async db => {
-      // Numeração fiscal sem buracos nem repetições: serializa a emissão por estabelecimento/ano
-      await db.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`fatura:${tenantId || 'global'}:${ano}`]);
-      const seq = await db.query(
-        `SELECT COALESCE(MAX(sequencial),0)+1 as prox FROM faturas WHERE serie='FT' AND ano=$1 AND ($2::uuid IS NULL OR tenant_id=$2)`,
-        [ano, tenantId || null]
-      );
-      const sequencial = seq.rows[0].prox;
-      const numero_fatura = `FT ${ano}/${String(sequencial).padStart(6, '0')}`;
+/**
+ * @openapi
+ * /api/financeiro/faturas/{id}:
+ *   get:
+ *     tags: [Financeiro]
+ *     summary: Documento fiscal com as linhas
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ in: path, name: id, required: true, schema: { type: string, format: uuid } }]
+ *     responses: { 200: { description: Documento }, 404: { description: Não encontrado } }
+ */
+router.get('/faturas/:id', authMiddleware, h(async (req, res) => {
+  if (!isUUID(req.params.id)) return res.status(400).json({ erro: 'id inválido' });
+  res.json(await svc.obter({ ...base(req), faturaId: req.params.id }));
+}));
 
-      const cfgIva = await db.query(
-        `SELECT valor FROM configuracoes WHERE chave='iva_padrao' AND ($1::uuid IS NULL OR tenant_id=$1)`,
-        [tenantId || null]
-      );
-      const taxa_iva = cfgIva.rows[0] ? parseFloat(cfgIva.rows[0].valor) || 14 : 14;
+/**
+ * @openapi
+ * /api/financeiro/faturas/{id}/nota-credito:
+ *   post:
+ *     tags: [Financeiro]
+ *     summary: Emite a nota de crédito (valor total) que anula uma FT/FR — só ADMIN/GERENTE
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ in: path, name: id, required: true, schema: { type: string, format: uuid } }]
+ *     requestBody:
+ *       content: { application/json: { schema: { type: object, required: [motivo], properties: { motivo: { type: string } } } } }
+ *     responses:
+ *       201: { description: Nota de crédito emitida }
+ *       400: { description: Motivo em falta }
+ *       403: { description: Sem permissão }
+ *       404: { description: Documento não encontrado }
+ *       409: { description: Já anulado ou é uma nota de crédito }
+ */
+router.post('/faturas/:id/nota-credito', authMiddleware, requerNivel(['ADMIN', 'GERENTE']), h(async (req, res) => {
+  if (!isUUID(req.params.id)) return res.status(400).json({ erro: 'id inválido' });
+  const nc = await svc.notaCredito({ ...base(req), faturaId: req.params.id, motivo: (req.body || {}).motivo });
+  res.status(201).json(nc);
+}));
 
-      let total = 0;
-      if (pedido_id) {
-        const p = await db.query(
-          `SELECT total, status FROM pedidos WHERE id=$1 AND ($2::uuid IS NULL OR tenant_id=$2)`,
-          [pedido_id, tenantId || null]
-        );
-        if (!p.rows[0]) throw erro(404, 'Pedido não encontrado');
-        if (p.rows[0].status !== 'FECHADO') throw erro(409, 'Só se factura um pedido FECHADO');
-        const dup = await db.query(`SELECT numero_fatura FROM faturas WHERE pedido_id=$1`, [pedido_id]);
-        if (dup.rows[0]) throw erro(409, `Este pedido já foi facturado (${dup.rows[0].numero_fatura})`);
-        total = parseFloat(p.rows[0].total || 0);
-      } else if (reserva_id) {
-        const rv = await db.query(`
-          SELECT rv.valor_total FROM reservas rv
-          JOIN quartos q ON rv.quarto_id = q.id
-          WHERE rv.id=$1 AND ($2::uuid IS NULL OR q.tenant_id=$2)
-        `, [reserva_id, tenantId || null]);
-        if (!rv.rows[0]) throw erro(404, 'Reserva não encontrada');
-        total = parseFloat(rv.rows[0].valor_total || 0);
-      } else if (req.body.total_manual !== undefined) {
-        total = parseFloat(req.body.total_manual) || 0;
-        if (total <= 0) throw erro(400, 'total_manual deve ser positivo');
-      } else {
-        throw erro(400, 'Fornecer pedido_id, reserva_id ou total_manual');
-      }
-
-      const total_sem_iva = total / (1 + taxa_iva / 100);
-      const iva = total - total_sem_iva;
-      // hash determinístico — verificável a partir dos dados da factura (não é assinatura AGT)
-      const hash = crypto.createHash('sha256')
-        .update(`${numero_fatura}|${total.toFixed(2)}|${taxa_iva}|${tenantId || ''}`)
-        .digest('hex');
-
-      const r = await db.query(`
-        INSERT INTO faturas (tenant_id, pedido_id, reserva_id, cliente_id, serie, ano, sequencial, numero_fatura,
-                             nif_cliente, nome_cliente, total_sem_iva, iva, total, taxa_iva, hash_assinatura)
-        VALUES ($1,$2,$3,$4,'FT',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *
-      `, [tenantId || null, pedido_id || null, reserva_id || null, cliente_id || null, ano, sequencial, numero_fatura,
-          nif_cliente || null, nome_cliente || null, total_sem_iva.toFixed(2), iva.toFixed(2), total.toFixed(2), taxa_iva, hash]);
-      return r.rows[0];
-    });
-    res.status(201).json(fatura);
-  } catch (e) {
-    if (e.statusCode) return res.status(e.statusCode).json({ erro: e.message });
-    if (e.code === '23505') return res.status(409).json({ erro: 'Factura duplicada' });
-    console.error('POST /financeiro/faturas:', e.message);
-    res.status(500).json({ erro: 'Erro interno do servidor' });
-  }
-});
+// GET /api/financeiro/faturas/:id/pdf — documento em A4
+router.get('/faturas/:id/pdf', authMiddleware, h(async (req, res) => {
+  if (!isUUID(req.params.id)) return res.status(400).json({ erro: 'id inválido' });
+  const pdf = await require('../services/documentos.service').facturaPdf({ tenantId: req.tenantId, faturaId: req.params.id });
+  res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="factura-${req.params.id.slice(0, 8)}.pdf"`, 'Cache-Control': 'no-store' }).send(pdf);
+}));
 
 module.exports = router;

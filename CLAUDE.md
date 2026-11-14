@@ -53,6 +53,17 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 ## Documentos (talão e factura em PDF)
 - `services/documentos.service.js` (pdfkit): talão 80 mm em `GET /api/pedidos/:id/talao.pdf` e factura A4 em `GET /api/financeiro/faturas/:id/pdf`. Logótipo `public/img/logo-nukpos.png` sobre placa azul-escura.
 - Enquanto o Nuk_POS não estiver certificado pela AGT, todos os documentos dizem «Documento sem validade fiscal». Quando houver certificação, definir `AGT_CERTIFICADO=true` (não basta: a assinatura/hash AGT e o SAF-T ainda têm de ser implementados).
+
+## Módulo fiscal (base para a certificação AGT, 14/11/2026)
+- `services/fiscal/faturas.service.js` (rotas finas em `routes/financeiro.js`). Migração 1750600000000; o SQL vive em `server/migrations-data/fiscal-base.js`, partilhado com o espelho em db.js.
+- Tipos: **FT** (factura), **FR** (factura-recibo: só pedido já recebido no Caixa, `pago_em`; reservas e valores manuais podem) e **NC** (nota de crédito pelo valor total, `POST /api/financeiro/faturas/:id/nota-credito`, só ADMIN/GERENTE, motivo 5–250, uma por documento, nunca sobre outra NC). `serie` = tipo por agora.
+- **Numeração por estabelecimento**, tipo e ano (`uq_faturas_tenant_serie_seq`, `uq_faturas_tenant_numero`); a unicidade antiga era global e impedia o 2.º estabelecimento de facturar. Advisory lock `fatura:<tenant>:<tipo>:<ano>`.
+- Linhas em `fatura_linhas` (descrição, quantidade, preço, taxa IVA, motivo de isenção; Kz com IVA incluído). Pedido → uma linha por item; desconto = soma das linhas − total do pedido (campo `desconto`), repartido pelas taxas. Reserva → «Alojamento — Quarto N (noite/hora/diária)». Manual → `descricao`. Contas em cêntimos inteiros.
+- IVA da configuração `iva_padrao` (14 por omissão); a 0% exige `motivo_isencao_iva` nas configurações (409 sem ele).
+- Um pedido/reserva só tem um documento activo (FT/FR sem NC); depois de anulado pode facturar-se de novo (ex.: NIF corrigido). `cliente_id` do corpo tem de ser do próprio estabelecimento (404).
+- **Imutável**: o trigger `nukpos_documento_fiscal_imutavel` recusa UPDATE/DELETE em `faturas` e `fatura_linhas` (excepto a cascata ao apagar o estabelecimento). Nunca acrescentar FK com `ON DELETE SET NULL` a estas tabelas (seria um UPDATE recusado); por isso `emitida_por` não tem FK.
+- Cadeia de integridade com a estrutura AGT (`dia;registo;número;total;assinatura anterior da série`) em `assinar()`; hoje SHA-256. **Falta para a certificação**: chave RSA do produtor em `assinar()`, séries comunicadas à AGT, SAF-T (AO), envio JSON em tempo real (DE 683/25) com contingência, QR e restantes elementos obrigatórios do documento — depende das especificações oficiais e da constituição da GESTNUK AI.
+- Testes: `tests/integration/fiscal.int.test.js` (numeração, linhas, FR/NC, isolamento, imutabilidade) e cálculos em `tests/financeiro.test.js`.
 - Produto GESTNUK (filial da Technuk, Lda). O frontend descarrega os PDFs com `descarregarPdf()` (nukpos.js), sem abrir janelas (CSP).
 
 ## Seed e reset
@@ -87,7 +98,7 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 - 13 das 16 rotas ainda sem camada de serviço nem testes dedicados (financeiro e reservas prioritárias).
 - Cobertura unitária ~59% → meta 75%+.
 - Rate limiters em memória → Redis se houver multi-instância.
-- Certificação AGT (assinatura/hash, SAF-T, série certificada) antes de produção definitiva — processo a cargo do dono; os PDFs actuais não têm validade fiscal.
+- Certificação AGT: base feita (ver «Módulo fiscal»); faltam assinatura RSA, SAF-T (AO), envio em tempo real e QR. Os PDFs actuais não têm validade fiscal. UI ainda sem botão de nota de crédito nem escolha FT/FR.
 - Frontend (public/, ~4.800 linhas vanilla JS) sem testes.
 
 ## Quartos (configuração)
