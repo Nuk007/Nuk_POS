@@ -52,3 +52,35 @@ test('portal: reenvio devolve o mesmo pedido e código; outra casa com a mesma c
   expect(rB.status).toBe(201);
   expect(rB.body.pedido_id).not.toBe(r1.body.pedido_id);
 });
+
+describe('Pedido feito sem internet (registado_em)', () => {
+  test('guarda a hora real, usa os preços dessa hora e a sincronização repetida não duplica', async () => {
+    const T = await criarTenantFixture({ slug: 'it-offline' });
+    const prod = (await pool.query(`INSERT INTO produtos (tenant_id, nome, preco, categoria, disponivel, ativo) VALUES ($1,'Cuca',1000,'BEBIDA',true,true) RETURNING id`, [T.tenantId])).rows[0].id;
+    // tabela «happy hour» só das 03:00 às 03:30 de Luanda, preço 500
+    const tab = (await pool.query(`INSERT INTO tabelas_preco (tenant_id, nome, dias, hora_inicio, hora_fim, prioridade, ativa) VALUES ($1,'Madrugada','{0,1,2,3,4,5,6}','03:00','03:30',50,true) RETURNING id`, [T.tenantId])).rows[0].id;
+    await pool.query(`INSERT INTO precos_tabela (tabela_id, produto_id, preco) VALUES ($1,$2,500)`, [tab, prod]);
+    const ontem3h = new Date(Date.now() - 86400e3);
+    const iso = new Date(`${ontem3h.toISOString().slice(0, 10)}T03:10:00+01:00`);
+    if (Date.now() - iso.getTime() > 47 * 3600e3) iso.setTime(iso.getTime() + 86400e3);
+    const req = () => request(app).post('/api/pedidos').set('Authorization', `Bearer ${T.token}`).set('X-Forwarded-For', `10.18.0.${Math.floor(Math.random() * 200) + 1}`)
+      .send({ origem: 'BALCAO', itens: [{ produto_id: prod, quantidade: 2 }], chave_idempotencia: 'offline-chave-0001', registado_em: iso.toISOString() });
+    const a = await req();
+    expect(a.status).toBe(201);
+    expect(Number(a.body.total)).toBe(1000); // 2 × 500 (preço da hora da venda)
+    const b = await req();
+    expect(b.status).toBe(200);
+    expect(b.body.id).toBe(a.body.id);
+    const linha = (await pool.query(`SELECT registado_offline_em FROM pedidos WHERE id = $1`, [a.body.id])).rows[0];
+    expect(new Date(linha.registado_offline_em).toISOString()).toBe(iso.toISOString());
+  });
+  test('recusa hora futura, com mais de 48 h e sem chave', async () => {
+    const T = await criarTenantFixture({ slug: 'it-offline-2' });
+    const prod = (await pool.query(`INSERT INTO produtos (tenant_id, nome, preco, categoria, disponivel, ativo) VALUES ($1,'Cuca',1000,'BEBIDA',true,true) RETURNING id`, [T.tenantId])).rows[0].id;
+    const envia = (extra) => request(app).post('/api/pedidos').set('Authorization', `Bearer ${T.token}`).set('X-Forwarded-For', '10.18.1.1')
+      .send({ origem: 'BALCAO', itens: [{ produto_id: prod, quantidade: 1 }], ...extra });
+    expect((await envia({ chave_idempotencia: 'offline-fut-0001', registado_em: new Date(Date.now() + 3600e3).toISOString() })).status).toBe(400);
+    expect((await envia({ chave_idempotencia: 'offline-old-0001', registado_em: new Date(Date.now() - 49 * 3600e3).toISOString() })).status).toBe(400);
+    expect((await envia({ registado_em: new Date().toISOString() })).status).toBe(400);
+  });
+});

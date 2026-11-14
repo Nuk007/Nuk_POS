@@ -141,6 +141,8 @@ router.get('/takeaway/elegivel', authMiddleware, async (req, res, next) => {
  *               quarto_id:  { type: string, format: uuid, description: "Com origem QUARTO: consumo no quarto ocupado; fica por pagar até o Caixa receber" }
  *               cliente_id: { type: string, format: uuid }
  *               observacoes: { type: string }
+ *               chave_idempotencia: { type: string, description: "8–64 [A-Za-z0-9_-]; reenvio com a mesma chave devolve o mesmo pedido (200)" }
+ *               registado_em: { type: string, format: date-time, description: "Pedido feito sem internet: hora real da venda (até 48 h; exige chave_idempotencia)" }
  *               itens:
  *                 type: array
  *                 items:
@@ -173,6 +175,7 @@ router.post('/', authMiddleware, async (req, res, next) => {
       observacoes: req.body.observacoes,
       origem:      req.body.origem,
       chave_idempotencia: req.body.chave_idempotencia,
+      registado_em: req.body.registado_em, // pedido feito sem internet e enviado depois
     });
     res.status(pedido.repetido ? 200 : 201).json(pedido); // 200 = reenvio da mesma chave: devolve o pedido já criado
   } catch (e) {

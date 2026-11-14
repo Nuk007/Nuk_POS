@@ -135,8 +135,24 @@ async function pedidoPorChave(tenantId, chave) {
   return r.rows[0] ? { ...(await pedidoCompleto(r.rows[0].id)), repetido: true } : null;
 }
 
-async function criarPedido({ tenantId, userId, mesa_id, quarto_id, cliente_id, itens, observacoes, origem, chave_idempotencia }) {
+/**
+ * Hora real de um pedido registado sem internet: aceita-se até 48 h para trás (e 2 min de relógio adiantado).
+ * Sem chave de idempotência não se aceita (é ela que garante que a sincronização não duplica).
+ */
+function validarRegistoOffline(registado_em, chave) {
+  if (registado_em == null || registado_em === '') return null;
+  const d = new Date(registado_em);
+  if (isNaN(d)) { const err = new Error('registado_em inválido'); err.statusCode = 400; throw err; }
+  const agora = Date.now();
+  if (d.getTime() > agora + 2 * 60e3) { const err = new Error('A hora do pedido está no futuro (acerte o relógio do dispositivo)'); err.statusCode = 400; throw err; }
+  if (d.getTime() < agora - 48 * 3600e3) { const err = new Error('Pedido guardado sem internet há mais de 48 horas: registe-o de novo'); err.statusCode = 400; throw err; }
+  if (!chave) { const err = new Error('Pedido sem internet exige chave_idempotencia'); err.statusCode = 400; throw err; }
+  return d;
+}
+
+async function criarPedido({ tenantId, userId, mesa_id, quarto_id, cliente_id, itens, observacoes, origem, chave_idempotencia, registado_em }) {
   const chave = validarChaveIdempotencia(chave_idempotencia);
+  const offlineEm = validarRegistoOffline(registado_em, chave);
   const jaFeito = await pedidoPorChave(tenantId, chave);
   if (jaFeito) return jaFeito; // reenvio do mesmo pedido (resposta perdida ou sincronização): não se cria outro
   if (!itens || !itens.length) {
@@ -173,7 +189,8 @@ async function criarPedido({ tenantId, userId, mesa_id, quarto_id, cliente_id, i
     let total = 0;
     const itensDetalhes = [];
     // Nível de preço em vigor (hora de Luanda, fluxo de venda): sem tabela ou sem preço nela = preço base
-    const nivel = await precos.precosAplicaveis(client, { tenantId, origem });
+    // pedido sem internet: os preços da hora em que foi feito (campanha/happy hour já acabada não muda o valor)
+    const nivel = await precos.precosAplicaveis(client, { tenantId, origem, ...(offlineEm ? { agora: precos.agoraLuanda(offlineEm) } : {}) });
     for (const item of itens) {
       const pr = await client.query(
         `SELECT preco, categoria FROM produtos
@@ -198,9 +215,9 @@ async function criarPedido({ tenantId, userId, mesa_id, quarto_id, cliente_id, i
 
     const pedidoR = await client.query(
       // Lazer e Loja não passam pela cozinha: a venda nasce FECHADA e fica a aguardar recebimento no caixa
-      `INSERT INTO pedidos (tenant_id, mesa_id, quarto_id, cliente_id, funcionario_id, total, observacoes, origem, validado_em, validado_por, status, tabela_preco_id, chave_idempotencia)
-       VALUES ($1, $2, $9, $3, $4, $5, $6, $7, NOW(), $4, $8::text, $10, $11) RETURNING *`,
-      [tenantId || null, mesa_id || null, cliente_id || null, userId, Math.round(total * 100) / 100, observacoes || null, origem, CATEGORIAS_ORIGEM[origem] ? 'FECHADO' : 'ABERTO', quarto_id || null, nivel.tabela ? nivel.tabela.id : null, chave]
+      `INSERT INTO pedidos (tenant_id, mesa_id, quarto_id, cliente_id, funcionario_id, total, observacoes, origem, validado_em, validado_por, status, tabela_preco_id, chave_idempotencia, registado_offline_em)
+       VALUES ($1, $2, $9, $3, $4, $5, $6, $7, NOW(), $4, $8::text, $10, $11, $12) RETURNING *`,
+      [tenantId || null, mesa_id || null, cliente_id || null, userId, Math.round(total * 100) / 100, observacoes || null, origem, CATEGORIAS_ORIGEM[origem] ? 'FECHADO' : 'ABERTO', quarto_id || null, nivel.tabela ? nivel.tabela.id : null, chave, offlineEm]
     );
     const pedido = pedidoR.rows[0];
 

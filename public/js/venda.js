@@ -133,7 +133,19 @@ async function vendaConfirmar() {
     toast(CATEGORIAS_ORIGEM_UI[v.origem] ? `Venda registada (${ROTULO_ORIGEM[v.origem]}). Receba-a no Caixa → Receber mesas` : `Pedido enviado (${ROTULO_ORIGEM[v.origem]})`, 'sucesso', CATEGORIAS_ORIGEM_UI[v.origem] ? 6000 : undefined);
     if (v.origem === 'BALCAO' || CATEGORIAS_ORIGEM_UI[v.origem]) { v.carrinho = []; document.getElementById('venda-obs').value = ''; vendaRender(); }
     else carregarModulo(v.origem === 'MESA' ? 'mesas' : v.origem === 'QUARTO' ? 'quartos' : 'takeaway');
-  } catch (e) { toast(e.message, 'erro'); }
+  } catch (e) {
+    // sem internet: o pedido fica guardado neste dispositivo e segue sozinho quando a ligação voltar (offline.js)
+    if (e.semRede && typeof offlineGuardar === 'function') {
+      try {
+        offlineGuardar(corpo);
+        v.chave = null;
+        toast('Sem internet: pedido guardado neste dispositivo. Segue sozinho quando a ligação voltar.', 'aviso', 7000);
+        v.carrinho = []; document.getElementById('venda-obs').value = ''; vendaRender();
+        return;
+      } catch (e2) { toast(e2.message, 'erro'); return; }
+    }
+    toast(e.message, 'erro');
+  }
 }
 function vendaVoltar() { carregarModulo(window._venda.origem === 'MESA' ? 'mesas' : window._venda.origem === 'QUARTO' ? 'quartos' : 'takeaway'); }
 // Consumo no quarto: a conta fica por pagar e o quarto não fica disponível até o Caixa a receber

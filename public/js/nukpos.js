@@ -33,7 +33,16 @@ async function api(metodo, path, dados) {
   if (NUK.token) opts.headers['Authorization'] = `Bearer ${NUK.token}`;
   if (dados && metodo !== 'GET') opts.body = JSON.stringify(dados);
 
-  const r = await fetch(`/api${path}`, opts);
+  let r;
+  try { r = await fetch(`/api${path}`, opts); }
+  catch (e) {
+    // sem rede: as leituras do painel de venda usam a última cópia guardada (offline.js)
+    if (metodo === 'GET' && typeof offlineLer === 'function') {
+      const copia = offlineLer(path);
+      if (copia !== undefined) { if (typeof offlineIndicador === 'function') offlineIndicador(); return copia; }
+    }
+    const err = new Error('Sem ligação ao servidor'); err.semRede = true; throw err;
+  }
   const json = await r.json().catch(() => ({}));
 
   if (!r.ok) {
@@ -43,6 +52,7 @@ async function api(metodo, path, dados) {
     if (r.status === 428 && json.codigo === 'ADESAO_PENDENTE' && typeof mostrarAdesao === 'function') { mostrarAdesao(); }
     throw new Error(json.erro || `Erro ${r.status}`);
   }
+  if (metodo === 'GET' && typeof offlineGuardarLeitura === 'function') offlineGuardarLeitura(path, json);
   return json;
 }
 
@@ -112,6 +122,7 @@ function arrancarOperacao() {
   if (typeof actualizarPonto === 'function') actualizarPonto();
   if (typeof impArrancar === 'function') impArrancar();
   if (typeof cadeiaArrancar === 'function') cadeiaArrancar();
+  if (typeof offlineArrancar === 'function') offlineArrancar();
 
   // WebSocket
   iniciarWebSocket();

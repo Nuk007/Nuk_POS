@@ -218,6 +218,7 @@
       <button class="btn-menu" data-action="toggle-sidebar">☰</button>
       <h2 id="topbar-titulo">Dashboard</h2>
       <div class="topbar-direita">
+        <button id="offline-estado" class="btn-secundario" style="display:none;padding:.3rem .7rem;font-size:.8rem" title="Pedidos feitos sem internet" data-on-click="modalOffline()"></button>
         <button id="btn-cadeia" class="btn-secundario" style="display:none;padding:.3rem .7rem;font-size:.8rem" title="Mudar de estabelecimento" data-on-click="modalCadeia()">🏢</button>
         <button id="btn-impressora" class="btn-secundario" style="display:none;padding:.3rem .7rem;font-size:.8rem" title="Impressora deste dispositivo" data-on-click="modalImpressora()">🖨️</button>
         <button id="btn-ponto" class="btn-secundario" style="display:none;padding:.3rem .7rem;font-size:.8rem" data-on-click="clicarPonto()">🕒 Registar entrada</button>
@@ -260,5 +261,6 @@
 <script src="/js/servicos.js"></script>
 <script src="/js/patrimonio.js"></script>
 <script src="/js/cadeia.js"></script>
+<script src="/js/offline.js"></script>
 </body>
 </html>
