@@ -44,10 +44,11 @@ async function vendas({ tenantId, de, ate }) {
       SELECT COALESCE(SUM(valor), 0) AS valor, COUNT(*)::int AS n FROM conta_corrente_movimentos
        WHERE tenant_id = $1 AND tipo = 'DEBITO' AND ${NO_PERIODO('criado_em')}`, v),
     pool.query(`
-      SELECT f.id, COALESCE(f.nome, 'Portal / sem funcionário') AS nome, COUNT(*)::int AS pedidos, COALESCE(SUM(p.total), 0) AS valor
+      SELECT f.id, COALESCE(f.nome, 'Portal / sem funcionário') AS nome, COALESCE(f.comissao_pct, 0) AS comissao_pct,
+             COUNT(*)::int AS pedidos, COALESCE(SUM(p.total), 0) AS valor
         FROM pedidos p LEFT JOIN funcionarios f ON f.id = p.funcionario_id
        WHERE p.tenant_id = $1 AND p.status = 'FECHADO' AND ${NO_PERIODO('p.criado_em')}
-       GROUP BY f.id, f.nome ORDER BY valor DESC`, v),
+       GROUP BY f.id, f.nome, f.comissao_pct ORDER BY valor DESC`, v),
     pool.query(`
       SELECT p.cancelado_por AS id, COUNT(*)::int AS n FROM pedidos p
        WHERE p.tenant_id = $1 AND p.status = 'CANCELADO' AND ${NO_PERIODO('p.criado_em')} GROUP BY p.cancelado_por`, v),
@@ -86,7 +87,9 @@ async function vendas({ tenantId, de, ate }) {
     // Recebimentos de vendas por forma (CONTA = lançado em conta corrente) e todas as entradas/saídas do caixa por forma
     recebido_por_forma: recebido,
     caixa_por_forma: entradas,
-    por_funcionario: porFunc.rows.map(r => ({ id: r.id, nome: r.nome, pedidos: r.pedidos, valor: N(r.valor), cancelamentos: canc_por[r.id] || 0 })),
+    // Comissão = % do funcionário sobre as suas vendas FECHADAS no período (valor com IVA, como o total do pedido)
+    por_funcionario: porFunc.rows.map(r => ({ id: r.id, nome: r.nome, pedidos: r.pedidos, valor: N(r.valor), cancelamentos: canc_por[r.id] || 0,
+      comissao_pct: N(r.comissao_pct), comissao: Math.round(N(r.valor) * N(r.comissao_pct)) / 100 })),
     por_produto: porProd.rows.map(r => ({ ...r, quantidade: N(r.quantidade), valor: N(r.valor) })),
     por_hora: porHora.rows.map(r => ({ hora: r.hora, pedidos: r.pedidos, valor: N(r.valor) })),
     cancelamentos: canc.rows.map(r => ({ ...r, total: N(r.total) })),

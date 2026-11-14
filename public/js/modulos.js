@@ -1379,6 +1379,7 @@ function modalNovoFuncionario() {
     </div>
     ${htmlAcessos('nf', window._acessosMeta ? window._acessosMeta.padrao.OPERADOR.filter(k => window._acessosMeta.meu_limite.includes(k)) : [], 'OPERADOR', false)}
     <div class="campo"><label>Salário (Kz)</label><input type="number" id="nf-sal" value="200000" min="0"></div>
+    <div class="campo"><label>Comissão sobre vendas (%)</label><input type="number" id="nf-com" value="0" min="0" max="100" step="0.5"></div>
     <div class="campo"><label><input type="checkbox" id="nf-vq"> Pode vender/reservar/abrir quartos</label></div>
     <div class="campo"><label><input type="checkbox" id="nf-aq"> Arruma quartos (recebe os avisos de limpeza)</label></div>
     <button class="btn-primario btn-bloco" data-on-click="guardarNovoFuncionario()">Guardar</button>
@@ -1394,7 +1395,7 @@ async function guardarNovoFuncionario() {
   const salario = parseFloat(document.getElementById('nf-sal').value) || 0;
   if (!nome || !email || !/^\d{6,8}$/.test(password)) { toast('Preencha todos os campos (palavra-passe de 6 a 8 dígitos)', 'erro'); return; }
   try {
-    await api('POST', '/funcionarios', { nome, email, password, cargo, nivel_acesso, salario,
+    await api('POST', '/funcionarios', { nome, email, password, cargo, nivel_acesso, salario, comissao_pct: parseFloat((document.getElementById('nf-com') || {}).value) || 0,
       pode_vender_quartos: document.getElementById('nf-vq').checked, arruma_quartos: document.getElementById('nf-aq').checked, permissoes: lerAcessos('nf') });
     toast('Funcionário criado!', 'sucesso');
     fecharModal();
@@ -1413,6 +1414,7 @@ function modalEditarFuncionario(id) {
     <div class="campo"><label>Cargo</label><input type="text" id="ef-cargo" value="${esc(f.cargo || '')}"></div>
     ${campoNivel}
     <div class="campo"><label>Salário (Kz)</label><input type="number" id="ef-sal" value="${esc(f.salario || 0)}" min="0"></div>
+    <div class="campo"><label>Comissão sobre vendas (%)</label><input type="number" id="ef-com" value="${esc(Number(f.comissao_pct || 0))}" min="0" max="100" step="0.5"></div>
     <div class="campo"><label><input type="checkbox" id="ef-vq" ${f.pode_vender_quartos ? 'checked' : ''}> Pode vender/reservar/abrir quartos</label></div>
     <div class="campo"><label><input type="checkbox" id="ef-aq" ${f.arruma_quartos ? 'checked' : ''}> Arruma quartos (recebe os avisos de limpeza)</label></div>
     ${f.titular ? '' : htmlAcessos('ef', f.acessos || [], f.nivel_acesso, !!window._acessosMeta && !window._acessosMeta.sou_titular && (f.acessos || []).some(k => !window._acessosMeta.meu_limite.includes(k)))}
@@ -1452,7 +1454,7 @@ async function salvarEdicaoFuncionario(id) {
   const nivel_acesso = document.getElementById('ef-nivel').value;
   const salario = parseFloat(document.getElementById('ef-sal').value) || 0;
   const password = document.getElementById('ef-senha').value;
-  const dados = { nome, cargo, nivel_acesso, salario,
+  const dados = { nome, cargo, nivel_acesso, salario, comissao_pct: parseFloat((document.getElementById('ef-com') || {}).value) || 0,
     pode_vender_quartos: document.getElementById('ef-vq').checked, arruma_quartos: document.getElementById('ef-aq').checked };
   if (password && !/^\d{6,8}$/.test(password)) { toast('A palavra-passe tem de ter entre 6 e 8 dígitos', 'erro'); return; }
   if (password) dados.password = password;
@@ -1520,13 +1522,15 @@ function descreverTabela(t) {
   const dias = Array.isArray(t.dias) && t.dias.length ? t.dias.map(d => DIAS_SEMANA[d]).join(', ') : 'todos os dias';
   const hora = t.hora_inicio ? `${String(t.hora_inicio).slice(0, 5)}–${String(t.hora_fim).slice(0, 5)}` : 'todo o dia';
   const fluxos = Array.isArray(t.origens) && t.origens.length ? t.origens.map(o => FLUXOS_PRECO[o] || o).join(', ') : 'todos os fluxos';
-  return `${dias} · ${hora} · ${fluxos} · prioridade ${t.prioridade}`;
+  const datas = t.data_inicio || t.data_fim ? ` · campanha ${t.data_inicio ? String(t.data_inicio).slice(0, 10) : '…'} a ${t.data_fim ? String(t.data_fim).slice(0, 10) : '…'}` : '';
+  const desc = t.desconto_pct ? ` · −${Number(t.desconto_pct)}% no resto` : '';
+  return `${dias} · ${hora} · ${fluxos} · prioridade ${t.prioridade}${datas}${desc}`;
 }
 function cartaoTabelasPreco(tabelas) {
   return `
       <div class="card mt-2" style="max-width:700px">
         <div class="card-titulo mb-2">💲 TABELAS DE PREÇO (ATÉ 5)</div>
-        <div class="muted" style="font-size:.82rem;margin-bottom:.75rem">Preços diferentes por horário e por fluxo de venda (ex.: Happy hour das 17h às 19h, Esplanada, Eventos). Fora de uma tabela, ou para produtos sem preço nela, vale o preço normal da ementa. Se várias servirem ao mesmo tempo, ganha a de maior prioridade.</div>
+        <div class="muted" style="font-size:.82rem;margin-bottom:.75rem">Preços diferentes por horário, por fluxo de venda e por datas (ex.: Happy hour das 17h às 19h, Esplanada, campanha de Natal com −10%). Fora de uma tabela, ou para produtos sem preço nela, vale o preço normal da ementa. Se várias servirem ao mesmo tempo, ganha a de maior prioridade.</div>
         ${tabelas.length ? tabelas.map(t => `
           <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;padding:.35rem 0;border-bottom:1px solid var(--c-border);flex-wrap:wrap">
             <div style="min-width:0"><b>${esc(t.nome)}</b> ${t.ativa ? '' : '<span class="muted">(desligada)</span>'}<div class="muted" style="font-size:.78rem">${esc(descreverTabela(t))} · ${Object.keys(t.precos || {}).length} preços</div></div>
@@ -1549,6 +1553,9 @@ function modalTabelaPreco(id) {
     <div style="display:flex;gap:.5rem"><div class="campo" style="flex:1"><label>Das (opcional)</label><input type="time" id="tp-ini" value="${t.hora_inicio ? String(t.hora_inicio).slice(0, 5) : ''}"></div>
       <div class="campo" style="flex:1"><label>Às</label><input type="time" id="tp-fim" value="${t.hora_fim ? String(t.hora_fim).slice(0, 5) : ''}"></div></div>
     <div class="campo"><label>Fluxos de venda (nenhum marcado = todos)</label><div style="display:flex;gap:.5rem;flex-wrap:wrap">${Object.entries(FLUXOS_PRECO).map(([k, v]) => `<label style="font-weight:normal"><input type="checkbox" class="tp-fluxo" value="${k}" ${marcado(t.origens, k)}> ${v}</label>`).join('')}</div></div>
+    <div style="display:flex;gap:.5rem"><div class="campo" style="flex:1"><label>Campanha de (opcional)</label><input type="date" id="tp-dini" value="${t.data_inicio ? String(t.data_inicio).slice(0, 10) : ''}"></div>
+      <div class="campo" style="flex:1"><label>Até</label><input type="date" id="tp-dfim" value="${t.data_fim ? String(t.data_fim).slice(0, 10) : ''}"></div></div>
+    <div class="campo"><label>Desconto geral (%) nos produtos sem preço próprio nesta tabela (opcional)</label><input type="number" id="tp-desc" min="0" max="99" step="0.5" value="${t.desconto_pct ? Number(t.desconto_pct) : ''}" placeholder="Ex.: 10"></div>
     <div class="campo"><label>Prioridade (1–99; maior ganha)</label><input type="number" id="tp-prio" min="1" max="99" value="${Number(t.prioridade) || 1}"></div>
     <button class="btn-primario btn-bloco" data-on-click="guardarTabelaPreco('${esc(id || '')}')">Guardar</button>`);
 }
@@ -1559,7 +1566,10 @@ async function guardarTabelaPreco(id) {
     dias: marcados('.tp-dia').map(Number), origens: marcados('.tp-fluxo'),
     hora_inicio: document.getElementById('tp-ini').value || null, hora_fim: document.getElementById('tp-fim').value || null,
     prioridade: parseInt(document.getElementById('tp-prio').value, 10) || 1,
+    data_inicio: document.getElementById('tp-dini').value || null, data_fim: document.getElementById('tp-dfim').value || null,
+    desconto_pct: document.getElementById('tp-desc').value === '' ? null : parseFloat(document.getElementById('tp-desc').value),
   };
+  if (corpo.data_inicio && corpo.data_fim && corpo.data_fim < corpo.data_inicio) { toast('A data de fim é anterior à de início', 'erro'); return; }
   if (!corpo.nome) { toast('Indique o nome', 'erro'); return; }
   if (!!corpo.hora_inicio !== !!corpo.hora_fim) { toast('Indique as duas horas ou nenhuma', 'erro'); return; }
   try {

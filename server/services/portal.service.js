@@ -155,11 +155,12 @@ async function criarPedidoRestaurante({ tenantId, itens, mesa_ref, observacoes, 
   const pedido = await withTx(async db => {
     // 1) preços sempre do servidor; qualquer produto inválido rejeita o pedido (não se cobra "só o que existe")
     let total = 0; const linhas = [];
-    const nivel = await require('./precos.service').precosAplicaveis(db, { tenantId: T(tenantId), origem: 'REMOTA' }); // nível de preço em vigor
+    const precosSvc = require('./precos.service');
+    const nivel = await precosSvc.precosAplicaveis(db, { tenantId: T(tenantId), origem: 'REMOTA' }); // nível de preço / campanha em vigor
     for (const it of itens) {
       const p = await db.query(`SELECT id, nome, preco FROM produtos WHERE id = $1 AND disponivel = true AND ativo = true AND ($2::uuid IS NULL OR tenant_id = $2)`, [it.produto_id, T(tenantId)]);
       if (!p.rows[0]) throw erro(400, 'Um dos produtos não existe ou não está disponível');
-      const preco = nivel.precos[p.rows[0].id] !== undefined ? nivel.precos[p.rows[0].id] : parseFloat(p.rows[0].preco);
+      const preco = precosSvc.precoFinal(nivel, p.rows[0].id, p.rows[0].preco);
       total = arred(total + preco * it.quantidade);
       linhas.push({ produto_id: p.rows[0].id, nome: p.rows[0].nome, quantidade: it.quantidade, preco_unitario: preco });
     }

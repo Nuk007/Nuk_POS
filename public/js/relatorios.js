@@ -43,7 +43,7 @@ async function modulo_relatorios(el) {
         <div class="card"><div class="card-header"><span class="card-titulo">Recebido por forma de pagamento</span></div>
           ${tabelaRel(['Forma', 'Valor'], Object.entries(r.recebido_por_forma).map(([k, v]) => [FORMAS_REL[k] || k, formatarMoeda(v)]), 'Sem recebimentos')}</div>
         <div class="card"><div class="card-header"><span class="card-titulo">Por funcionário</span></div>
-          ${tabelaRel(['Funcionário', 'Pedidos', 'Vendas', 'Cancel.'], r.por_funcionario.map(x => [esc(x.nome), x.pedidos, formatarMoeda(x.valor), x.cancelamentos]), 'Sem vendas')}</div>
+          ${tabelaRel(['Funcionário', 'Pedidos', 'Vendas', 'Comissão', 'Cancel.'], r.por_funcionario.map(x => [esc(x.nome), x.pedidos, formatarMoeda(x.valor), x.comissao_pct ? `${formatarMoeda(x.comissao)} <span class="muted texto-pequeno">(${x.comissao_pct}%)</span>` : '—', x.cancelamentos]), 'Sem vendas')}</div>
         <div class="card"><div class="card-header"><span class="card-titulo">Produtos mais vendidos</span></div>
           ${tabelaRel(['Produto', 'Qtd', 'Valor'], r.por_produto.map(x => [esc(x.nome), x.quantidade, formatarMoeda(x.valor)]), 'Sem vendas')}</div>
         <div class="card"><div class="card-header"><span class="card-titulo">Vendas por hora</span></div>

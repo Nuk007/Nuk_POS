@@ -165,7 +165,7 @@ async function criarPedido({ tenantId, userId, mesa_id, quarto_id, cliente_id, i
       if (CATEGORIAS_ORIGEM[origem] && !CATEGORIAS_ORIGEM[origem].includes(String(pr.rows[0].categoria || '').toUpperCase())) {
         const err = new Error(`${origem === 'LAZER' ? 'O Lazer' : 'A Loja'} só vende ${origem === 'LAZER' ? 'produtos de lazer' : 'produtos da loja e cigarros'}`); err.statusCode = 400; throw err;
       }
-      const preco = nivel.precos[item.produto_id] !== undefined ? nivel.precos[item.produto_id] : Number(pr.rows[0].preco);
+      const preco = precos.precoFinal(nivel, item.produto_id, pr.rows[0].preco);
       total += preco * item.quantidade;
       itensDetalhes.push({ ...item, preco_unitario: preco });
     }

@@ -220,3 +220,20 @@ describe('níveis de preço — janela horária', () => {
     expect(serve(noite, 'MESA', { dia: 6, hora: '23:00' })).toBe(false);
   });
 });
+
+describe('campanhas — datas e desconto geral', () => {
+  const { _interno: { serve }, precoFinal } = require('../server/services/precos.service');
+  it('só dentro das datas (inclusivas)', () => {
+    const t = { ativa: true, data_inicio: '2026-12-01', data_fim: '2026-12-25' };
+    expect(serve(t, 'MESA', { dia: 1, hora: '10:00', data: '2026-11-30' })).toBe(false);
+    expect(serve(t, 'MESA', { dia: 1, hora: '10:00', data: '2026-12-01' })).toBe(true);
+    expect(serve(t, 'MESA', { dia: 1, hora: '10:00', data: '2026-12-25' })).toBe(true);
+    expect(serve(t, 'MESA', { dia: 1, hora: '10:00', data: '2026-12-26' })).toBe(false);
+  });
+  it('preço próprio > desconto geral > preço base', () => {
+    expect(precoFinal({ precos: { a: 500 }, desconto_pct: 10 }, 'a', 600)).toBe(500);
+    expect(precoFinal({ precos: {}, desconto_pct: 10 }, 'b', 4500)).toBe(4050);
+    expect(precoFinal({ precos: {}, desconto_pct: null }, 'b', 4500)).toBe(4500);
+    expect(precoFinal(null, 'b', '4500.00')).toBe(4500);
+  });
+});

@@ -152,7 +152,11 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 - O SERVIDOR decide o preço (`precosAplicaveis`, hora de Luanda) ao criar o pedido do operador (`criarPedido`) e do portal (REMOTA); grava `tabela_preco_id`. O painel de venda mostra a tabela em vigor (`GET /api/precos/actuais?origem=`), o preço normal riscado e o ⭐ prato do dia em primeiro lugar.
 - Prato do dia: `PUT /api/precos/prato-do-dia/:produtoId` (botão na ementa de Configurações).
 - Menus/combos: categoria `MENU` (padrão para tenants novos; portal → Comidas 🍱). Um menu é um produto com a sua receita de stock (`produto_ingredientes`) a abater os componentes.
-- Testes: `tests/integration/precos.int.test.js`, janela horária em `tests/financeiro.test.js`, ecrã em `tests/frontend-modulos.test.js`.
+- **Campanhas** (migração 1751100000000, SQL em `server/migrations-data/comissoes-campanhas.js`): `tabelas_preco.data_inicio/data_fim` (dias de Luanda, inclusivas) e `desconto_pct` (desconto geral para os produtos sem preço próprio). `precoFinal(nivel, produtoId, base)` = preço próprio > base com desconto geral > base; usado em `criarPedido`, no portal e espelhado em venda.js.
+- Testes: `tests/integration/precos.int.test.js`, `tests/integration/comissoes-campanhas.int.test.js`, janela/datas em `tests/financeiro.test.js`, ecrã em `tests/frontend-modulos.test.js`.
+
+## Comissões do pessoal (14/11/2026)
+- `funcionarios.comissao_pct` (0–100, CHECK; ficha do funcionário, só ADMIN). O relatório de vendas devolve por funcionário `comissao_pct` e `comissao` = % × vendas FECHADAS do período (valor com IVA). Dívida: sem regras por categoria/produto nem fecho mensal de comissões.
 
 ## Compras pontuais
 - Menu Compras → «Compras pontuais» (acesso `compras`, licença `compras`); `services/compras.service.js` + `routes/compras.js` (`/api/compras`) + `public/js/compras.js`. Tabela `compras_pontuais`; `caixa_movimentos.compra_id`.

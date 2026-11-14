@@ -703,6 +703,8 @@ async function initDB() {
     for (const sql of require('./migrations-data/assiduidade')) await client.query(sql);
     // Níveis de preço e prato do dia (migração 1751000000000)
     for (const sql of require('./migrations-data/precos')) await client.query(sql);
+    // Comissões e campanhas (migração 1751100000000)
+    for (const sql of require('./migrations-data/comissoes-campanhas')) await client.query(sql);
 
     // Avaliacoes de staff
     await client.query(`

@@ -18,11 +18,15 @@ function agoraLuanda(d = new Date()) {
   const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Luanda', weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false })
     .formatToParts(d).map(x => [x.type, x.value]));
   const dia = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(p.weekday);
-  return { dia, hora: `${p.hour === '24' ? '00' : p.hour}:${p.minute}` };
+  return { dia, hora: `${p.hour === '24' ? '00' : p.hour}:${p.minute}`, data: d.toLocaleDateString('sv-SE', { timeZone: 'Africa/Luanda' }) };
 }
 
+const diaISO = v => (v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10));
 function serve(t, origem, agora) {
   if (!t.ativa) return false;
+  // Campanha com datas (inclusivas, dias de Luanda)
+  if (agora.data && t.data_inicio && agora.data < diaISO(t.data_inicio)) return false;
+  if (agora.data && t.data_fim && agora.data > diaISO(t.data_fim)) return false;
   if (Array.isArray(t.origens) && t.origens.length && !t.origens.includes(origem)) return false;
   if (t.hora_inicio && t.hora_fim) {
     const ini = String(t.hora_inicio).slice(0, 5), fim = String(t.hora_fim).slice(0, 5);
@@ -44,7 +48,18 @@ async function precosAplicaveis(db, { tenantId, origem, agora = agoraLuanda() })
   const tabela = r.rows.find(t => serve(t, origem, agora)) || null;
   if (!tabela) return { tabela: null, precos: {} };
   const p = await db.query(`SELECT produto_id, preco FROM precos_tabela WHERE tabela_id = $1`, [tabela.id]);
-  return { tabela: { id: tabela.id, nome: tabela.nome }, precos: Object.fromEntries(p.rows.map(x => [x.produto_id, Number(x.preco)])) };
+  return {
+    tabela: { id: tabela.id, nome: tabela.nome },
+    precos: Object.fromEntries(p.rows.map(x => [x.produto_id, Number(x.preco)])),
+    desconto_pct: tabela.desconto_pct !== null && tabela.desconto_pct !== undefined ? Number(tabela.desconto_pct) : null,
+  };
+}
+
+/** Preço final de um produto: preço próprio na tabela, ou base com o desconto geral da tabela, ou base. */
+function precoFinal(nivel, produtoId, base) {
+  if (nivel && nivel.precos && nivel.precos[produtoId] !== undefined) return nivel.precos[produtoId];
+  if (nivel && nivel.desconto_pct) return Math.round(Number(base) * (100 - nivel.desconto_pct)) / 100;
+  return Number(base);
 }
 
 async function listar({ tenantId }) {
@@ -53,7 +68,7 @@ async function listar({ tenantId }) {
   return t.rows.map(x => ({ ...x, precos: Object.fromEntries(p.rows.filter(y => y.tabela_id === x.id).map(y => [y.produto_id, Number(y.preco)])) }));
 }
 
-function validarTabela({ nome, prioridade, ativa, origens, dias, hora_inicio, hora_fim }, parcial = false) {
+function validarTabela({ nome, prioridade, ativa, origens, dias, hora_inicio, hora_fim, data_inicio, data_fim, desconto_pct }, parcial = false) {
   const out = {};
   if (!parcial || nome !== undefined) {
     const n = String(nome || '').trim();
@@ -80,6 +95,21 @@ function validarTabela({ nome, prioridade, ativa, origens, dias, hora_inicio, ho
     if (!semHorario && hora_inicio === hora_fim) throw erro(400, 'O início e o fim do horário não podem ser iguais');
     out.hora_inicio = semHorario ? null : hora_inicio; out.hora_fim = semHorario ? null : hora_fim;
   }
+  for (const [k, v] of [['data_inicio', data_inicio], ['data_fim', data_fim]]) {
+    if (v === undefined) continue;
+    if (v === null || v === '') { out[k] = null; continue; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(v) || isNaN(new Date(v + 'T00:00:00Z'))) throw erro(400, 'Datas da campanha no formato AAAA-MM-DD');
+    out[k] = v;
+  }
+  if (out.data_inicio && out.data_fim && out.data_fim < out.data_inicio) throw erro(400, 'A data de fim da campanha é anterior à de início');
+  if (desconto_pct !== undefined) {
+    if (desconto_pct === null || desconto_pct === '') out.desconto_pct = null;
+    else {
+      const d = Number(desconto_pct);
+      if (!Number.isFinite(d) || d <= 0 || d >= 100) throw erro(400, 'Desconto geral: mais de 0 e menos de 100 %');
+      out.desconto_pct = Math.round(d * 100) / 100;
+    }
+  }
   return out;
 }
 
@@ -91,9 +121,10 @@ async function criar({ tenantId, ...dados }) {
     if (n.rows[0].n >= MAX_TABELAS) throw erro(409, `Máximo de ${MAX_TABELAS} tabelas de preço por estabelecimento`);
     try {
       const r = await db.query(
-        `INSERT INTO tabelas_preco (tenant_id, nome, prioridade, ativa, origens, dias, hora_inicio, hora_fim)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-        [tenantId, v.nome, v.prioridade || 1, v.ativa !== undefined ? v.ativa : true, v.origens || null, v.dias || null, v.hora_inicio || null, v.hora_fim || null]);
+        `INSERT INTO tabelas_preco (tenant_id, nome, prioridade, ativa, origens, dias, hora_inicio, hora_fim, data_inicio, data_fim, desconto_pct)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+        [tenantId, v.nome, v.prioridade || 1, v.ativa !== undefined ? v.ativa : true, v.origens || null, v.dias || null, v.hora_inicio || null, v.hora_fim || null,
+          v.data_inicio || null, v.data_fim || null, v.desconto_pct || null]);
       return r.rows[0];
     } catch (e) { if (e.code === '23505') throw erro(409, 'Já existe uma tabela com esse nome'); throw e; }
   });
@@ -108,7 +139,11 @@ async function actualizar({ tenantId, id, ...dados }) {
     const r = await pool.query(`UPDATE tabelas_preco SET ${sets} WHERE id = $1 AND tenant_id = $2 RETURNING *`, [id, tenantId, ...campos.map(c => v[c])]);
     if (!r.rows[0]) throw erro(404, 'Tabela não encontrada');
     return r.rows[0];
-  } catch (e) { if (e.code === '23505') throw erro(409, 'Já existe uma tabela com esse nome'); throw e; }
+  } catch (e) {
+    if (e.code === '23505') throw erro(409, 'Já existe uma tabela com esse nome');
+    if (e.code === '23514') throw erro(400, 'Combinação inválida (datas da campanha ou horário)');
+    throw e;
+  }
 }
 
 async function apagar({ tenantId, id }) {
@@ -149,4 +184,4 @@ async function pratoDoDia({ tenantId, produtoId, ativo }) {
   return r.rows[0];
 }
 
-module.exports = { precosAplicaveis, listar, criar, actualizar, apagar, definirPrecos, pratoDoDia, agoraLuanda, ORIGENS, MAX_TABELAS, _interno: { serve } };
+module.exports = { precosAplicaveis, precoFinal, listar, criar, actualizar, apagar, definirPrecos, pratoDoDia, agoraLuanda, ORIGENS, MAX_TABELAS, _interno: { serve } };

@@ -15,7 +15,7 @@ const h = fn => async (req, res, next) => {
 };
 const admin = requerNivel(['ADMIN']);
 const uuid = nome => (req, res, next) => (isUUID(req.params[nome]) ? next() : res.status(400).json({ erro: `${nome} inválido` }));
-const campos = b => ({ nome: b.nome, prioridade: b.prioridade, ativa: b.ativa, origens: b.origens, dias: b.dias, hora_inicio: b.hora_inicio, hora_fim: b.hora_fim });
+const campos = b => ({ nome: b.nome, prioridade: b.prioridade, ativa: b.ativa, origens: b.origens, dias: b.dias, hora_inicio: b.hora_inicio, hora_fim: b.hora_fim, data_inicio: b.data_inicio, data_fim: b.data_fim, desconto_pct: b.desconto_pct });
 
 /**
  * @openapi

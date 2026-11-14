@@ -10,7 +10,7 @@ const { erro, withTx, validarPalavraPasse } = require('./shared');
 const ac = require('./acessos');
 
 const NIVEIS = ['ADMIN', 'GERENTE', 'OPERADOR'];
-const COLS = `id, nome, email, cargo, nivel_acesso, salario, media_avaliacao, total_avaliacoes, ativo, titular,
+const COLS = `id, nome, email, cargo, nivel_acesso, salario, comissao_pct, media_avaliacao, total_avaliacoes, ativo, titular,
               pode_vender_quartos, arruma_quartos, permissoes, ultimo_acesso, criado_em`;
 
 const bool = v => (v === undefined || v === null ? null : v === true || v === 'true');
@@ -63,9 +63,18 @@ function aplicarDelegacao({ actor, alvo, nivel, permissoes, vender, arrumar }) {
   return lista;
 }
 
-async function criar({ tenantId, actorId, nome, email, password, nivel_acesso, cargo, salario, pode_vender_quartos, arruma_quartos, permissoes }) {
+/** Comissão sobre vendas: 0 a 100 % (null = não mexer). */
+function validarComissao(v) {
+  if (v === undefined || v === null || v === '') return null;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0 || n > 100) throw erro(400, 'Comissão inválida (0 a 100 %)');
+  return Math.round(n * 100) / 100;
+}
+
+async function criar({ tenantId, actorId, nome, email, password, nivel_acesso, cargo, salario, comissao_pct, pode_vender_quartos, arruma_quartos, permissoes }) {
   if (!nome || !email || !password) throw erro(400, 'nome, email e password são obrigatórios');
   if (!NIVEIS.includes(nivel_acesso)) throw erro(400, `nivel_acesso inválido. Valores: ${NIVEIS.join(', ')}`);
+  const comissao = validarComissao(comissao_pct);
   const lista = aplicarDelegacao({ actor: await actorDe(tenantId, actorId), alvo: null, nivel: nivel_acesso, permissoes, vender: bool(pode_vender_quartos), arrumar: bool(arruma_quartos) });
   validarPalavraPasse(password);
   // M-02: unicidade de email por tenant, não global
@@ -73,15 +82,16 @@ async function criar({ tenantId, actorId, nome, email, password, nivel_acesso, c
   if (ex.rows[0]) throw erro(409, 'Email já registado neste estabelecimento');
   const hash = await bcrypt.hash(password, 12);
   const r = await pool.query(
-    `INSERT INTO funcionarios (id, tenant_id, nome, email, password_hash, nivel_acesso, cargo, salario, pode_vender_quartos, arruma_quartos, permissoes, ativo, criado_em)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,true,NOW()) RETURNING ${COLS}`,
-    [uuidv4(), tenantId || null, nome.trim(), email.trim().toLowerCase(), hash, nivel_acesso, cargo || null, Number(salario) || 0, bool(pode_vender_quartos) === true, bool(arruma_quartos) === true, lista ? JSON.stringify(lista) : null]);
+    `INSERT INTO funcionarios (id, tenant_id, nome, email, password_hash, nivel_acesso, cargo, salario, pode_vender_quartos, arruma_quartos, permissoes, ativo, criado_em, comissao_pct)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,true,NOW(),$12) RETURNING ${COLS}`,
+    [uuidv4(), tenantId || null, nome.trim(), email.trim().toLowerCase(), hash, nivel_acesso, cargo || null, Number(salario) || 0, bool(pode_vender_quartos) === true, bool(arruma_quartos) === true, lista ? JSON.stringify(lista) : null, comissao === null ? 0 : comissao]);
   return comAcessos(r.rows[0]);
 }
 
-async function actualizar({ tenantId, actorId, id, nome, nivel_acesso, ativo, password, cargo, salario, pode_vender_quartos, arruma_quartos, permissoes }) {
+async function actualizar({ tenantId, actorId, id, nome, nivel_acesso, ativo, password, cargo, salario, comissao_pct, pode_vender_quartos, arruma_quartos, permissoes }) {
   if (nivel_acesso !== undefined && !NIVEIS.includes(nivel_acesso)) throw erro(400, `nivel_acesso inválido. Valores: ${NIVEIS.join(', ')}`);
   if (password !== undefined && password !== '') validarPalavraPasse(password);
+  const comissao = validarComissao(comissao_pct);
   const actor = await actorDe(tenantId, actorId);
   const alvo = (await pool.query(`SELECT id, nivel_acesso, titular, permissoes FROM funcionarios WHERE id = $1 AND ($2::uuid IS NULL OR tenant_id = $2)`, [id, tenantId || null])).rows[0];
   if (!alvo) throw erro(404, 'Funcionário não encontrado');
@@ -100,12 +110,13 @@ async function actualizar({ tenantId, actorId, id, nome, nivel_acesso, ativo, pa
        pode_vender_quartos = COALESCE($7, pode_vender_quartos),
        arruma_quartos = COALESCE($8, arruma_quartos),
        permissoes = CASE WHEN $11::boolean THEN $12::jsonb ELSE permissoes END,
+       comissao_pct = COALESCE($13, comissao_pct),
        atualizado_em = NOW()
      WHERE id = $9 AND ($10::uuid IS NULL OR tenant_id = $10)
        AND NOT (titular AND (COALESCE($3, true) = false OR COALESCE($2, 'ADMIN') <> 'ADMIN'))
      RETURNING ${COLS}`,
     [nome || null, nivel_acesso || null, novoAtivo, hash, cargo === undefined ? null : cargo, salario === undefined ? null : Number(salario) || 0,
-     bool(pode_vender_quartos), bool(arruma_quartos), id, tenantId || null, lista !== undefined, lista ? JSON.stringify(lista) : null]);
+     bool(pode_vender_quartos), bool(arruma_quartos), id, tenantId || null, lista !== undefined, lista ? JSON.stringify(lista) : null, comissao]);
   if (r.rows[0]) return comAcessos(r.rows[0]);
   const ex = await pool.query(`SELECT titular FROM funcionarios WHERE id = $1 AND ($2::uuid IS NULL OR tenant_id = $2)`, [id, tenantId || null]);
   if (!ex.rows[0]) throw erro(404, 'Funcionário não encontrado');

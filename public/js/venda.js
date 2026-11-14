@@ -22,7 +22,9 @@ async function abrirPainelVenda(el, { origem, mesa = null, cliente = null, quart
     let nivel = { tabela: null, precos: {} };
     try { nivel = await api('GET', `/precos/actuais?origem=${origem}`) || nivel; } catch { /* sem tabelas: preços base */ }
     const precosNivel = (nivel && nivel.precos) || {};
-    produtos = produtos.map(p => (precosNivel[p.id] !== undefined ? { ...p, preco_base: p.preco, preco: precosNivel[p.id] } : p))
+    const descNivel = nivel && nivel.desconto_pct ? Number(nivel.desconto_pct) : 0;
+    produtos = produtos.map(p => (precosNivel[p.id] !== undefined ? { ...p, preco_base: p.preco, preco: precosNivel[p.id] }
+      : descNivel ? { ...p, preco_base: p.preco, preco: Math.round(Number(p.preco) * (100 - descNivel)) / 100 } : p))
       .sort((a, b) => (b.prato_do_dia ? 1 : 0) - (a.prato_do_dia ? 1 : 0));
     window._venda = { origem, mesa, cliente, quarto, produtos, categoria: '', carrinho: [], tabela: nivel && nivel.tabela };
     el.innerHTML = htmlPainelVenda();
