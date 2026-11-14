@@ -1,10 +1,10 @@
 // Nuk_POS — Servidor Principal (refactored)
 // Stack: Node.js + Express + PostgreSQL + Socket.io
 // SaaS multi-tenant: cada empresa tem tenant_id em todas as operações
-// v2026.11.14.17-saude-alertas
+// v2026.11.14.18-resumo-whatsapp
 
 require('dotenv').config();
-console.log('[NukPOS] server/app.js v2026.11.14.17-saude-alertas a arrancar');
+console.log('[NukPOS] server/app.js v2026.11.14.18-resumo-whatsapp a arrancar');
 
 const express = require('express');
 const http = require('http');
@@ -225,6 +225,7 @@ if (executadoDirectamente || executadoPeloStart) {
         logger.info('✅ Base de dados pronta');
         require('./services/saude.service').arranqueOk();
         require('./jobs/quartos-scheduler').iniciar(); // avisos de arrumação e escalada (30 s)
+        require('./jobs/agendador-diario').iniciar(); // resumo diário para o dono (5 min)
       })
       .catch((err) => {
         require('./services/saude.service').arranqueFalhou();

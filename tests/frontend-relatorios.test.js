@@ -44,3 +44,28 @@ describe('Relatórios (frontend)', () => {
     expect(ctx.window._relFiltro.de.endsWith('-01')).toBe(true);
   });
 });
+
+describe('Resumo de ontem (frontend)', () => {
+  const base = { texto: '📊 Resumo de Casa — 13/11/2026\nReceita: 15 000 Kz', link_whatsapp: 'https://wa.me/244923111222?text=x', config: { ativo: true, telefone: '923111222' } };
+  function comCaixa(dados) {
+    const ctx = carregar('ADMIN', dados);
+    const box = { innerHTML: '' };
+    ctx.document.getElementById = id => (id === 'rel-resumo' ? box : { value: '' });
+    return { ctx, box };
+  }
+  test('mostra o texto e a ligação wa.me; sem API oficial não há «Enviar agora»', async () => {
+    const { ctx, box } = comCaixa({ '/relatorios/resumo-diario': { ...base, whatsapp_oficial: false, envio: { estado: 'SO_APP' } } });
+    await ctx.carregarResumoDiario();
+    expect(box.innerHTML).toContain('Receita: 15 000 Kz');
+    expect(box.innerHTML).toContain('href="https://wa.me/244923111222?text=x"');
+    expect(box.innerHTML).not.toContain('enviarResumoAgora');
+    expect(box.innerHTML).toContain('disponível só aqui');
+  });
+  test('com API oficial e número, «Enviar agora» chama o servidor', async () => {
+    const { ctx, box } = comCaixa({ '/relatorios/resumo-diario': { ...base, whatsapp_oficial: true, envio: null } });
+    await ctx.carregarResumoDiario();
+    expect(box.innerHTML).toContain("enviarResumoAgora()");
+    await ctx.enviarResumoAgora();
+    expect(ctx._chamadas).toContain('/relatorios/resumo-diario/enviar');
+  });
+});

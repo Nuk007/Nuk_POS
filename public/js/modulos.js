@@ -1611,6 +1611,27 @@ async function alternarPratoDoDia(id, ativo) {
   catch (e) { toast(e.message, 'erro'); }
 }
 
+// ─── Configurações → Resumo diário para o dono (WhatsApp) ───
+function cartaoResumoDiario(cfg) {
+  const ativo = cfg.resumo_diario_ativo === 'true';
+  return `
+      <div class="card mt-2" style="max-width:700px">
+        <div class="card-titulo mb-2">📊 RESUMO DIÁRIO NO WHATSAPP</div>
+        <div class="muted" style="font-size:.82rem;margin-bottom:.75rem">Todas as manhãs, à hora escolhida, o resumo de ontem (receita, pedidos, despesas, resultado e o que pede atenção) segue para este número. Também fica em Finanças → Relatórios.</div>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-end">
+          <label style="display:flex;gap:.4rem;align-items:center;margin:0 .5rem .45rem 0"><input type="checkbox" id="rd-ativo" ${ativo ? 'checked' : ''}> Ligado</label>
+          <div class="campo" style="flex:2;min-width:11rem;margin:0"><label>WhatsApp (9XXXXXXXX)</label><input id="rd-telefone" inputmode="tel" maxlength="20" value="${esc(cfg.resumo_diario_telefone || '')}"></div>
+          <div class="campo" style="flex:1;min-width:7rem;margin:0"><label>Hora</label><input id="rd-hora" type="time" value="${esc(cfg.resumo_diario_hora || '07:30')}"></div>
+          <button class="btn-primario" data-on-click="guardarResumoDiario()">Guardar</button>
+        </div>
+      </div>`;
+}
+async function guardarResumoDiario() {
+  const corpo = { ativo: document.getElementById('rd-ativo').checked, telefone: document.getElementById('rd-telefone').value.trim(), hora: document.getElementById('rd-hora').value };
+  try { await api('PUT', '/relatorios/resumo-diario/config', corpo); toast(corpo.ativo ? 'Resumo diário ligado' : 'Resumo diário guardado (desligado)', 'sucesso'); }
+  catch (e) { toast(e.message, 'erro'); }
+}
+
 // ─── Configurações → Contas correntes (crédito a clientes; só ADMIN) ───
 function cartaoContasCorrentes(contas, clientes) {
   const ativas = contas.filter(c => c.conta_corrente_ativa);
@@ -1725,6 +1746,7 @@ async function modulo_configuracoes(el) {
         <div class="muted" style="font-size:.82rem;margin-bottom:.6rem">Escolha em que ecrã aparece cada categoria (Cozinha, Bar ou nenhum).</div>
         <button class="btn-secundario" data-on-click="modalPostosPreparacao()">Definir postos por categoria</button></div>` : ''}
       ${lic('caixa') ? cartaoContasCorrentes(contasCC, clientesCC) : ''}
+      ${lic('financas') ? cartaoResumoDiario(cfg) : ''}
 
       <div class="card mt-2" style="max-width:700px">
         <div class="card-titulo mb-2">DASHBOARD — ITENS A CONTROLAR</div>

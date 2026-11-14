@@ -713,6 +713,8 @@ async function initDB() {
     for (const sql of require('./migrations-data/despesas')) await client.query(sql);
     // Um documento cobre vários pedidos (migração 1751500000000)
     for (const sql of require('./migrations-data/fatura-pedidos')) await client.query(sql);
+    // WhatsApp oficial e resumo diário (migração 1751600000000)
+    for (const sql of require('./migrations-data/whatsapp-resumo')) await client.query(sql);
 
     // Avaliacoes de staff
     await client.query(`

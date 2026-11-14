@@ -33,6 +33,7 @@ async function modulo_relatorios(el) {
           <button class="btn-secundario" style="padding:.3rem .6rem" data-on-click="periodoRelatorio('mes')">Este mês</button>
         </span>
       </div>
+      <div id="rel-resumo" class="mb-3"></div>
       <div class="kpi-grid mb-3">
         <div class="kpi-card"><div class="kpi-label">Vendas</div><div class="kpi-valor texto-primario">${formatarMoeda(t.valor)}</div><div class="kpi-sub">${t.pedidos} pedidos · ticket médio ${formatarMoeda(t.ticket_medio)}</div></div>
         <div class="kpi-card"><div class="kpi-label">Por receber</div><div class="kpi-valor">${formatarMoeda(t.por_receber)}</div><div class="kpi-sub">Contas fechadas ainda não pagas</div></div>
@@ -61,6 +62,7 @@ async function modulo_relatorios(el) {
           s.esperado !== null && s.esperado !== undefined ? formatarMoeda(s.esperado) : '—',
           s.diferenca !== null && s.diferenca !== undefined ? `<span style="color:${Number(s.diferenca) < 0 ? 'var(--c-danger)' : 'inherit'}">${formatarMoeda(s.diferenca)}</span>` : '—',
           `<button class="btn-secundario" style="padding:.25rem .6rem;font-size:.75rem" data-on-click="descarregarPdf('/relatorios/caixa/${esc(s.id)}/talao.pdf','fecho-caixa-${esc(String(s.id).slice(0, 8))}.pdf')">Talão Z</button>`]), '')}</div>` : ''}`;
+    carregarResumoDiario();
   } catch (e) { el.innerHTML = `<div class="erro-msg">Erro: ${esc(e.message)}</div>`; }
 }
 
@@ -83,4 +85,27 @@ function periodoRelatorio(tipo) {
   if (tipo === 'mes') de = hoje.slice(0, 8) + '01';
   window._relFiltro = { de, ate: hoje };
   carregarModulo('relatorios');
+}
+
+// ── Resumo de ontem para o dono (texto pronto a enviar pelo WhatsApp) ──
+async function carregarResumoDiario() {
+  const box = document.getElementById('rel-resumo');
+  if (!box) return;
+  try {
+    const r = await api('GET', '/relatorios/resumo-diario');
+    window._resumoDiario = r;
+    const env = r.envio;
+    const estado = env ? ({ ENVIADO: '✓ enviado pelo WhatsApp', SO_APP: 'disponível só aqui (WhatsApp oficial por configurar)', FALHOU: `✗ falhou: ${env.erro || ''}`, A_PREPARAR: 'a preparar…' }[env.estado] || '') : '';
+    box.innerHTML = `<div class="card"><div class="card-header"><span class="card-titulo">📊 Resumo de ontem</span>${estado ? `<span class="muted texto-pequeno">${esc(estado)}</span>` : ''}</div>
+      <pre style="white-space:pre-wrap;font-family:inherit;margin:0 0 .6rem">${esc(r.texto)}</pre>
+      <div class="row-acoes" style="flex-wrap:wrap">
+        <a class="btn-secundario" style="padding:.3rem .75rem;text-decoration:none" href="${esc(r.link_whatsapp)}" target="_blank" rel="noopener">Enviar pelo WhatsApp</a>
+        ${r.whatsapp_oficial && r.config && r.config.telefone ? '<button class="btn-primario" style="padding:.3rem .75rem" data-on-click="enviarResumoAgora()">Enviar agora (oficial)</button>' : ''}
+      </div>
+      ${r.config && r.config.ativo ? '' : '<div class="muted texto-pequeno" style="margin-top:.4rem">Para o receber todas as manhãs, ligue o resumo diário em Configurações.</div>'}</div>`;
+  } catch (e) { box.innerHTML = ''; }
+}
+async function enviarResumoAgora() {
+  try { await api('POST', '/relatorios/resumo-diario/enviar', {}); toast('Resumo enviado pelo WhatsApp', 'sucesso'); carregarResumoDiario(); }
+  catch (e) { toast(e.message, 'erro'); }
 }
