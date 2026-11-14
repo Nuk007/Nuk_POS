@@ -146,4 +146,4 @@ async function avancarPedido({ tenantId, pedidoId, posto }) {
   return { estado: res.alvo, itens: res.itens, pedido: res.pedido };
 }
 
-module.exports = { listar, avancarItem, avancarPedido, obterPostos, definirPostos, POSTOS, PADRAO, _interno: { postoDe } };
+module.exports = { postos, postoDe, listar, avancarItem, avancarPedido, obterPostos, definirPostos, POSTOS, PADRAO, _interno: { postoDe } };

@@ -1,10 +1,10 @@
 // Nuk_POS — Servidor Principal (refactored)
 // Stack: Node.js + Express + PostgreSQL + Socket.io
 // SaaS multi-tenant: cada empresa tem tenant_id em todas as operações
-// v2026.11.14.11-ecra-cozinha
+// v2026.11.14.12-impressao-directa
 
 require('dotenv').config();
-console.log('[NukPOS] server/app.js v2026.11.14.11-ecra-cozinha a arrancar');
+console.log('[NukPOS] server/app.js v2026.11.14.12-impressao-directa a arrancar');
 
 const express = require('express');
 const http = require('http');
@@ -150,6 +150,7 @@ app.use('/api/mesas',          resolverTenant, verificarLicencaTenant, exigirLic
 app.use('/api/produtos',       resolverTenant, verificarLicencaTenant, exigirLicenca(['restauracao', 'lazer', 'loja']), require('./routes/produtos'));
 app.use('/api/precos',         resolverTenant, verificarLicencaTenant, exigirLicenca(['restauracao', 'lazer', 'loja']), require('./routes/precos'));
 app.use('/api/cozinha',        resolverTenant, verificarLicencaTenant, exigirLicenca('restauracao'), exigirModulo('cozinha'), require('./routes/cozinha'));
+app.use('/api/impressao',      resolverTenant, verificarLicencaTenant, exigirLicenca(['restauracao', 'lazer', 'loja']), require('./routes/impressao'));
 app.use('/api/pedidos',        resolverTenant, verificarLicencaTenant, exigirLicenca(['restauracao', 'lazer', 'loja']), require('./routes/pedidos'));
 app.use('/api/caixa',          resolverTenant, verificarLicencaTenant, exigirLicenca('caixa'), exigirModulo('caixa'), require('./routes/caixa'));
 app.use('/api/compras',        resolverTenant, verificarLicencaTenant, exigirLicenca('compras'), exigirModulo('compras'), require('./routes/compras'));

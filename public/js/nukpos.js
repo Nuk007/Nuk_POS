@@ -110,6 +110,7 @@ function arrancarOperacao() {
 
   aplicarAcessos();
   if (typeof actualizarPonto === 'function') actualizarPonto();
+  if (typeof impArrancar === 'function') impArrancar();
 
   // WebSocket
   iniciarWebSocket();
@@ -179,6 +180,10 @@ function iniciarWebSocket() {
   // Ecrã de cozinha e bar: refaz-se com qualquer mudança; a sala recebe o aviso «pronto»
   ['cozinha_atualizada', 'novo_pedido', 'pedido_atualizado'].forEach(ev => NUK.socket.on(ev, () => {
     if (NUK.moduloActual === 'cozinha' && typeof recarregarCozinha === 'function') recarregarCozinha();
+  }));
+  // Impressora de cozinha/bar deste dispositivo: pedido novo ou remoto validado → talão
+  ['novo_pedido', 'pedido_atualizado'].forEach(ev => NUK.socket.on(ev, () => {
+    if (typeof impVerificarPreparacao === 'function') impVerificarPreparacao();
   }));
   NUK.socket.on('pedido_pronto', (d) => {
     if (NUK.moduloActual === 'cozinha') return;

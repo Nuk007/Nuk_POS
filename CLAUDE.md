@@ -125,6 +125,14 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 - O antigo `PATCH /api/pedidos/:id/itens/:itemId/status` continua (sem sincronizar o pedido).
 - Testes: `tests/integration/cozinha.int.test.js`, `tests/frontend-cozinha.test.js`.
 
+## Impressão directa em térmicas ESC/POS (14/11/2026)
+- Servidor (`services/impressao.service.js`, `/api/impressao`, licença restauração/lazer/loja) prepara o DOCUMENTO já formatado para 32/42/48 colunas: `{ linhas: [{ t, n?, g?, a?: 'c'|'d', sep? }], cortar, gaveta, colunas }`. O navegador (`public/js/impressora.js`) converte em ESC/POS (`impCodificar`: ESC @, CP860 ou sem acentos, ESC a/E, GS !, corte GS V, gaveta ESC p) e envia por **WebUSB**, **Web Serial** ou **Web Bluetooth** (Chrome/Edge). Sem ligação directa, o recibo manual usa o PDF do talão.
+- Configuração **por dispositivo** (localStorage `nuk_impressora`; botão 🖨️ na barra de topo — é configuração do aparelho, não do negócio): ligação, largura, acentos, e o que imprime (recibos do Caixa + gaveta; talões da Cozinha; talões do Bar). USB/série religam sozinhos depois de autorizados; Bluetooth pede novo toque após recarregar.
+- Talões de cozinha/bar: `POST /api/impressao/preparacao/reclamar { posto, colunas }` devolve os pedidos novos (< 2 h, validados, sem Lazer/Loja, só itens do posto) e marca-os em `impressoes_preparacao` (PK pedido+posto, `ON CONFLICT DO NOTHING`) — com vários dispositivos cada talão sai uma só vez. O dispositivo reclama ao receber `novo_pedido`/`pedido_atualizado` e a cada 15 s. Reimpressão: `GET /api/impressao/preparacao/:pedidoId?posto=` (botão 🖨️ no cartão do KDS).
+- Recibo: `POST /api/impressao/recibo { pedido_ids }` (cabeçalho do estabelecimento, itens, total, formas de pagamento do livro-razão + conta corrente, «Documento sem validade fiscal»); `gaveta = true` se houve dinheiro. O Caixa imprime-o sozinho depois de receber (se o dispositivo imprimir recibos).
+- Migração 1751200000000 (SQL em `server/migrations-data/impressao.js`). Impressoras de rede (IP:9100) precisam de um agente local — por fazer.
+- Testes: `tests/integration/impressao.int.test.js`, `tests/frontend-impressora.test.js`.
+
 ## Caixa do dia (turno)
 - Grupo **Caixa**: Caixa do dia, Nuk-Coin, Cartões de consumo, Receber mesas (+ Clientes). Licença `caixa`; chaves de acesso `caixa, nukcoin, cartoes, recebimentos`.
 - Backend: `services/caixa.service.js` + `routes/caixa.js` (`/api/caixa`); frontend: `public/js/caixa.js`. Tabelas: `caixa_sessoes` (uma aberta por tenant), `caixa_movimentos` (valor com sinal; esperado = fundo + Σ CASH), `cartoes_consumo`, `movimentos_cartao`; `pedidos.pago_em/pago_metodo/pago_por`.

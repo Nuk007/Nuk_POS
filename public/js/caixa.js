@@ -369,6 +369,7 @@ async function confirmarReceber() {
   try {
     const r = await api('POST', '/caixa/receber', corpo);
     fecharModal();
+    if (typeof imprimirRecibo === 'function') imprimirRecibo(corpo.pedido_ids); // recibo + gaveta, se este dispositivo tiver impressora
     const formas = r.pagamentos && r.pagamentos.length > 1 ? ` (${r.pagamentos.map(x => `${FORMAS_RECEBER[x.metodo] || x.metodo} ${formatarMoeda(x.valor)}`).join(' + ')})` : '';
     toast(`Recebido ${formatarMoeda(r.total)}${formas}` + (r.troco ? ` · troco ${formatarMoeda(r.troco)}` : '') + (r.saldo_restante !== null && r.saldo_restante !== undefined ? ` · saldo ${formatarMoeda(r.saldo_restante)}` : ''), 'sucesso', 7000);
     carregarModulo('recebimentos');

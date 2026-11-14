@@ -46,10 +46,18 @@ function cartaoKds(p) {
         <span><b>${i.quantidade}×</b> ${esc(i.produto)}${i.observacoes ? `<span class="texto-pequeno" style="display:block;color:#f59e0b">${esc(i.observacoes)}</span>` : ''}</span>
         <span class="texto-pequeno">${ESTADOS_KDS[i.status]}</span></button>`).join('')}
     ${p.observacoes ? `<div class="texto-pequeno" style="margin:.3rem 0;color:#f59e0b">📝 ${esc(p.observacoes)}</div>` : ''}
-    <button class="btn-primario btn-bloco" style="margin-top:.4rem" data-on-click="avancarPedidoKds('${esc(p.id)}')">${BOTAO_KDS[menos]} ${menos === 'PRONTO' ? '' : 'tudo'}</button>
+    <div style="display:flex;gap:.4rem;margin-top:.4rem">
+      <button class="btn-secundario" title="Reimprimir talão" data-on-click="reimprimirKds('${esc(p.id)}')">🖨️</button>
+      <button class="btn-primario" style="flex:1" data-on-click="avancarPedidoKds('${esc(p.id)}')">${BOTAO_KDS[menos]} ${menos === 'PRONTO' ? '' : 'tudo'}</button>
+    </div>
   </div>`;
 }
 
+async function reimprimirKds(pedidoId) {
+  if (typeof impConfig !== 'function' || impConfig().ligacao === 'NENHUMA') { toast('Ligue uma impressora neste dispositivo (botão 🖨️ no topo)', 'aviso'); return; }
+  try { await impEnviar(await api('GET', `/impressao/preparacao/${pedidoId}?posto=${window._kdsPosto}&colunas=${impConfig().colunas}`)); toast('Talão reimpresso', 'sucesso'); }
+  catch (e) { toast(e.message, 'erro'); }
+}
 function mudarPostoKds(posto) { window._kdsPosto = posto; recarregarCozinha(); }
 async function avancarItemKds(pedidoId, itemId) {
   try { await api('POST', `/cozinha/pedidos/${pedidoId}/itens/${itemId}/avancar`, {}); recarregarCozinha(); } catch (e) { toast(e.message, 'erro'); }
