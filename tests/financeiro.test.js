@@ -202,3 +202,21 @@ describe('serviço fiscal — cálculos', () => {
     expect(a).toMatch(/^[0-9a-f]{64}$/);
   });
 });
+
+describe('níveis de preço — janela horária', () => {
+  const { _interno: { serve } } = require('../server/services/precos.service');
+  const t = x => ({ ativa: true, origens: null, dias: null, hora_inicio: null, hora_fim: null, ...x });
+  it('sem horário serve sempre; desligada nunca; fluxo filtra', () => {
+    expect(serve(t({}), 'MESA', { dia: 1, hora: '10:00' })).toBe(true);
+    expect(serve(t({ ativa: false }), 'MESA', { dia: 1, hora: '10:00' })).toBe(false);
+    expect(serve(t({ origens: ['BALCAO'] }), 'MESA', { dia: 1, hora: '10:00' })).toBe(false);
+  });
+  it('janela normal e janela que passa a meia-noite (o dia conta pelo início)', () => {
+    expect(serve(t({ hora_inicio: '17:00', hora_fim: '19:00' }), 'MESA', { dia: 1, hora: '18:30' })).toBe(true);
+    expect(serve(t({ hora_inicio: '17:00', hora_fim: '19:00' }), 'MESA', { dia: 1, hora: '19:00' })).toBe(false);
+    const noite = t({ hora_inicio: '22:00', hora_fim: '02:00', dias: [5] }); // sexta à noite
+    expect(serve(noite, 'MESA', { dia: 5, hora: '23:00' })).toBe(true);
+    expect(serve(noite, 'MESA', { dia: 6, hora: '01:30' })).toBe(true);  // madrugada de sábado ainda é a sexta
+    expect(serve(noite, 'MESA', { dia: 6, hora: '23:00' })).toBe(false);
+  });
+});

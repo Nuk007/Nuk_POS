@@ -18,7 +18,7 @@ const MESA_QR = (new URLSearchParams(location.search).get('mesa') || '').trim().
 
 // Categorias do servidor → secções do menu
 const SECCOES = {
-  comidas:  { grid: 'grid-comidas',  cats: ['CHURRASCO', 'PEIXE', 'PRATO', 'ENTRADA', 'ACOMPANHAMENTO'] },
+  comidas:  { grid: 'grid-comidas',  cats: ['CHURRASCO', 'PEIXE', 'PRATO', 'MENU', 'ENTRADA', 'ACOMPANHAMENTO'] },
   bebidas:  { grid: 'grid-bebidas',  cats: ['BEBIDA', 'COCKTAIL'] },
   cigarros: { grid: 'grid-cigarros', cats: ['SHISHA', 'CIGARROS'] },
   loja:     { grid: 'grid-loja',     cats: ['LOJA'] },
@@ -26,7 +26,7 @@ const SECCOES = {
   outros:   { grid: 'grid-outros',   cats: [] },            // tudo o resto (SOBREMESA, OUTRO, …)
 };
 const EMOJI_CAT = {
-  CHURRASCO: '🍖', PEIXE: '🐟', PRATO: '🍽️', ENTRADA: '🥗', ACOMPANHAMENTO: '🍚',
+  CHURRASCO: '🍖', PEIXE: '🐟', PRATO: '🍽️', MENU: '🍱', ENTRADA: '🥗', ACOMPANHAMENTO: '🍚',
   BEBIDA: '🥤', COCKTAIL: '🍹', SHISHA: '💨', CIGARROS: '🚬', LOJA: '🛍️', LAZER: '🎯', SERVICO_QUARTO: '🛎️', SOBREMESA: '🍮', OUTRO: '📦',
 };
 const METODOS = {

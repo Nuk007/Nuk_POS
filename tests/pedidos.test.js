@@ -92,6 +92,7 @@ describe('POST /api/pedidos', () => {
     // Depois pool.query para SELECT pedido completo
     mockClient.query
       .mockResolvedValueOnce({ rows: [] })                          // BEGIN
+      .mockResolvedValueOnce({ rows: [] })                          // tabelas de preço (nenhuma em vigor)
       .mockResolvedValueOnce({ rows: [{ preco: '3200.00' }] })     // SELECT produto
       .mockResolvedValueOnce({ rows: [{ id: PEDIDO_ID, total: '3200.00', status: 'ABERTO' }] }) // INSERT pedido
       .mockResolvedValueOnce({ rows: [] })                          // INSERT item
@@ -137,6 +138,7 @@ describe('POST /api/pedidos', () => {
   it('também cria pedido como OPERADOR', async () => {
     mockClient.query
       .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] }) // tabelas de preço
       .mockResolvedValueOnce({ rows: [{ preco: '800.00' }] })
       .mockResolvedValueOnce({ rows: [{ id: PEDIDO_ID, total: '800.00', status: 'ABERTO' }] })
       .mockResolvedValueOnce({ rows: [] })

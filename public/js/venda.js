@@ -18,7 +18,13 @@ async function abrirPainelVenda(el, { origem, mesa = null, cliente = null, quart
     let produtos = await api('GET', '/produtos?disponivel=true') || [];
     if (origem === 'TAKEAWAY') produtos = produtos.filter(p => !NAO_TAKEAWAY_UI.test(String(p.categoria || '').toUpperCase()));
     if (CATEGORIAS_ORIGEM_UI[origem]) produtos = produtos.filter(p => CATEGORIAS_ORIGEM_UI[origem].includes(String(p.categoria || '').toUpperCase()));
-    window._venda = { origem, mesa, cliente, quarto, produtos, categoria: '', carrinho: [] };
+    // Nível de preço em vigor (o servidor volta a decidir ao gravar o pedido) e prato do dia em primeiro lugar
+    let nivel = { tabela: null, precos: {} };
+    try { nivel = await api('GET', `/precos/actuais?origem=${origem}`) || nivel; } catch { /* sem tabelas: preços base */ }
+    const precosNivel = (nivel && nivel.precos) || {};
+    produtos = produtos.map(p => (precosNivel[p.id] !== undefined ? { ...p, preco_base: p.preco, preco: precosNivel[p.id] } : p))
+      .sort((a, b) => (b.prato_do_dia ? 1 : 0) - (a.prato_do_dia ? 1 : 0));
+    window._venda = { origem, mesa, cliente, quarto, produtos, categoria: '', carrinho: [], tabela: nivel && nivel.tabela };
     el.innerHTML = htmlPainelVenda();
     vendaRender();
   } catch (e) {
@@ -34,7 +40,7 @@ function htmlPainelVenda() {
   const estado = v.origem === 'MESA' ? `<button class="btn-secundario" data-on-click="modalMesa('${esc(v.mesa.id)}','${esc(v.mesa.numero)}','${esc(v.mesa.status)}')">Estado da mesa</button>` : '';
   return `
     <div class="toolbar">
-      <span class="secao-titulo">${titulo}</span>
+      <span class="secao-titulo">${titulo}${v.tabela ? ` <span class="status-badge status-EM_PREPARO" title="Tabela de preços em vigor">💲 ${esc(v.tabela.nome)}</span>` : ''}</span>
       <div style="display:flex;gap:.4rem;flex-wrap:wrap">${voltar}${estado}</div>
     </div>
     <div class="venda-layout">
@@ -63,9 +69,9 @@ function vendaRender() {
   document.getElementById('venda-grelha').innerHTML = lista.length
     ? lista.map(({ p, i }) => {
         const n = (v.carrinho.find(c => c.produto_id === p.id) || {}).quantidade || 0;
-        return `<button class="venda-produto ${n ? 'no-carrinho' : ''}" data-on-click="vendaAdd(${i})">
-          <span class="venda-produto-nome">${esc(p.nome)}</span>
-          <span class="venda-produto-preco">${formatarMoeda(p.preco)}</span>
+        return `<button class="venda-produto ${n ? 'no-carrinho' : ''}" data-on-click="vendaAdd(${i})"${p.prato_do_dia ? ' style="border-color:var(--c-primary,#E8650A)"' : ''}>
+          <span class="venda-produto-nome">${p.prato_do_dia ? '⭐ ' : ''}${esc(p.nome)}${p.prato_do_dia ? '<span class="muted texto-pequeno" style="display:block">Prato do dia</span>' : ''}</span>
+          <span class="venda-produto-preco">${p.preco_base !== undefined && Number(p.preco_base) !== Number(p.preco) ? `<s class="muted texto-pequeno">${formatarMoeda(p.preco_base)}</s> ` : ''}${formatarMoeda(p.preco)}</span>
           ${n ? `<span class="venda-produto-qtd">${n}</span>` : ''}
         </button>`;
       }).join('')

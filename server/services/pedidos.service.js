@@ -8,6 +8,7 @@ const { pool } = require('../db');
 const { broadcast } = require('../middleware/broadcast');
 const { buildWhere, withTx } = require('./shared');
 const stock = require('./stock.service');
+const precos = require('./precos.service');
 const ocupacao = require('./ocupacao.service');
 
 /**
@@ -145,6 +146,8 @@ async function criarPedido({ tenantId, userId, mesa_id, quarto_id, cliente_id, i
 
     let total = 0;
     const itensDetalhes = [];
+    // Nível de preço em vigor (hora de Luanda, fluxo de venda): sem tabela ou sem preço nela = preço base
+    const nivel = await precos.precosAplicaveis(client, { tenantId, origem });
     for (const item of itens) {
       const pr = await client.query(
         `SELECT preco, categoria FROM produtos
@@ -162,15 +165,16 @@ async function criarPedido({ tenantId, userId, mesa_id, quarto_id, cliente_id, i
       if (CATEGORIAS_ORIGEM[origem] && !CATEGORIAS_ORIGEM[origem].includes(String(pr.rows[0].categoria || '').toUpperCase())) {
         const err = new Error(`${origem === 'LAZER' ? 'O Lazer' : 'A Loja'} só vende ${origem === 'LAZER' ? 'produtos de lazer' : 'produtos da loja e cigarros'}`); err.statusCode = 400; throw err;
       }
-      total += pr.rows[0].preco * item.quantidade;
-      itensDetalhes.push({ ...item, preco_unitario: pr.rows[0].preco });
+      const preco = nivel.precos[item.produto_id] !== undefined ? nivel.precos[item.produto_id] : Number(pr.rows[0].preco);
+      total += preco * item.quantidade;
+      itensDetalhes.push({ ...item, preco_unitario: preco });
     }
 
     const pedidoR = await client.query(
       // Lazer e Loja não passam pela cozinha: a venda nasce FECHADA e fica a aguardar recebimento no caixa
-      `INSERT INTO pedidos (tenant_id, mesa_id, quarto_id, cliente_id, funcionario_id, total, observacoes, origem, validado_em, validado_por, status)
-       VALUES ($1, $2, $9, $3, $4, $5, $6, $7, NOW(), $4, $8::text) RETURNING *`,
-      [tenantId || null, mesa_id || null, cliente_id || null, userId, total, observacoes || null, origem, CATEGORIAS_ORIGEM[origem] ? 'FECHADO' : 'ABERTO', quarto_id || null]
+      `INSERT INTO pedidos (tenant_id, mesa_id, quarto_id, cliente_id, funcionario_id, total, observacoes, origem, validado_em, validado_por, status, tabela_preco_id)
+       VALUES ($1, $2, $9, $3, $4, $5, $6, $7, NOW(), $4, $8::text, $10) RETURNING *`,
+      [tenantId || null, mesa_id || null, cliente_id || null, userId, Math.round(total * 100) / 100, observacoes || null, origem, CATEGORIAS_ORIGEM[origem] ? 'FECHADO' : 'ABERTO', quarto_id || null, nivel.tabela ? nivel.tabela.id : null]
     );
     const pedido = pedidoR.rows[0];
 

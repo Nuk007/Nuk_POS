@@ -146,6 +146,14 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 - Administração → RH → Assiduidade (acesso `assiduidade`, só ADMIN/GERENTE; o OPERADOR não o tem por omissão): horas e dias por funcionário no período, registos, entradas abertas há mais de 24 h marcadas «Saída esquecida»; «Corrigir saída» (`PATCH /api/ponto/:id/saida`) com hora real e observação obrigatória, guarda quem corrigiu.
 - Dívida: sem escalas/horários previstos nem atrasos; sem exportação para processamento salarial.
 
+## Níveis de preço, prato do dia e menus (14/11/2026)
+- `services/precos.service.js`, `/api/precos` (licença restauração/lazer/loja), migração 1751000000000 (`tabelas_preco`, `precos_tabela`, `pedidos.tabela_preco_id`, `produtos.prato_do_dia`; SQL em `server/migrations-data/precos.js`).
+- Até 5 tabelas por estabelecimento (só ADMIN, cartão «Tabelas de preço» em Configurações): dias (0=domingo), horário HH:MM (pode passar a meia-noite — o dia conta pelo início), fluxos de venda (NULL = todos), prioridade 1–99, ligar/desligar. Produto sem preço na tabela = preço base.
+- O SERVIDOR decide o preço (`precosAplicaveis`, hora de Luanda) ao criar o pedido do operador (`criarPedido`) e do portal (REMOTA); grava `tabela_preco_id`. O painel de venda mostra a tabela em vigor (`GET /api/precos/actuais?origem=`), o preço normal riscado e o ⭐ prato do dia em primeiro lugar.
+- Prato do dia: `PUT /api/precos/prato-do-dia/:produtoId` (botão na ementa de Configurações).
+- Menus/combos: categoria `MENU` (padrão para tenants novos; portal → Comidas 🍱). Um menu é um produto com a sua receita de stock (`produto_ingredientes`) a abater os componentes.
+- Testes: `tests/integration/precos.int.test.js`, janela horária em `tests/financeiro.test.js`, ecrã em `tests/frontend-modulos.test.js`.
+
 ## Compras pontuais
 - Menu Compras → «Compras pontuais» (acesso `compras`, licença `compras`); `services/compras.service.js` + `routes/compras.js` (`/api/compras`) + `public/js/compras.js`. Tabela `compras_pontuais`; `caixa_movimentos.compra_id`.
 - Regras: exige caixa aberto (409 `CAIXA_FECHADO`); só itens **cadastrados** em `stock_items` do próprio estabelecimento (404 caso contrário); só dinheiro (CASH) e nunca acima do dinheiro disponível na gaveta (409 com `disponivel`).

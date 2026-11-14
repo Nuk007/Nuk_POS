@@ -155,10 +155,11 @@ async function criarPedidoRestaurante({ tenantId, itens, mesa_ref, observacoes, 
   const pedido = await withTx(async db => {
     // 1) preços sempre do servidor; qualquer produto inválido rejeita o pedido (não se cobra "só o que existe")
     let total = 0; const linhas = [];
+    const nivel = await require('./precos.service').precosAplicaveis(db, { tenantId: T(tenantId), origem: 'REMOTA' }); // nível de preço em vigor
     for (const it of itens) {
       const p = await db.query(`SELECT id, nome, preco FROM produtos WHERE id = $1 AND disponivel = true AND ativo = true AND ($2::uuid IS NULL OR tenant_id = $2)`, [it.produto_id, T(tenantId)]);
       if (!p.rows[0]) throw erro(400, 'Um dos produtos não existe ou não está disponível');
-      const preco = parseFloat(p.rows[0].preco);
+      const preco = nivel.precos[p.rows[0].id] !== undefined ? nivel.precos[p.rows[0].id] : parseFloat(p.rows[0].preco);
       total = arred(total + preco * it.quantidade);
       linhas.push({ produto_id: p.rows[0].id, nome: p.rows[0].nome, quantidade: it.quantidade, preco_unitario: preco });
     }
@@ -199,9 +200,9 @@ async function criarPedidoRestaurante({ tenantId, itens, mesa_ref, observacoes, 
     }
     const pedidoId = uuidv4();
     await db.query(
-      `INSERT INTO pedidos (id, tenant_id, mesa_id, cliente_id, status, total, desconto, observacoes, metodo_pagamento, nukcoin_pago, origem, pago_em, pago_metodo, criado_em, atualizado_em)
-       VALUES ($1,$2,$3,$4,'ABERTO',$5,$6,$7,$8::text,$9,'REMOTA', CASE WHEN $8::text = 'NUKCOIN' THEN NOW() END, CASE WHEN $8 = 'NUKCOIN' THEN 'NUKCOIN' END, NOW(),NOW())`,
-      [pedidoId, T(tenantId), mesaId, cliente_id || null, totalFinal, desconto, observacoes || null, metodo, nukcoinPago]);
+      `INSERT INTO pedidos (id, tenant_id, mesa_id, cliente_id, status, total, desconto, observacoes, metodo_pagamento, nukcoin_pago, origem, pago_em, pago_metodo, criado_em, atualizado_em, tabela_preco_id)
+       VALUES ($1,$2,$3,$4,'ABERTO',$5,$6,$7,$8::text,$9,'REMOTA', CASE WHEN $8::text = 'NUKCOIN' THEN NOW() END, CASE WHEN $8 = 'NUKCOIN' THEN 'NUKCOIN' END, NOW(),NOW(),$10)`,
+      [pedidoId, T(tenantId), mesaId, cliente_id || null, totalFinal, desconto, observacoes || null, metodo, nukcoinPago, nivel.tabela ? nivel.tabela.id : null]);
     for (const l of linhas) {
       await db.query(`INSERT INTO itens_pedido (id, pedido_id, produto_id, quantidade, preco_unitario) VALUES ($1,$2,$3,$4,$5)`, [uuidv4(), pedidoId, l.produto_id, l.quantidade, l.preco_unitario]);
     }

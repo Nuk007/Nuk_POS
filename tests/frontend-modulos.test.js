@@ -174,7 +174,7 @@ describe('formulários usam as listas do estabelecimento', () => {
 describe('acções destrutivas pedem confirmação', () => {
   test('nenhum botão apaga/cancela/desactiva directamente: passa por pedirXxx → modalConfirmar', () => {
     const botoes = [...codigo.matchAll(/data-on-click="([^"]*)"/g)].map(m => m[1]);
-    const directos = botoes.filter(b => /^(apagarQuarto|apagarOpcaoLista|emitirNotaCreditoConfirmada|retirarContaConfirmado|cancelarPedidoConfirmado|cancelarSolicitacaoConfirmada|desactivarFuncConfirmado|removerItemDashboard)\(/.test(b)
+    const directos = botoes.filter(b => /^(apagarQuarto|apagarOpcaoLista|emitirNotaCreditoConfirmada|retirarContaConfirmado|apagarTabelaPrecoConfirmado|cancelarPedidoConfirmado|cancelarSolicitacaoConfirmada|desactivarFuncConfirmado|removerItemDashboard)\(/.test(b)
       || /mudarStatusPedido\([^)]*CANCELADO/.test(b) || /actualizarSolicitacao\([^)]*CANCELADA/.test(b));
     // só o botão «Sim, confirmar» do modalConfirmar (construído com ${funcao}) pode chamá-las
     expect(directos).toEqual([]);
@@ -242,5 +242,22 @@ describe('Finanças — documentos fiscais', () => {
     ctx.document.getElementById = id => ({ value: v[id] });
     await ctx.emitirFatura();
     expect(ctx.enviado).toMatchObject({ url: '/financeiro/faturas', corpo: { tipo: 'FR', descricao: 'Aluguer do salão', total_manual: 25000 } });
+  });
+});
+
+describe('Configurações — tabelas de preço e prato do dia', () => {
+  test('mostra as tabelas com horário/fluxos, «Preços» e «⭐ Prato do dia» na ementa', async () => {
+    const ctx = carregar({ nivel_acesso: 'ADMIN' });
+    const base = ctx.api;
+    ctx.api = async (m, url) => url === '/precos/tabelas'
+      ? [{ id: 't1', nome: 'Happy hour', ativa: true, prioridade: 10, dias: [5, 6], origens: ['MESA'], hora_inicio: '17:00:00', hora_fim: '19:00:00', precos: { p1: 450 } }]
+      : base(m, url);
+    const html = await render(ctx, 'modulo_configuracoes');
+    expect(html).toContain('TABELAS DE PREÇO');
+    expect(html).toContain('Happy hour');
+    expect(html).toContain('Sex, Sáb · 17:00–19:00 · Mesa · prioridade 10');
+    expect(html).toContain("modalPrecosTabela('t1')");
+    expect(html).toContain("pedirApagarTabelaPreco('t1')");
+    expect(html).toContain('alternarPratoDoDia(');
   });
 });
