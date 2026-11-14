@@ -161,7 +161,8 @@ async function listarCartoes({ tenantId }) {
 async function porReceber({ tenantId }) {
   const r = await pool.query(`
     SELECT p.id, p.origem, p.total, p.criado_em, p.atualizado_em, p.cliente_id, ms.numero AS mesa_numero, qt.numero AS quarto_numero, c.nome AS cliente_nome,
-           json_agg(json_build_object('produto_nome', pr.nome, 'quantidade', ip.quantidade, 'preco_unitario', ip.preco_unitario)) FILTER (WHERE ip.id IS NOT NULL) AS itens
+           json_agg(json_build_object('id', ip.id, 'produto_nome', pr.nome, 'quantidade', ip.quantidade, 'preco_unitario', ip.preco_unitario) ORDER BY pr.nome) FILTER (WHERE ip.id IS NOT NULL) AS itens,
+           p.desconto, p.nukcoin_pago
     FROM pedidos p
     LEFT JOIN mesas ms ON ms.id = p.mesa_id LEFT JOIN quartos qt ON qt.id = p.quarto_id LEFT JOIN clientes c ON c.id = p.cliente_id
     LEFT JOIN itens_pedido ip ON ip.pedido_id = p.id LEFT JOIN produtos pr ON pr.id = ip.produto_id
@@ -303,4 +304,55 @@ async function receber({ tenantId, userId, pedido_ids, ...dados }) {
   return out;
 }
 
-module.exports = { abrir, estado, fechar, sessoes, carregarNukcoin, venderCartao, consultarCartao, listarCartoes, porReceber, receber, sessaoAberta, METODOS_BALCAO, METODOS_RECEBIMENTO };
+/**
+ * Dividir a conta (benchmarking WinREST, 14/11/2026): passa itens (ou parte das quantidades) de um pedido FECHADO
+ * e por receber para uma conta nova da mesma mesa/quarto, que se recebe à parte. O stock já foi abatido e não muda.
+ * Recusa: pedido com desconto ou Nuk-Coin já aplicado, pedido já facturado, ou passar tudo (nada ficaria na original).
+ */
+async function dividirConta({ tenantId, userId, pedido_id, itens }) {
+  if (!Array.isArray(itens) || !itens.length || itens.length > 100) throw erro(400, 'Escolha os itens a separar');
+  const pedidos = await withTx(async db => {
+    const r = await db.query(`SELECT * FROM pedidos WHERE id = $1 AND tenant_id = $2 FOR UPDATE`, [pedido_id, tenantId]);
+    const p = r.rows[0];
+    if (!p) throw erro(404, 'Pedido não encontrado');
+    if (p.status !== 'FECHADO' || p.pago_em) throw erro(409, 'Só se divide uma conta fechada e ainda por receber');
+    if (parseFloat(p.desconto) > 0 || parseFloat(p.nukcoin_pago) > 0) throw erro(409, 'Esta conta tem desconto ou Nuk-Coin aplicado: receba-a inteira');
+    const fat = await db.query(`SELECT 1 FROM faturas f WHERE f.pedido_id = $1 AND f.tipo_documento IN ('FT','FR')
+                                  AND NOT EXISTS (SELECT 1 FROM faturas nc WHERE nc.documento_origem_id = f.id) LIMIT 1`, [pedido_id]);
+    if (fat.rows[0]) throw erro(409, 'Esta conta já foi facturada: não se divide');
+    const it = await db.query(`SELECT * FROM itens_pedido WHERE pedido_id = $1 ORDER BY id FOR UPDATE`, [pedido_id]);
+    const porId = new Map(it.rows.map(x => [x.id, x]));
+    const mover = new Map();
+    for (const x of itens) {
+      const linha = porId.get(x && x.item_id);
+      if (!linha) throw erro(404, 'Algum dos itens não pertence a esta conta');
+      const q = Number(x.quantidade);
+      if (!Number.isFinite(q) || q <= 0 || q > Number(linha.quantidade) || Math.round(q * 100) !== q * 100) throw erro(400, 'Quantidade inválida');
+      mover.set(linha.id, (mover.get(linha.id) || 0) + q);
+      if (mover.get(linha.id) > Number(linha.quantidade)) throw erro(400, 'Quantidade inválida');
+    }
+    const fica = it.rows.reduce((a, l) => a + Number(l.quantidade) - (mover.get(l.id) || 0), 0);
+    if (fica <= 0) throw erro(400, 'Deixe pelo menos um item na conta original');
+
+    const nova = (await db.query(`
+      INSERT INTO pedidos (tenant_id, mesa_id, quarto_id, cliente_id, funcionario_id, status, total, observacoes, origem, validado_em, validado_por, tabela_preco_id, criado_em)
+      VALUES ($1,$2,$3,$4,$5,'FECHADO',0,$6,$7,$8,$9,$10,$11) RETURNING id`,
+    [tenantId, p.mesa_id, p.quarto_id, p.cliente_id, p.funcionario_id, `Conta dividida (de ${String(p.id).slice(0, 8)})`, p.origem, p.validado_em || new Date(), p.validado_por, p.tabela_preco_id, p.criado_em])).rows[0].id;
+    for (const [id, q] of mover) {
+      const l = porId.get(id);
+      if (q === Number(l.quantidade)) await db.query(`UPDATE itens_pedido SET pedido_id = $1 WHERE id = $2`, [nova, id]);
+      else {
+        await db.query(`UPDATE itens_pedido SET quantidade = quantidade - $1 WHERE id = $2`, [q, id]);
+        await db.query(`INSERT INTO itens_pedido (pedido_id, produto_id, quantidade, preco_unitario, status_cozinha, observacoes) VALUES ($1,$2,$3,$4,$5,$6)`,
+          [nova, l.produto_id, q, l.preco_unitario, l.status_cozinha, l.observacoes]);
+      }
+    }
+    const tot = `UPDATE pedidos SET total = (SELECT COALESCE(ROUND(SUM(quantidade * preco_unitario), 2), 0) FROM itens_pedido WHERE pedido_id = $1), atualizado_em = NOW() WHERE id = $1 RETURNING id, total`;
+    const a = (await db.query(tot, [pedido_id])).rows[0], b = (await db.query(tot, [nova])).rows[0];
+    return { original: { id: a.id, total: Number(a.total) }, nova: { id: b.id, total: Number(b.total) } };
+  });
+  broadcast('caixa_atualizada', {}, tenantId);
+  return pedidos;
+}
+
+module.exports = { abrir, estado, fechar, sessoes, carregarNukcoin, venderCartao, consultarCartao, listarCartoes, porReceber, receber, dividirConta, sessaoAberta, METODOS_BALCAO, METODOS_RECEBIMENTO };

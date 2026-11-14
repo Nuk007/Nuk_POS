@@ -184,18 +184,27 @@ async function modulo_recebimentos(el) {
       ${window._contas.length ? window._contas.map((c, i) => {
         const total = c.pedidos.reduce((a, p) => a + parseFloat(p.total), 0);
         return `<div class="card mb-2" style="max-width:640px"><div class="toolbar" style="margin-bottom:.4rem"><b>${esc(c.titulo)}</b><b class="texto-primario">${formatarMoeda(total)}</b></div>
-          ${c.pedidos.flatMap(p => p.itens || []).map(it => `<div class="texto-pequeno">${it.quantidade}× ${esc(it.produto_nome)}</div>`).join('')}
-          <button class="btn-primario btn-bloco" style="margin-top:.6rem" data-on-click="modalReceber(${i})">Receber ${formatarMoeda(total)}</button></div>`;
+          ${c.pedidos.length > 1 ? c.pedidos.map((p, j) => `<div style="border-top:1px dashed var(--c-border);padding:.35rem 0">
+              <div class="toolbar" style="margin:0"><span class="texto-pequeno negrito">Conta ${j + 1}</span><span style="display:flex;gap:.4rem;align-items:center"><b>${formatarMoeda(p.total)}</b>
+                <button class="btn-secundario" style="padding:.2rem .55rem;font-size:.75rem" data-on-click="modalReceber(${i},${j})">Receber esta</button></span></div>
+              ${(p.itens || []).map(it => `<div class="texto-pequeno">${it.quantidade}× ${esc(it.produto_nome)}</div>`).join('')}</div>`).join('')
+            : c.pedidos.flatMap(p => p.itens || []).map(it => `<div class="texto-pequeno">${it.quantidade}× ${esc(it.produto_nome)}</div>`).join('')}
+          <div style="display:flex;gap:.5rem;margin-top:.6rem">
+            ${podeDividir(c) ? `<button class="btn-secundario" style="flex:1" data-on-click="modalDividir(${i})">Dividir conta</button>` : ''}
+            <button class="btn-primario" style="flex:2" data-on-click="modalReceber(${i})">Receber ${c.pedidos.length > 1 ? 'tudo · ' : ''}${formatarMoeda(total)}</button>
+          </div></div>`;
       }).join('') : '<div class="card muted">Nada por receber.</div>'}`;
   } catch (e) { el.innerHTML = `<div class="erro-msg">Erro: ${esc(e.message)}</div>`; }
 }
-function modalReceber(i) {
+function modalReceber(i, j) {
   const c = window._contas[i]; if (!c) return;
-  const total = c.pedidos.reduce((a, p) => a + parseFloat(p.total), 0);
-  window._contaActual = { i, total, misto: false };
+  const escolhidos = j === undefined || j === null ? c.pedidos : [c.pedidos[j]].filter(Boolean);
+  if (!escolhidos.length) return;
+  const total = escolhidos.reduce((a, p) => a + parseFloat(p.total), 0);
+  window._contaActual = { i, total, misto: false, ids: escolhidos.map(p => p.id) };
   window._parcelas = [];
   window._contasCC = null;
-  abrirModal(`Receber · ${c.titulo}`, `
+  abrirModal(`Receber · ${c.titulo}${escolhidos.length < c.pedidos.length ? ` · Conta ${j + 1}` : ''}`, `
     <p style="margin-bottom:.6rem;font-size:1.2rem">Total: <b class="texto-primario">${formatarMoeda(total)}</b></p>
     <div id="rc-simples" class="campo"><label>Forma de pagamento</label><select id="rc-metodo" data-on-change="receberMetodo(this.value)">${optsFormas(FORMAS_RECEBER)}</select>
       <button class="btn-secundario" style="margin-top:.45rem;padding:.3rem .7rem;font-size:.8rem" data-on-click="receberMisto()">Dividir por várias formas de pagamento</button></div>
@@ -224,6 +233,50 @@ async function mostrarConta(ver) {
     document.getElementById('rc-conta-cli').innerHTML = window._contasCC.length
       ? window._contasCC.map(x => `<option value="${esc(x.id)}" ${x.id === doPedido ? 'selected' : ''}>${esc(x.nome)} · disponível ${formatarMoeda(x.disponivel)}</option>`).join('')
       : '<option value="">Nenhum cliente com conta corrente (autorize em Configurações)</option>';
+  } catch (e) { toast(e.message, 'erro'); }
+}
+
+// ── Dividir conta (separar itens para outra pessoa pagar) ──
+function podeDividir(c) {
+  const itens = c.pedidos.reduce((a, p) => a + (p.itens || []).reduce((b, it) => b + Number(it.quantidade), 0), 0);
+  return itens > 1 && c.pedidos.every(p => !(Number(p.desconto) > 0) && !(Number(p.nukcoin_pago) > 0));
+}
+function modalDividir(i) {
+  const c = window._contas[i]; if (!c) return;
+  window._divisao = { i, linhas: c.pedidos.flatMap(p => (p.itens || []).map(it => ({ pedido_id: p.id, item_id: it.id, nome: it.produto_nome, max: Number(it.quantidade), preco: Number(it.preco_unitario), q: 0 }))) };
+  abrirModal(`Dividir · ${c.titulo}`, `
+    <p class="muted texto-pequeno" style="margin-bottom:.5rem">Escolha o que passa para a <b>nova conta</b> (quem paga à parte). O resto fica na conta actual.</p>
+    <div id="dv-linhas"></div>
+    <div id="dv-total" class="negrito" style="margin:.5rem 0"></div>
+    <button class="btn-primario btn-bloco" data-on-click="confirmarDividir()">Separar para nova conta</button>`);
+  desenharDivisao();
+}
+function desenharDivisao() {
+  const d = window._divisao;
+  document.getElementById('dv-linhas').innerHTML = d.linhas.map((l, k) => `<div style="display:flex;align-items:center;gap:.4rem;margin:.25rem 0">
+    <span style="flex:1">${esc(l.nome)} <span class="muted texto-pequeno">(${l.max} × ${formatarMoeda(l.preco)})</span></span>
+    <button class="btn-secundario venda-qtd" data-on-click="divisaoQtd(${k},-1)">−</button><b style="min-width:1.5rem;text-align:center">${l.q}</b>
+    <button class="btn-secundario venda-qtd" data-on-click="divisaoQtd(${k},1)">+</button></div>`).join('');
+  const t = d.linhas.reduce((a, l) => a + l.q * l.preco, 0);
+  document.getElementById('dv-total').textContent = `Nova conta: ${formatarMoeda(t)}`;
+}
+function divisaoQtd(k, delta) {
+  const l = window._divisao.linhas[k]; if (!l) return;
+  l.q = Math.max(0, Math.min(l.max, l.q + delta));
+  desenharDivisao();
+}
+async function confirmarDividir() {
+  const d = window._divisao;
+  const escolhidas = d.linhas.filter(l => l.q > 0);
+  if (!escolhidas.length) { toast('Escolha pelo menos um item', 'erro'); return; }
+  if (escolhidas.every(l => l.q === l.max) && escolhidas.length === d.linhas.length) { toast('Deixe pelo menos um item na conta actual', 'erro'); return; }
+  const porPedido = {};
+  escolhidas.forEach(l => { (porPedido[l.pedido_id] = porPedido[l.pedido_id] || []).push({ item_id: l.item_id, quantidade: l.q }); });
+  try {
+    for (const [pedido_id, itens] of Object.entries(porPedido)) await api('POST', '/caixa/dividir', { pedido_id, itens });
+    fecharModal();
+    toast('Conta dividida: cada parte recebe-se à parte', 'sucesso');
+    carregarModulo('recebimentos');
   } catch (e) { toast(e.message, 'erro'); }
 }
 
@@ -292,7 +345,7 @@ function receberTroco() {
 }
 async function confirmarReceber() {
   const c = window._contas[window._contaActual.i];
-  const corpo = { pedido_ids: c.pedidos.map(p => p.id) };
+  const corpo = { pedido_ids: window._contaActual.ids || c.pedidos.map(p => p.id) };
   const cli = c.pedidos.find(p => p.cliente_id);
   if (window._contaActual.misto) {
     if (faltaCent() !== 0) { toast('A soma das formas de pagamento tem de ser igual ao total', 'erro'); return; }

@@ -141,6 +141,23 @@ router.post('/receber', authMiddleware, h(async (req, res) => {
 
 /**
  * @openapi
+ * /api/caixa/dividir:
+ *   post:
+ *     summary: Separa itens (ou parte das quantidades) de uma conta fechada por receber numa conta nova
+ *     tags: [Caixa]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody: { content: { application/json: { schema: { type: object, required: [pedido_id, itens], properties: { pedido_id: { type: string, format: uuid }, itens: { type: array, items: { type: object, properties: { item_id: { type: string, format: uuid }, quantidade: { type: number } } } } } } } } }
+ *     responses: { 200: { description: "{ original, nova } com os totais" }, 409: { description: Conta paga, facturada, com desconto ou Nuk-Coin } }
+ */
+router.post('/dividir', authMiddleware, h(async (req, res) => {
+  const { pedido_id, itens } = req.body || {};
+  if (!isUUID(pedido_id)) return res.status(400).json({ erro: 'pedido_id inválido' });
+  if (Array.isArray(itens) && itens.some(x => !x || !isUUID(x.item_id))) return res.status(400).json({ erro: 'item_id inválido' });
+  res.json(await svc.dividirConta({ pedido_id, itens, ...base(req) }));
+}));
+
+/**
+ * @openapi
  * /api/caixa/conta-corrente:
  *   get:
  *     summary: Clientes com conta corrente autorizada ou em dívida (saldo, limite, disponível)

@@ -95,7 +95,8 @@ describe('Caixa do dia (frontend)', () => {
     await ctx.modulo_recebimentos(el);
     expect(el.innerHTML).toContain('Mesa M01');
     expect(el.innerHTML).toContain('Balcão');
-    expect(el.innerHTML.match(/modalReceber\(/g)).toHaveLength(2);
+    expect(el.innerHTML.match(/modalReceber\(\d+\)"/g)).toHaveLength(2);       // «Receber tudo» por mesa/balcão
+    expect(el.innerHTML.match(/modalReceber\(0,\d+\)"/g)).toHaveLength(2);     // a mesa M01 tem duas contas: «Receber esta»
     ctx.modalReceber(0);
     const totalMesa = 1500;
     ctx._els['rc-entregue'] = { value: '2000' }; ctx._els['rc-troco'] = { textContent: '' };
@@ -215,5 +216,31 @@ describe('Contas correntes (frontend)', () => {
     ctx._els['rc-metodo'] = { value: 'CONTA' }; ctx._els['rc-conta-cli'].value = 'c1';
     await ctx.confirmarReceber();
     expect(ctx._chamadas.find(c => c[1] === '/caixa/receber')[2]).toEqual({ pedido_ids: ['p1'], metodo: 'CONTA', cliente_id: 'c1' });
+  });
+});
+
+describe('Dividir conta (frontend)', () => {
+  const pedidos = [{ id: 'p1', total: '6900', mesa_numero: 'M01', itens: [{ id: 'i1', produto_nome: 'Picanha', quantidade: 1, preco_unitario: 4500 }, { id: 'i2', produto_nome: 'Cuca', quantidade: 4, preco_unitario: 600 }], desconto: 0, nukcoin_pago: 0 }];
+  test('separa itens escolhidos e envia por pedido', async () => {
+    const ctx = carregar({ '/caixa': { aberta: true, sessao, resumo, movimentos: [] }, '/caixa/por-receber': pedidos, '/caixa/dividir': { original: {}, nova: {} } });
+    const el = { innerHTML: '' };
+    await ctx.modulo_recebimentos(el);
+    expect(el.innerHTML).toContain('modalDividir(0)');
+    ctx.modalDividir(0);
+    ctx.divisaoQtd(1, 1); ctx.divisaoQtd(1, 1);
+    expect(ctx._els['dv-total'].textContent).toContain('1200');
+    await ctx.confirmarDividir();
+    expect(ctx._chamadas).toContainEqual(['POST', '/caixa/dividir', { pedido_id: 'p1', itens: [{ item_id: 'i2', quantidade: 2 }] }]);
+  });
+  test('mesa com duas contas: «Receber esta» recebe só uma', async () => {
+    const duas = [{ ...pedidos[0], id: 'pA', total: '4500' }, { ...pedidos[0], id: 'pB', total: '2400' }];
+    const ctx = carregar({ '/caixa': { aberta: true, sessao, resumo, movimentos: [] }, '/caixa/por-receber': duas, '/caixa/receber': { total: 2400 } });
+    const el = { innerHTML: '' };
+    await ctx.modulo_recebimentos(el);
+    expect(el.innerHTML).toContain('modalReceber(0,1)');
+    ctx.modalReceber(0, 1);
+    ctx._els['rc-metodo'] = { value: 'TPA' };
+    await ctx.confirmarReceber();
+    expect(ctx._chamadas.find(c => c[1] === '/caixa/receber')[2]).toEqual({ pedido_ids: ['pB'], metodo: 'TPA' });
   });
 });
