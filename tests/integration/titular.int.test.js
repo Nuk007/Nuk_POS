@@ -12,7 +12,7 @@ beforeAll(async () => {
   B = await criarTenantFixture({ slug: 'it-titular-b' });
   titularId = A.userId;
   await pool.query(`UPDATE funcionarios SET titular = true WHERE id = $1`, [titularId]);
-  const r = await op(A, 'post', '/api/funcionarios', { nome: 'Gerente Um', email: 'g1@it-titular-a.ao', password: 'Outra@1234', nivel_acesso: 'GERENTE', pode_vender_quartos: true });
+  const r = await op(A, 'post', '/api/funcionarios', { nome: 'Gerente Um', email: 'g1@it-titular-a.ao', password: '87654321', nivel_acesso: 'GERENTE', pode_vender_quartos: true });
   expect(r.status).toBe(201);
   outroId = r.body.id;
 }, 60000);

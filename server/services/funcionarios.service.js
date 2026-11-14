@@ -6,7 +6,7 @@
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 const { pool } = require('../db');
-const { erro, withTx } = require('./shared');
+const { erro, withTx, validarPalavraPasse } = require('./shared');
 const ac = require('./acessos');
 
 const NIVEIS = ['ADMIN', 'GERENTE', 'OPERADOR'];
@@ -67,7 +67,7 @@ async function criar({ tenantId, actorId, nome, email, password, nivel_acesso, c
   if (!nome || !email || !password) throw erro(400, 'nome, email e password são obrigatórios');
   if (!NIVEIS.includes(nivel_acesso)) throw erro(400, `nivel_acesso inválido. Valores: ${NIVEIS.join(', ')}`);
   const lista = aplicarDelegacao({ actor: await actorDe(tenantId, actorId), alvo: null, nivel: nivel_acesso, permissoes, vender: bool(pode_vender_quartos), arrumar: bool(arruma_quartos) });
-  if (String(password).length < 8) throw erro(400, 'A palavra-passe deve ter pelo menos 8 caracteres');
+  validarPalavraPasse(password);
   // M-02: unicidade de email por tenant, não global
   const ex = await pool.query(`SELECT id FROM funcionarios WHERE LOWER(email) = LOWER($1) AND ($2::uuid IS NULL OR tenant_id = $2)`, [email.trim(), tenantId || null]);
   if (ex.rows[0]) throw erro(409, 'Email já registado neste estabelecimento');
@@ -81,7 +81,7 @@ async function criar({ tenantId, actorId, nome, email, password, nivel_acesso, c
 
 async function actualizar({ tenantId, actorId, id, nome, nivel_acesso, ativo, password, cargo, salario, pode_vender_quartos, arruma_quartos, permissoes }) {
   if (nivel_acesso !== undefined && !NIVEIS.includes(nivel_acesso)) throw erro(400, `nivel_acesso inválido. Valores: ${NIVEIS.join(', ')}`);
-  if (password !== undefined && password !== '' && String(password).length < 8) throw erro(400, 'A palavra-passe deve ter pelo menos 8 caracteres');
+  if (password !== undefined && password !== '') validarPalavraPasse(password);
   const actor = await actorDe(tenantId, actorId);
   const alvo = (await pool.query(`SELECT id, nivel_acesso, titular, permissoes FROM funcionarios WHERE id = $1 AND ($2::uuid IS NULL OR tenant_id = $2)`, [id, tenantId || null])).rows[0];
   if (!alvo) throw erro(404, 'Funcionário não encontrado');

@@ -7,8 +7,8 @@ const { limparCache } = require('../../server/middleware/modulos');
 let T, ipN = 1, adm2, g1;
 const ip = () => `10.15.${Math.floor(ipN / 250)}.${ipN++ % 250}`;
 const com = (tok, m, url, body) => request(app)[m](url).set('X-Forwarded-For', ip()).set('Authorization', `Bearer ${tok}`).send(body);
-const entrar = async (email, password = 'Senha@1234') => (await request(app).post('/api/auth/login').set('X-Forwarded-For', ip()).send({ email, password })).body;
-const novo = (n, extra = {}) => ({ nome: n, email: `${n.toLowerCase().replace(/\W/g, '')}@it-del.ao`, password: 'Senha@1234', nivel_acesso: 'OPERADOR', ...extra });
+const entrar = async (email, password = '12345678') => (await request(app).post('/api/auth/login').set('X-Forwarded-For', ip()).send({ email, password })).body;
+const novo = (n, extra = {}) => ({ nome: n, email: `${n.toLowerCase().replace(/\W/g, '')}@it-del.ao`, password: '12345678', nivel_acesso: 'OPERADOR', ...extra });
 
 beforeAll(async () => {
   T = await criarTenantFixture({ slug: 'it-del' });

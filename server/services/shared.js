@@ -49,4 +49,16 @@ function erro(statusCode, mensagem, extra = {}) {
   return Object.assign(new Error(mensagem), { statusCode }, extra);
 }
 
-module.exports = { buildWhere, withTx, erro };
+/**
+ * Palavra-passe dos funcionários: 6 a 8 dígitos (decisão do dono de 14/11/2026, para todas as aplicações dele).
+ * Só se valida ao DEFINIR (criar, alterar, activar); no login compara-se o que vier, para as palavras-passe
+ * antigas (letras e números) continuarem a funcionar até cada pessoa a mudar. O limitador de login e o bcrypt
+ * protegem contra adivinhas.
+ */
+const PALAVRA_PASSE_RE = /^\d{6,8}$/;
+function validarPalavraPasse(p) {
+  if (!PALAVRA_PASSE_RE.test(String(p == null ? '' : p))) throw erro(400, 'A palavra-passe tem de ter entre 6 e 8 dígitos.');
+  return String(p);
+}
+
+module.exports = { PALAVRA_PASSE_RE, validarPalavraPasse, buildWhere, withTx, erro };

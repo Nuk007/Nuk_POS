@@ -478,13 +478,13 @@
           <div class="divider"></div>
 
           <div class="field full">
-            <label for="password">Password <span class="req">*</span></label>
-            <input type="password" id="password" placeholder="Mínimo 8 caracteres" autocomplete="new-password">
+            <label for="password">Palavra-passe (6 a 8 dígitos) <span class="req">*</span></label>
+            <input type="password" id="password" inputmode="numeric" minlength="6" maxlength="8" placeholder="6 a 8 dígitos" autocomplete="new-password">
             <div class="pw-strength">
               <div class="pw-bar-track"><div class="pw-bar-fill" id="pw-fill"></div></div>
-              <div class="pw-label" id="pw-label">Introduza uma password</div>
+              <div class="pw-label" id="pw-label">Escolha 6 a 8 dígitos</div>
             </div>
-            <span class="field-error" id="err-pw">Mínimo 8 caracteres</span>
+            <span class="field-error" id="err-pw">A palavra-passe tem de ter entre 6 e 8 dígitos</span>
           </div>
 
           <button type="submit" class="btn-activate" id="btn-submit">

@@ -1306,7 +1306,7 @@ function modalNovoFuncionario() {
   abrirModal('Novo Funcionário', `
     <div class="campo"><label>Nome</label><input type="text" id="nf-nome"></div>
     <div class="campo"><label>Email</label><input type="email" id="nf-email"></div>
-    <div class="campo"><label>Senha</label><input type="password" id="nf-senha" placeholder="Mínimo 8 caracteres"></div>
+    <div class="campo"><label>Palavra-passe (6 a 8 dígitos)</label><input type="password" id="nf-senha" inputmode="numeric" minlength="6" maxlength="8" placeholder="6 a 8 dígitos" autocomplete="new-password"></div>
     <div class="campo"><label>Cargo</label><input type="text" id="nf-cargo" placeholder="Ex: Empregado de Mesa"></div>
     <div class="campo"><label>Nível de Acesso</label>
       <select id="nf-nivel" data-on-change="actualizarAcessosForm('nf')">
@@ -1330,7 +1330,7 @@ async function guardarNovoFuncionario() {
   const cargo = document.getElementById('nf-cargo').value;
   const nivel_acesso = document.getElementById('nf-nivel').value;
   const salario = parseFloat(document.getElementById('nf-sal').value) || 0;
-  if (!nome || !email || !password || password.length < 8) { toast('Preencha todos os campos (senha ≥ 8 chars)', 'erro'); return; }
+  if (!nome || !email || !/^\d{6,8}$/.test(password)) { toast('Preencha todos os campos (palavra-passe de 6 a 8 dígitos)', 'erro'); return; }
   try {
     await api('POST', '/funcionarios', { nome, email, password, cargo, nivel_acesso, salario,
       pode_vender_quartos: document.getElementById('nf-vq').checked, arruma_quartos: document.getElementById('nf-aq').checked, permissoes: lerAcessos('nf') });
@@ -1354,7 +1354,7 @@ function modalEditarFuncionario(id) {
     <div class="campo"><label><input type="checkbox" id="ef-vq" ${f.pode_vender_quartos ? 'checked' : ''}> Pode vender/reservar/abrir quartos</label></div>
     <div class="campo"><label><input type="checkbox" id="ef-aq" ${f.arruma_quartos ? 'checked' : ''}> Arruma quartos (recebe os avisos de limpeza)</label></div>
     ${f.titular ? '' : htmlAcessos('ef', f.acessos || [], f.nivel_acesso, !!window._acessosMeta && !window._acessosMeta.sou_titular && (f.acessos || []).some(k => !window._acessosMeta.meu_limite.includes(k)))}
-    <div class="campo"><label>Nova Senha (deixar vazio para não alterar)</label><input type="password" id="ef-senha" placeholder="Mínimo 8 caracteres"></div>
+    <div class="campo"><label>Nova palavra-passe (6 a 8 dígitos; vazio para não alterar)</label><input type="password" id="ef-senha" inputmode="numeric" minlength="6" maxlength="8" placeholder="6 a 8 dígitos" autocomplete="new-password"></div>
     <button class="btn-primario btn-bloco" data-on-click="salvarEdicaoFuncionario('${id}')">Guardar</button>
   `);
 }
@@ -1392,6 +1392,7 @@ async function salvarEdicaoFuncionario(id) {
   const password = document.getElementById('ef-senha').value;
   const dados = { nome, cargo, nivel_acesso, salario,
     pode_vender_quartos: document.getElementById('ef-vq').checked, arruma_quartos: document.getElementById('ef-aq').checked };
+  if (password && !/^\d{6,8}$/.test(password)) { toast('A palavra-passe tem de ter entre 6 e 8 dígitos', 'erro'); return; }
   if (password) dados.password = password;
   const acessos = lerAcessos('ef');
   if (acessos) dados.permissoes = acessos;

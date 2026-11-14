@@ -567,8 +567,9 @@ router.get('/activate/:key', async (req, res) => {
 router.post('/activate/:key/confirmar', async (req, res) => {
   const { nome_admin, telefone_admin, email_admin, password } = req.body;
 
-  if (!nome_admin || !password || password.length < 8) {
-    return res.status(400).json({ erro: 'Nome e password (mínimo 8 caracteres) são obrigatórios' });
+  // Palavra-passe de 6 a 8 dígitos (decisão do dono de 14/11/2026).
+  if (!nome_admin || !require('./services/shared').PALAVRA_PASSE_RE.test(String(password || ''))) {
+    return res.status(400).json({ erro: 'Nome e palavra-passe (6 a 8 dígitos) são obrigatórios' });
   }
 
   const client = await pool.connect();

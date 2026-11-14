@@ -75,31 +75,25 @@ async function loadLicense() {
   }
 }
 
-// ── Password strength ──
+// ── Palavra-passe de 6 a 8 dígitos (decisão do dono de 14/11/2026) ──
+// Indicador simples: quantos dígitos faltam ou se já está válida (8 dígitos = barra cheia).
 document.getElementById('password').addEventListener('input', function () {
-  const pw = this.value;
+  this.value = this.value.replace(/\D/g, '').slice(0, 8);
+  const n = this.value.length;
   const fill = document.getElementById('pw-fill');
   const label = document.getElementById('pw-label');
-
-  let score = 0;
-  if (pw.length >= 8)  score++;
-  if (pw.length >= 12) score++;
-  if (/[A-Z]/.test(pw)) score++;
-  if (/[0-9]/.test(pw)) score++;
-  if (/[^A-Za-z0-9]/.test(pw)) score++;
-
-  const colors = ['#EF4444','#F97316','#EAB308','#22C55E','#16A34A'];
-  const labels = ['Muito fraca','Fraca','Razoável','Boa','Excelente'];
-
-  if (pw.length === 0) {
-    fill.style.width = '0%';
-    label.textContent = 'Introduza uma password';
+  fill.style.width = `${(n / 8) * 100}%`;
+  if (n === 0) {
+    label.textContent = 'Escolha 6 a 8 dígitos';
     label.style.color = 'var(--gray-400)';
+  } else if (n < 6) {
+    fill.style.background = '#F97316';
+    label.textContent = `Faltam ${6 - n} dígito${6 - n === 1 ? '' : 's'}`;
+    label.style.color = '#F97316';
   } else {
-    fill.style.width = `${(score / 5) * 100}%`;
-    fill.style.background = colors[score - 1] || colors[0];
-    label.textContent = labels[score - 1] || labels[0];
-    label.style.color = colors[score - 1] || colors[0];
+    fill.style.background = '#16A34A';
+    label.textContent = n === 8 ? 'Válida (8 dígitos)' : `Válida (${n} dígitos; pode ir até 8)`;
+    label.style.color = '#16A34A';
   }
 });
 
@@ -140,7 +134,7 @@ document.getElementById('activation-form').addEventListener('submit', async func
     document.getElementById('tel_admin').classList.add('error');
   }
 
-  if (!pw || pw.length < 8) {
+  if (!/^\d{6,8}$/.test(pw)) {
     valid = false;
     document.getElementById('err-pw').classList.add('visible');
     document.getElementById('password').classList.add('error');

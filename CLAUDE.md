@@ -24,6 +24,7 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 
 ## Segurança
 - JWT (8h) com `nivel_acesso` (ADMIN/GERENTE/OPERADOR); middleware `authMiddleware`, `requerNivel`, `validarUUID`.
+- **Palavra-passe dos funcionários: 6 a 8 dígitos** (decisão do dono de 14/11/2026, para todas as aplicações dele): `validarPalavraPasse`/`PALAVRA_PASSE_RE` em `services/shared.js`, aplicada ao criar, alterar e na activação do estabelecimento. No login não se valida o formato: as palavras-passe antigas (letras) continuam a entrar até serem mudadas. O PIN do Nuk-Coin no portal continua com 4 dígitos (decisão do dono). Teste: `tests/integration/palavra-passe.int.test.js`.
 - Rate limiting centralizado em `server/middleware/rateLimiters.js` (global 200/15min, escrita 60/min, login 10/15min só-falhas, saas 5/15min, stock 30/min). Novos limiters vão para esse ficheiro, nunca inline.
 - Helmet com CSP sem `unsafe-inline` em scripts (excepção única: rota /api/docs do Swagger). **O frontend não pode usar `onclick=`/`onchange=` inline** (`script-src-attr 'none'`): no HTML gerado usar `data-on-click="funcao('arg')"` (delegação em `public/js/nukpos.js`, só chama funções globais com argumentos literais). `tests/frontend.test.js` garante isto.
 - Contrato do login: `POST /api/auth/login` devolve `{ token, funcionario }`; o frontend lê `res.funcionario`.

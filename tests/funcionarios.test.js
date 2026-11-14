@@ -81,7 +81,7 @@ describe('POST /api/funcionarios', () => {
   const payload = {
     nome:         'Pedro Caixa',
     email:        'pedro@nukpos.ao',
-    password:     'Senha@Segura1!',
+    password:     '24681357',
     nivel_acesso: 'OPERADOR', // 'CAIXA' não existe na BD (CHECK) e dava 500: a API passou a recusá-lo
   };
 
@@ -100,6 +100,15 @@ describe('POST /api/funcionarios', () => {
     expect(res.status).toBe(201);
     expect(res.body).toHaveProperty('id');
     expect(res.body.nivel_acesso).toBe('OPERADOR');
+  });
+
+  it('recusa palavra-passe que não tenha 6 a 8 dígitos (14/11/2026)', async () => {
+    for (const password of ['12345', '123456789', 'abcdefgh', 'Senha@123']) {
+      mockPool.query.mockResolvedValueOnce({ rows: [{ id: ADMIN_ID, nivel_acesso: 'ADMIN', titular: true, permissoes: null }] });
+      const res = await request(app).post('/api/funcionarios').set('Authorization', `Bearer ${adminToken}`).send({ ...payload, password });
+      expect(res.status).toBe(400);
+      expect(res.body.erro).toMatch(/6 e 8 dígitos/);
+    }
   });
 
   it('retorna 409 quando email já está registado', async () => {
