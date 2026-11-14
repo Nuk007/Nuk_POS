@@ -244,3 +244,36 @@ describe('Dividir conta (frontend)', () => {
     expect(ctx._chamadas.find(c => c[1] === '/caixa/receber')[2]).toEqual({ pedido_ids: ['pB'], metodo: 'TPA' });
   });
 });
+
+describe('Factura-recibo no Caixa (frontend)', () => {
+  const duas = [{ id: 'pA', total: '4500', mesa_numero: 'M02', itens: [] }, { id: 'pB', total: '2400', mesa_numero: 'M02', itens: [] }];
+  test('com a opção marcada, depois de receber emite uma FR para os pedidos todos e descarrega o PDF', async () => {
+    const ctx = carregar({ '/caixa': { aberta: true, sessao, resumo, movimentos: [] }, '/caixa/por-receber': duas, '/caixa/receber': { total: 6900 }, '/caixa/faturar': { id: 'f1', numero_fatura: 'FR 2026/000001' } });
+    const pdfs = []; ctx.descarregarPdf = (...a) => pdfs.push(a);
+    await ctx.modulo_recebimentos({ innerHTML: '' });
+    ctx.modalReceber(0);
+    expect(ctx._modal).toContain('Emitir factura-recibo');
+    ctx._els['rc-metodo'] = { value: 'TPA' };
+    ctx._els['rc-fr'] = { checked: true }; ctx._els['rc-fr-nif'] = { value: '5417000000' }; ctx._els['rc-fr-nome'] = { value: ' Ana ' };
+    await ctx.confirmarReceber();
+    await new Promise(r => setTimeout(r, 0));
+    const ordem = ctx._chamadas.map(c => c[1]);
+    expect(ordem.indexOf('/caixa/receber')).toBeLessThan(ordem.indexOf('/caixa/faturar'));
+    expect(ctx._chamadas.find(c => c[1] === '/caixa/faturar')[2]).toEqual({ pedido_ids: ['pA', 'pB'], nif_cliente: '5417000000', nome_cliente: 'Ana' });
+    expect(pdfs[0][0]).toBe('/caixa/faturas/f1/pdf');
+  });
+  test('NIF inválido não recebe nem factura; sem a opção não há factura', async () => {
+    const ctx = carregar({ '/caixa': { aberta: true, sessao, resumo, movimentos: [] }, '/caixa/por-receber': duas, '/caixa/receber': { total: 6900 } });
+    await ctx.modulo_recebimentos({ innerHTML: '' });
+    ctx.modalReceber(0);
+    ctx._els['rc-metodo'] = { value: 'TPA' };
+    ctx._els['rc-fr'] = { checked: true }; ctx._els['rc-fr-nif'] = { value: '!!' }; ctx._els['rc-fr-nome'] = { value: '' };
+    await ctx.confirmarReceber();
+    expect(ctx._chamadas.some(c => c[1] === '/caixa/receber')).toBe(false);
+    ctx._els['rc-fr'].checked = false;
+    await ctx.confirmarReceber();
+    await new Promise(r => setTimeout(r, 0));
+    expect(ctx._chamadas.some(c => c[1] === '/caixa/receber')).toBe(true);
+    expect(ctx._chamadas.some(c => c[1] === '/caixa/faturar')).toBe(false);
+  });
+});

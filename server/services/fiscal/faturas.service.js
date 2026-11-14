@@ -20,6 +20,7 @@ const { withTx, erro } = require('../shared');
 const TIPOS_EMISSAO = ['FT', 'FR'];
 const NOMES = { FT: 'Factura', FR: 'Factura-recibo', NC: 'Nota de crédito' };
 const NIF_RE = /^[A-Za-z0-9]{5,20}$/;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const T = tenantId => tenantId || null;
 
 // ─── Dinheiro em cêntimos (inteiros) para não acumular erros de vírgula flutuante ─────────────────────
@@ -56,9 +57,12 @@ async function configIva(db, tenantId) {
 
 /** Documento activo (FT/FR sem nota de crédito) de um pedido ou de uma reserva. */
 async function documentoActivo(db, coluna, id) {
+  if (!['pedido_id', 'reserva_id'].includes(coluna)) throw new Error('coluna inválida');
+  const ligacao = coluna === 'pedido_id'
+    ? 'OR EXISTS (SELECT 1 FROM fatura_pedidos fp WHERE fp.fatura_id = f.id AND fp.pedido_id = $1)' : '';
   const r = await db.query(
     `SELECT f.numero_fatura FROM faturas f
-      WHERE f.${coluna} = $1 AND f.tipo_documento IN ('FT','FR')
+      WHERE (f.${coluna} = $1 ${ligacao}) AND f.tipo_documento IN ('FT','FR')
         AND NOT EXISTS (SELECT 1 FROM faturas nc WHERE nc.documento_origem_id = f.id)
       LIMIT 1`, [id]);
   return r.rows[0] ? r.rows[0].numero_fatura : null;
@@ -117,6 +121,9 @@ async function gravar(db, { tenantId, userId, tipo, ano, seq, origem = {}, clien
     cliente.nif || null, cliente.nome || null, kz(t.brutoCent), kz(t.descontoCent), kz(t.semIvaCent), kz(t.ivaCent), kz(totalCent),
     taxaDoc, hash, emitidaEm, userId || null, origem.documentoId || null, motivo]);
   const fatura = f.rows[0];
+  for (const pid of origem.pedidoIds || []) {
+    await db.query(`INSERT INTO fatura_pedidos (fatura_id, pedido_id, tenant_id) VALUES ($1,$2,$3)`, [fatura.id, pid, T(tenantId)]);
+  }
   const gravadas = [];
   for (const l of linhas) {
     const r = await db.query(`
@@ -142,7 +149,7 @@ function validarCliente({ cliente_id, nif_cliente, nome_cliente }) {
  * Emite uma factura (FT) ou factura-recibo (FR) a partir de um pedido FECHADO, de uma reserva
  * ou de um valor manual (com descrição).
  */
-async function emitir({ tenantId, userId, tipo = 'FT', pedido_id, reserva_id, total_manual, descricao, ...dadosCliente }) {
+async function emitir({ tenantId, userId, tipo = 'FT', pedido_id, pedido_ids, reserva_id, total_manual, descricao, ...dadosCliente }) {
   tipo = String(tipo || 'FT').toUpperCase();
   if (!TIPOS_EMISSAO.includes(tipo)) throw erro(400, 'Tipo de documento inválido (FT ou FR; a nota de crédito emite-se a partir do documento)');
   const cliente = validarCliente(dadosCliente);
@@ -157,28 +164,41 @@ async function emitir({ tenantId, userId, tipo = 'FT', pedido_id, reserva_id, to
     let linhas, totalCent;
     const origem = {};
 
-    if (pedido_id) {
+    let ids = null;
+    if (pedido_ids !== undefined && pedido_ids !== null) {
+      if (!Array.isArray(pedido_ids) || !pedido_ids.length || pedido_ids.length > 50) throw erro(400, 'pedido_ids deve ser uma lista de 1 a 50 pedidos');
+      ids = [...new Set(pedido_ids.map(String))];
+      if (ids.some(x => !UUID_RE.test(x))) throw erro(400, 'pedido_ids inválidos');
+    } else if (pedido_id) ids = [String(pedido_id)];
+
+    if (ids) {
       const p = await db.query(
-        `SELECT id, total, status, pago_em, cliente_id FROM pedidos WHERE id = $1 AND ($2::uuid IS NULL OR tenant_id = $2) FOR UPDATE`,
-        [pedido_id, T(tenantId)]);
-      const ped = p.rows[0];
-      if (!ped) throw erro(404, 'Pedido não encontrado');
-      if (ped.status !== 'FECHADO') throw erro(409, 'Só se factura um pedido FECHADO');
-      const ja = await documentoActivo(db, 'pedido_id', pedido_id);
-      if (ja) throw erro(409, `Este pedido já foi facturado (${ja})`);
-      if (tipo === 'FR' && !ped.pago_em) throw erro(409, 'Factura-recibo só para contas já recebidas no Caixa');
+        `SELECT id, total, status, pago_em, cliente_id FROM pedidos
+          WHERE id = ANY($1::uuid[]) AND ($2::uuid IS NULL OR tenant_id = $2) ORDER BY id FOR UPDATE`,
+        [ids, T(tenantId)]);
+      if (p.rows.length !== ids.length) throw erro(404, ids.length > 1 ? 'Algum pedido não foi encontrado' : 'Pedido não encontrado');
+      for (const ped of p.rows) {
+        if (ped.status !== 'FECHADO') throw erro(409, 'Só se factura um pedido FECHADO');
+        const ja = await documentoActivo(db, 'pedido_id', ped.id);
+        if (ja) throw erro(409, `Este pedido já foi facturado (${ja})`);
+        if (tipo === 'FR' && !ped.pago_em) throw erro(409, 'Factura-recibo só para contas já recebidas no Caixa');
+      }
       const it = await db.query(
-        `SELECT i.produto_id, i.quantidade, i.preco_unitario, pr.nome
+        `SELECT i.produto_id, SUM(i.quantidade) AS quantidade, i.preco_unitario, pr.nome, MIN(i.criado_em) AS primeiro
            FROM itens_pedido i JOIN produtos pr ON pr.id = i.produto_id
-          WHERE i.pedido_id = $1 ORDER BY i.criado_em, pr.nome`, [pedido_id]);
-      totalCent = cent(ped.total || 0);
+          WHERE i.pedido_id = ANY($1::uuid[])
+          GROUP BY i.produto_id, i.preco_unitario, pr.nome
+          ORDER BY primeiro, pr.nome`, [ids]);
+      totalCent = p.rows.reduce((s, ped) => s + cent(ped.total || 0), 0);
       linhas = it.rows.map((i, k) => linha(k + 1, { produtoId: i.produto_id, descricao: i.nome, quantidade: i.quantidade, precoCent: cent(i.preco_unitario), taxa, motivo }));
-      // Sem itens ou soma abaixo do valor do pedido: uma linha única pelo valor do pedido
+      // Sem itens ou soma abaixo do valor dos pedidos: uma linha única pelo valor
       if (!linhas.length || linhas.reduce((s, l) => s + l.totalCent, 0) < totalCent) {
         linhas = [linha(1, { descricao: 'Consumo', quantidade: 1, precoCent: totalCent, taxa, motivo })];
       }
-      origem.pedidoId = pedido_id;
-      if (!cliente.id && ped.cliente_id) cliente.id = ped.cliente_id;
+      origem.pedidoId = ids[0];
+      origem.pedidoIds = ids;
+      const comCliente = p.rows.find(x => x.cliente_id);
+      if (!cliente.id && comCliente) cliente.id = comCliente.cliente_id;
     } else if (reserva_id) {
       const rv = await db.query(`
         SELECT rv.id, rv.valor_total, rv.status, rv.fracao, rv.cliente_id, q.numero AS quarto
@@ -271,4 +291,4 @@ async function obter({ tenantId, faturaId }) {
   return { ...f.rows[0], linhas: l.rows };
 }
 
-module.exports = { emitir, notaCredito, listar, obter, NOMES, _interno: { totais, separarIva, assinar, linha } };
+module.exports = { emitir, notaCredito, listar, obter, documentoActivo, NOMES, _interno: { totais, separarIva, assinar, linha } };

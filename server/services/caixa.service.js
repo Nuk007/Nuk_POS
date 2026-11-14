@@ -317,9 +317,8 @@ async function dividirConta({ tenantId, userId, pedido_id, itens }) {
     if (!p) throw erro(404, 'Pedido não encontrado');
     if (p.status !== 'FECHADO' || p.pago_em) throw erro(409, 'Só se divide uma conta fechada e ainda por receber');
     if (parseFloat(p.desconto) > 0 || parseFloat(p.nukcoin_pago) > 0) throw erro(409, 'Esta conta tem desconto ou Nuk-Coin aplicado: receba-a inteira');
-    const fat = await db.query(`SELECT 1 FROM faturas f WHERE f.pedido_id = $1 AND f.tipo_documento IN ('FT','FR')
-                                  AND NOT EXISTS (SELECT 1 FROM faturas nc WHERE nc.documento_origem_id = f.id) LIMIT 1`, [pedido_id]);
-    if (fat.rows[0]) throw erro(409, 'Esta conta já foi facturada: não se divide');
+    const fat = await require('./fiscal/faturas.service').documentoActivo(db, 'pedido_id', pedido_id);
+    if (fat) throw erro(409, 'Esta conta já foi facturada: não se divide');
     const it = await db.query(`SELECT * FROM itens_pedido WHERE pedido_id = $1 ORDER BY id FOR UPDATE`, [pedido_id]);
     const porId = new Map(it.rows.map(x => [x.id, x]));
     const mover = new Map();
@@ -355,4 +354,12 @@ async function dividirConta({ tenantId, userId, pedido_id, itens }) {
   return pedidos;
 }
 
-module.exports = { abrir, estado, fechar, sessoes, carregarNukcoin, venderCartao, consultarCartao, listarCartoes, porReceber, receber, dividirConta, sessaoAberta, METODOS_BALCAO, METODOS_RECEBIMENTO };
+/**
+ * Factura-recibo (FR) da conta recebida no Caixa: um só documento para todos os pedidos recebidos juntos
+ * (a conta inteira da mesa). As regras fiscais (pedidos FECHADOS, já recebidos, sem documento activo) são do serviço fiscal.
+ */
+async function faturar({ tenantId, userId, pedido_ids, nif_cliente, nome_cliente }) {
+  return require('./fiscal/faturas.service').emitir({ tenantId, userId, tipo: 'FR', pedido_ids, nif_cliente, nome_cliente });
+}
+
+module.exports = { faturar, abrir, estado, fechar, sessoes, carregarNukcoin, venderCartao, consultarCartao, listarCartoes, porReceber, receber, dividirConta, sessaoAberta, METODOS_BALCAO, METODOS_RECEBIMENTO };

@@ -27,7 +27,9 @@ module.exports = [
    )`,
   `CREATE INDEX IF NOT EXISTS idx_cc_mov_cliente ON conta_corrente_movimentos (cliente_id, criado_em)`,
   `CREATE INDEX IF NOT EXISTS idx_cc_mov_tenant ON conta_corrente_movimentos (tenant_id, criado_em)`,
+  // O initDB volta a correr isto em cada arranque: a lista tem de incluir os tipos acrescentados depois
+  // (DESPESA, despesas.js), senão uma linha DESPESA faz falhar o arranque (corrigido a 14/11/2026).
   `ALTER TABLE caixa_movimentos DROP CONSTRAINT IF EXISTS caixa_movimentos_tipo_check`,
   `ALTER TABLE caixa_movimentos ADD CONSTRAINT caixa_movimentos_tipo_check
-     CHECK (tipo IN ('NUKCOIN_CARREGAMENTO','CARTAO_VENDA','RECEBIMENTO','COMPRA','CONTA_PAGAMENTO'))`,
+     CHECK (tipo IN ('NUKCOIN_CARREGAMENTO','CARTAO_VENDA','RECEBIMENTO','COMPRA','CONTA_PAGAMENTO','DESPESA'))`,
 ];

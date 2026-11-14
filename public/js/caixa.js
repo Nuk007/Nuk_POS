@@ -213,7 +213,18 @@ function modalReceber(i, j) {
     <div id="rc-pin" class="campo" style="display:none"><label>PIN do cliente (4 dígitos)</label><input id="rc-pin-v" type="password" inputmode="numeric" maxlength="4" autocomplete="off"></div>
     <div id="rc-cartao" class="campo" style="display:none"><label>Código do cartão de consumo</label><input id="rc-codigo" placeholder="CCXXXXXXXX"></div>
     <div id="rc-conta" class="campo" style="display:none"><label>Cliente com conta corrente</label><select id="rc-conta-cli"><option value="">A carregar…</option></select><div id="rc-conta-info" class="muted texto-pequeno"></div></div>
+    <div class="campo"><label style="display:flex;gap:.4rem;align-items:center"><input id="rc-fr" type="checkbox" data-on-change="receberFactura(this.checked)"> Emitir factura-recibo</label>
+      <div id="rc-fr-dados" style="display:none;gap:.4rem"><input id="rc-fr-nif" placeholder="NIF do cliente (opcional)" maxlength="20" style="flex:1"><input id="rc-fr-nome" placeholder="Nome (opcional)" maxlength="200" style="flex:1.4"></div></div>
     <button class="btn-primario btn-bloco" data-on-click="confirmarReceber()">Confirmar recebimento</button>`);
+}
+function receberFactura(ver) { document.getElementById('rc-fr-dados').style.display = ver ? 'flex' : 'none'; }
+/** Depois de receber: um documento FR para todos os pedidos recebidos juntos. O recebimento já está feito mesmo que isto falhe. */
+async function emitirFacturaRecibo(pedidoIds, nif, nome) {
+  try {
+    const f = await api('POST', '/caixa/faturar', { pedido_ids: pedidoIds, nif_cliente: nif || undefined, nome_cliente: nome || undefined });
+    toast(`Factura-recibo ${f.numero_fatura} emitida`, 'sucesso', 6000);
+    descarregarPdf(`/caixa/faturas/${f.id}/pdf`, `${String(f.numero_fatura).replace(/[^A-Za-z0-9]+/g, '-')}.pdf`);
+  } catch (e) { toast(`Recebido, mas a factura-recibo falhou: ${e.message} (emita-a em Finanças)`, 'erro', 9000); }
 }
 function receberMetodo(m) {
   document.getElementById('rc-cash').style.display = m === 'CASH' ? '' : 'none';
@@ -366,9 +377,13 @@ async function confirmarReceber() {
     if (metodo === 'CARTAO') corpo.codigo_cartao = document.getElementById('rc-codigo').value;
     if (metodo === 'CONTA') corpo.cliente_id = document.getElementById('rc-conta-cli').value || undefined;
   }
+  const fr = document.getElementById('rc-fr');
+  const factura = fr && fr.checked ? { nif: document.getElementById('rc-fr-nif').value.trim(), nome: document.getElementById('rc-fr-nome').value.trim() } : null;
+  if (factura && factura.nif && !/^[A-Za-z0-9]{5,20}$/.test(factura.nif)) { toast('NIF inválido (5 a 20 letras ou números)', 'erro'); return; }
   try {
     const r = await api('POST', '/caixa/receber', corpo);
     fecharModal();
+    if (factura) emitirFacturaRecibo(corpo.pedido_ids, factura.nif, factura.nome);
     if (typeof imprimirRecibo === 'function') imprimirRecibo(corpo.pedido_ids); // recibo + gaveta, se este dispositivo tiver impressora
     const formas = r.pagamentos && r.pagamentos.length > 1 ? ` (${r.pagamentos.map(x => `${FORMAS_RECEBER[x.metodo] || x.metodo} ${formatarMoeda(x.valor)}`).join(' + ')})` : '';
     toast(`Recebido ${formatarMoeda(r.total)}${formas}` + (r.troco ? ` · troco ${formatarMoeda(r.troco)}` : '') + (r.saldo_restante !== null && r.saldo_restante !== undefined ? ` · saldo ${formatarMoeda(r.saldo_restante)}` : ''), 'sucesso', 7000);

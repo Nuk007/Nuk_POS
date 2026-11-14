@@ -77,3 +77,9 @@ test('despesas: validações, pela gaveta tira dinheiro do caixa, anular devolve
   const lista = (await call(A, 'get', `/api/financeiro/despesas?de=${hoje()}&ate=${hoje()}`)).body;
   expect(lista.find(d => d.id === gas.body.id).motivo_anulacao).toBe('Lançada em duplicado');
 });
+
+test('o arranque (initDB) volta a correr sem falhar com movimentos DESPESA no caixa (regressão de 14/11/2026)', async () => {
+  const n = (await pool.query(`SELECT COUNT(*)::int AS n FROM caixa_movimentos WHERE tipo = 'DESPESA'`)).rows[0].n;
+  expect(n).toBeGreaterThan(0);
+  await expect(require('../../server/db').initDB()).resolves.not.toThrow();
+});

@@ -141,6 +141,41 @@ router.post('/receber', authMiddleware, h(async (req, res) => {
 
 /**
  * @openapi
+ * /api/caixa/faturar:
+ *   post:
+ *     tags: [Caixa]
+ *     summary: Emite a factura-recibo (FR) da conta recebida (um documento para vários pedidos)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [pedido_ids]
+ *             properties:
+ *               pedido_ids: { type: array, items: { type: string, format: uuid } }
+ *               nif_cliente: { type: string }
+ *               nome_cliente: { type: string }
+ *     responses:
+ *       201: { description: Documento emitido }
+ *       409: { description: "Conta por receber, aberta ou já facturada" }
+ */
+router.post('/faturar', authMiddleware, h(async (req, res) => {
+  const ids = Array.isArray(req.body.pedido_ids) ? req.body.pedido_ids : [];
+  if (!ids.length || ids.some(i => !isUUID(i))) return res.status(400).json({ erro: 'pedido_ids inválidos' });
+  const { nif_cliente, nome_cliente } = req.body;
+  res.status(201).json(await svc.faturar({ pedido_ids: ids, nif_cliente, nome_cliente, ...base(req) }));
+}));
+
+// GET /api/caixa/faturas/:id/pdf — o mesmo PDF de Finanças, para quem só tem o Caixa
+router.get('/faturas/:id/pdf', authMiddleware, h(async (req, res) => {
+  if (!isUUID(req.params.id)) return res.status(400).json({ erro: 'id inválido' });
+  const pdf = await require('../services/documentos.service').facturaPdf({ tenantId: req.tenantId, faturaId: req.params.id });
+  res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="factura-${req.params.id.slice(0, 8)}.pdf"`, 'Cache-Control': 'no-store' }).send(pdf);
+}));
+
+/**
+ * @openapi
  * /api/caixa/dividir:
  *   post:
  *     summary: Separa itens (ou parte das quantidades) de uma conta fechada por receber numa conta nova
