@@ -95,7 +95,7 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 ## Dívida conhecida (próximos passos)
 - Se o admin demo `admin@nukpos.ao` já existir numa BD de produção antiga, apagá-lo/desactivá-lo (o seed deixou de o criar em produção; ver «Reset»).
 - Força bruta ao PIN do portal só limitada pelo clienteLimiter (60/10min por IP).
-- Preços de hospedagem/serviços estão escritos à mão no `cliente.html` (indicativos, iguais para todos os estabelecimentos) — deviam vir da configuração de cada tenant.
+- Preços dos serviços extra do portal (piscina, sauna, lavandaria…) estão escritos à mão no `cliente.html` (indicativos, iguais para todos). O alojamento já usa os preços reais (ver «Reservas de quarto pelo portal»).
 - `GET /api/solicitacoes-hospedagem` (antigo) filtra por `clientes.tenant_id`, por isso não lista pedidos de convidados; usar `solicitacoes_portal`.
 - @openapi parcial no portal (faltam hospedagem, perfil, eventos).
 - Testar a UI em navegador real (Playwright) ainda não faz parte do CI.
@@ -246,3 +246,9 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 - UI: cartão «Resumo diário no WhatsApp» em Configurações (licença `financas`); cartão «Resumo de ontem» no topo de Relatórios com «Enviar pelo WhatsApp» (wa.me) e «Enviar agora (oficial)».
 - **Para activar o envio oficial** (acção do dono): conta Meta Business verificada da GESTNUK AI, número dedicado, modelo `resumo_diario_nukpos` aprovado com o texto de `TEMPLATES`, e as variáveis no Render. Dívida: webhook de estado das mensagens (entregue/lida) e opt-out; extracto da conta corrente e lembretes de reserva pelo mesmo canal.
 - Testes: `tests/integration/resumo-whatsapp.int.test.js` (Meta simulada com `jest.spyOn(global, 'fetch')`), `tests/frontend-relatorios.test.js`.
+
+## Reservas de quarto pelo portal (14/11/2026)
+- O portal (ecrã Serviços → Alojamento) lê `GET /api/cliente/hospedagem` (público, só com a licença `hospedagem`, senão 404 e a secção some): tipos de quarto com o preço mais baixo de Hora/Noite/Diária de cada tipo (`quartos.preco_*`, 0 = serviço não vendido) e quantos estão livres agora.
+- `POST /api/cliente/reserva-quarto { tipo_quarto, fracao, inicio, nome, telefone }` → `solicitacoes.pedirReservaQuarto`: o **servidor calcula o valor** (quarto livre mais barato desse tipo no período, com a folga de arrumação — `quartos-vendas.quartosLivres`) e cria a solicitação HOSPEDAGEM com `tipo_quarto/fracao/inicio/valor_estimado` (migração 1751700000000, SQL em `server/migrations-data/portal-reservas.js`); sem quartos livres → 409 `SEM_QUARTOS_LIVRES`. Não reserva nada sozinho.
+- No POS (Solicitações), o pedido com data mostra «Reservar quarto»: `GET /api/solicitacoes-portal/:id/quartos-livres` e `POST …/:id/reservar { quarto_id }` → só quem tem `pode_vender_quartos`; a solicitação é bloqueada (`FOR UPDATE`) e a reserva criada na mesma transacção (`quartos-vendas.reservarEm`), por isso dois cliques não fazem duas reservas; quarto de outro tipo → 409. Devolve `link_whatsapp` com a confirmação para o cliente (botão «Avisar o cliente pelo WhatsApp»).
+- Testes: `tests/integration/portal-reservas.int.test.js`, ecrã em `tests/frontend-modulos.test.js`.

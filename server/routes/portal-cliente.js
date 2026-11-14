@@ -131,6 +131,28 @@ router.post('/solicitacao', ...pub, h(async (req, res) => {
   res.status(201).json(await solicitacoes.criar({ tenantId: req.tenantId, tipo, nome_servico, nome, telefone, observacoes }));
 }));
 
+/**
+ * @openapi
+ * /api/cliente/hospedagem:
+ *   get:
+ *     tags: [Portal cliente]
+ *     summary: Tipos de quarto com os preços reais (Hora/Noite/Diária) e quantos estão livres agora
+ *     security: []
+ *     responses: { 200: { description: "{ fracoes, tipos }" }, 404: { description: Sem alojamento } }
+ * /api/cliente/reserva-quarto:
+ *   post:
+ *     tags: [Portal cliente]
+ *     summary: Pedido de reserva com o valor calculado pelo servidor (a equipa confirma no POS)
+ *     security: []
+ *     requestBody: { content: { application/json: { schema: { type: object, required: [tipo_quarto, fracao, inicio, nome, telefone], properties: { tipo_quarto: { type: string }, fracao: { type: string, enum: [DUAS_HORAS, PERNOITE, DIARIA] }, inicio: { type: string, format: date-time }, nome: { type: string }, telefone: { type: string }, observacoes: { type: string } } } } } }
+ *     responses: { 201: { description: Pedido registado com o valor }, 400: { description: Dados inválidos }, 409: { description: Sem quartos livres nesse período } }
+ */
+router.get('/hospedagem', ...pub, h(async (req, res) => res.json(await solicitacoes.tarifasHospedagem({ tenantId: req.tenantId }))));
+router.post('/reserva-quarto', ...pub, h(async (req, res) => {
+  const { tipo_quarto, fracao, inicio, nome, telefone, observacoes } = req.body;
+  res.status(201).json(await solicitacoes.pedirReservaQuarto({ tenantId: req.tenantId, tipo_quarto, fracao, inicio, nome, telefone, observacoes }));
+}));
+
 router.post('/perfil', ...pub, h(async (req, res) => res.json(await svc.perfil({ ...req.body, tenantId: req.tenantId }))));
 
 /**

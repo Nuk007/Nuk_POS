@@ -1271,11 +1271,13 @@ function linhaSolicitacao(s) {
   return `<tr>
     <td>${tempoDesde(s.criado_em)}</td>
     <td>${ROTULO_SOLICITACAO[s.tipo] || esc(s.tipo)}</td>
-    <td><strong>${esc(s.nome_servico)}</strong></td>
+    <td><strong>${esc(s.nome_servico)}</strong>${s.valor_estimado ? `<div class="muted texto-pequeno">${formatarMoeda(s.valor_estimado)}</div>` : ''}</td>
     <td>${esc(s.nome_contacto)}</td>
     <td>${esc(s.telefone_contacto)}</td>
     <td>${badgeStatus(s.status)}</td>
-    <td>${porTratar
+    <td>${porTratar && s.fracao && s.inicio
+      ? `<button class="btn-primario" data-on-click="modalReservarSolicitacao('${esc(s.id)}')">Reservar quarto</button> <button class="btn-secundario" data-on-click="pedirCancelarSolicitacao('${esc(s.id)}')">Cancelar</button>`
+      : porTratar
       ? `<button class="btn-primario" data-on-click="actualizarSolicitacao('${esc(s.id)}','CONFIRMADA')">Confirmar</button> <button class="btn-secundario" data-on-click="pedirCancelarSolicitacao('${esc(s.id)}')">Cancelar</button>`
       : ''}</td>
   </tr>`;
@@ -1295,6 +1297,27 @@ async function actualizarSolicitacao(id, status) {
   try {
     await api('PATCH', `/solicitacoes-portal/${id}/status`, { status });
     toast(status === 'CONFIRMADA' ? 'Solicitação confirmada' : 'Solicitação cancelada', 'sucesso');
+    carregarModulo('solicitacoes');
+  } catch (e) { toast(e.message, 'erro'); }
+}
+
+// Pedido de reserva do portal: escolher o quarto livre e criar a reserva (perfil «vender quartos»)
+async function modalReservarSolicitacao(id) {
+  try {
+    const r = await api('GET', `/solicitacoes-portal/${id}/quartos-livres`);
+    const s = r.solicitacao;
+    abrirModal('Reservar quarto', `
+      <p style="margin-bottom:.5rem"><b>${esc(s.nome_servico)}</b><br><span class="muted">${esc(s.nome_contacto)} · ${esc(s.telefone_contacto)}</span></p>
+      ${r.quartos.length ? r.quartos.map(q => `<button class="btn-secundario btn-bloco" style="margin:.25rem 0" data-on-click="reservarSolicitacao('${esc(id)}','${esc(q.id)}')">Quarto ${esc(q.numero)} · ${formatarMoeda(q.preco)}</button>`).join('')
+        : '<div class="erro-msg">Não há quartos deste tipo livres nesse período. Contacte o cliente para outra hora.</div>'}`);
+  } catch (e) { toast(e.message, 'erro'); }
+}
+async function reservarSolicitacao(id, quartoId) {
+  try {
+    const r = await api('POST', `/solicitacoes-portal/${id}/reservar`, { quarto_id: quartoId });
+    abrirModal('Reserva criada', `
+      <p>Quarto <b>${esc(r.quarto_numero)}</b> reservado para ${esc(r.solicitacao.nome_contacto)}.</p>
+      <a class="btn-primario btn-bloco" style="text-align:center;text-decoration:none;margin-top:.6rem" href="${esc(r.link_whatsapp)}" target="_blank" rel="noopener">Avisar o cliente pelo WhatsApp</a>`);
     carregarModulo('solicitacoes');
   } catch (e) { toast(e.message, 'erro'); }
 }

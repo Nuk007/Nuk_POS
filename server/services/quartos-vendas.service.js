@@ -114,27 +114,51 @@ async function vender({ tenantId, userId, quartoId, fracao, nome_hospede, client
 }
 
 // ── reservar (período futuro) ────────────────────────────────────
-async function reservar({ tenantId, userId, quartoId, fracao, inicio, nome_hospede, cliente_id, observacoes }) {
-  await exigirVendedor(tenantId, userId);
-  validarFracao(fracao);
+function validarInicioReserva(inicio) {
   const ini = new Date(inicio);
   if (!inicio || isNaN(ini)) throw erro(400, 'Indique a data e hora de início da reserva');
   const agora = new Date();
   if (ini < mais(agora, -2)) throw erro(400, 'A hora de início já passou');
   if (ini > mais(agora, 365 * 24 * 60)) throw erro(400, 'A reserva só pode ser feita até um ano de antecedência');
+  return ini;
+}
+/** Corpo da reserva dentro de uma transacção já aberta (usado também ao confirmar um pedido do portal). */
+async function reservarEm(c, { tenantId, userId, quartoId, fracao, inicio, nome_hospede, cliente_id, observacoes }) {
+  validarFracao(fracao);
+  const ini = validarInicioReserva(inicio);
   const fim = mais(ini, DURACAO_H[fracao] * 60);
-  const res = await withTx(async c => {
-    const q = await bloquearQuarto(c, tenantId, quartoId);
-    if (['MANUTENCAO', 'BLOQUEADO'].includes(q.status)) throw erro(409, estadoOcupacao(q));
-    await exigirPeriodoLivre(c, quartoId, ini, fim);
-    const r = await c.query(
-      `INSERT INTO reservas (tenant_id, quarto_id, cliente_id, nome_hospede, fracao, checkin, checkout, status, valor_total, observacoes, criado_por)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,'CONFIRMADA',$8,$9,$10) RETURNING *`,
-      [tenantId, quartoId, cliente_id || null, nome_hospede || null, fracao, ini, fim, q[PRECO[fracao]], observacoes || null, userId]);
-    return r.rows[0];
-  });
-  broadcast('quarto_atualizado', { quarto_id: quartoId, reservado: true }, tenantId);
+  const q = await bloquearQuarto(c, tenantId, quartoId);
+  if (['MANUTENCAO', 'BLOQUEADO'].includes(q.status)) throw erro(409, estadoOcupacao(q));
+  await exigirPeriodoLivre(c, quartoId, ini, fim);
+  const r = await c.query(
+    `INSERT INTO reservas (tenant_id, quarto_id, cliente_id, nome_hospede, fracao, checkin, checkout, status, valor_total, observacoes, criado_por)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,'CONFIRMADA',$8,$9,$10) RETURNING *`,
+    [tenantId, quartoId, cliente_id || null, nome_hospede || null, fracao, ini, fim, q[PRECO[fracao]], observacoes || null, userId]);
+  return r.rows[0];
+}
+async function reservar(dados) {
+  await exigirVendedor(dados.tenantId, dados.userId);
+  validarFracao(dados.fracao);
+  validarInicioReserva(dados.inicio);
+  const res = await withTx(c => reservarEm(c, dados));
+  broadcast('quarto_atualizado', { quarto_id: dados.quartoId, reservado: true }, dados.tenantId);
   return res;
+}
+
+/**
+ * Quartos de um tipo livres num período (para o portal e para confirmar um pedido), com o preço do serviço.
+ * Fora: em manutenção ou bloqueados; com ocupação/reserva que se sobreponha (mais a folga de arrumação).
+ */
+async function quartosLivres(db, { tenantId, tipo, fracao, inicio }) {
+  validarFracao(fracao);
+  const ini = new Date(inicio), fim = mais(ini, DURACAO_H[fracao] * 60);
+  const r = await db.query(
+    `SELECT q.id, q.numero, q.tipo, q.${PRECO[fracao]} AS preco FROM quartos q
+      WHERE q.tenant_id = $1 AND q.tipo = $2 AND q.status NOT IN ('MANUTENCAO','BLOQUEADO') AND q.${PRECO[fracao]} > 0
+        AND NOT EXISTS (SELECT 1 FROM reservas rv WHERE rv.quarto_id = q.id AND rv.status IN ('CONFIRMADA','CHECKIN')
+              AND NOT (rv.checkout + make_interval(mins => $5::int) <= $3::timestamptz OR rv.checkin >= $4::timestamptz + make_interval(mins => $5::int)))
+      ORDER BY q.${PRECO[fracao]}, q.numero`, [tenantId, tipo, ini, fim, LIMPEZA_MIN]);
+  return r.rows.map(x => ({ ...x, preco: Number(x.preco) }));
 }
 
 // ── dar entrada a uma reserva ────────────────────────────────────
@@ -285,5 +309,5 @@ async function processarTick(agora = new Date()) {
   return { avisos: avisos.length, fechadas: fechadas.rowCount, escaladas: esc.rowCount };
 }
 
-module.exports = { listar, vender, reservar, darEntrada, cancelarReserva, abrirQuarto, marcarLimpo, mudarEstado, processarTick,
+module.exports = { reservarEm, quartosLivres, validarInicioReserva, exigirVendedor, PRECO, listar, vender, reservar, darEntrada, cancelarReserva, abrirQuarto, marcarLimpo, mudarEstado, processarTick,
   DURACAO_H, LIMPEZA_MIN, AVISO_MIN, ESTRELA_MIN };

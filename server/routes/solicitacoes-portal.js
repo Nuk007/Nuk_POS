@@ -6,7 +6,7 @@
 const express = require('express');
 const router = express.Router();
 const svc = require('../services/solicitacoes.service');
-const { authMiddleware, validarUUID } = require('../middleware/auth');
+const { authMiddleware, validarUUID, isUUID } = require('../middleware/auth');
 
 const h = fn => async (req, res, next) => {
   try { await fn(req, res); } catch (e) {
@@ -56,6 +56,30 @@ router.get('/pendentes', authMiddleware, h(async (req, res) => {
  */
 router.patch('/:id/status', authMiddleware, validarUUID('id'), h(async (req, res) => {
   res.json(await svc.actualizarStatus({ tenantId: req.tenantId, id: req.params.id, status: req.body.status }));
+}));
+
+/**
+ * @openapi
+ * /api/solicitacoes-portal/{id}/quartos-livres:
+ *   get:
+ *     tags: [Solicitações do portal]
+ *     summary: Quartos do tipo pedido livres no período do pedido de reserva (com o preço)
+ *     parameters: [{ in: path, name: id, required: true, schema: { type: string, format: uuid } }]
+ *     responses: { 200: { description: "{ solicitacao, quartos }" }, 409: { description: Não é um pedido de reserva com data } }
+ * /api/solicitacoes-portal/{id}/reservar:
+ *   post:
+ *     tags: [Solicitações do portal]
+ *     summary: Confirma o pedido criando a reserva no quarto escolhido (perfil «vender quartos»); devolve link_whatsapp para avisar o cliente
+ *     parameters: [{ in: path, name: id, required: true, schema: { type: string, format: uuid } }]
+ *     requestBody: { content: { application/json: { schema: { type: object, required: [quarto_id], properties: { quarto_id: { type: string, format: uuid } } } } } }
+ *     responses: { 200: { description: Reserva criada }, 403: { description: Sem o perfil de vender quartos }, 409: { description: Já tratado, tipo diferente ou período ocupado } }
+ */
+router.get('/:id/quartos-livres', authMiddleware, validarUUID('id'), h(async (req, res) => {
+  res.json(await svc.quartosParaSolicitacao({ tenantId: req.tenantId, id: req.params.id }));
+}));
+router.post('/:id/reservar', authMiddleware, validarUUID('id'), h(async (req, res) => {
+  if (!isUUID(req.body.quarto_id)) return res.status(400).json({ erro: 'quarto_id inválido' });
+  res.json(await svc.confirmarComReserva({ tenantId: req.tenantId, userId: req.user.id, id: req.params.id, quarto_id: req.body.quarto_id }));
 }));
 
 module.exports = router;

@@ -214,6 +214,10 @@
     .menu-item-emoji { font-size:1.4rem; display:block; margin-bottom:4px; }
     .menu-item-name { font-size:.75rem; font-weight:700; line-height:1.2; }
     .menu-item-price { font-size:.68rem; color:var(--accent); margin-top:3px; }
+    .hosp-form { margin-top:.8rem; display:flex; flex-direction:column; gap:.45rem; }
+    .hosp-form input { padding:.55rem; border-radius:8px; border:1px solid rgba(255,255,255,.15); background:rgba(255,255,255,.05); color:inherit; }
+    .hosp-escolha { font-weight:600; }
+    #grid-hospedagem .muted { opacity:.7; font-size:.8rem; grid-column:1/-1; }
     .menu-item-qty { font-size:.65rem; color:var(--ok); margin-top:3px; }
 
     /* ── CREDIT GRID ── */
@@ -607,29 +611,17 @@
       <span class="pill pill-info">Serviços</span>
     </div>
     <h3>Serviços disponíveis</h3>
-    <div class="menu-section">
-      <div class="menu-section-title">🛏️ Hospedagem</div>
-      <div class="menu-grid">
-        <div class="menu-item" data-action="solicitar-servico" data-categoria="HOSPEDAGEM" data-tipo="2 Horas" data-preco="8.000 Kz">
-          <span class="menu-item-emoji">⏱️</span>
-          <div class="menu-item-name">2 Horas</div>
-          <div class="menu-item-price">8.000 Kz</div>
-        </div>
-        <div class="menu-item" data-action="solicitar-servico" data-categoria="HOSPEDAGEM" data-tipo="Pernoite" data-preco="15.000 Kz">
-          <span class="menu-item-emoji">🌙</span>
-          <div class="menu-item-name">Pernoite</div>
-          <div class="menu-item-price">15.000 Kz</div>
-        </div>
-        <div class="menu-item" data-action="solicitar-servico" data-categoria="HOSPEDAGEM" data-tipo="Diária Completa" data-preco="25.000 Kz">
-          <span class="menu-item-emoji">📅</span>
-          <div class="menu-item-name">Diária</div>
-          <div class="menu-item-price">25.000 Kz</div>
-        </div>
-        <div class="menu-item" data-action="solicitar-servico" data-categoria="HOSPEDAGEM" data-tipo="Semana (7 dias)" data-preco="120.000 Kz">
-          <span class="menu-item-emoji">🗓️</span>
-          <div class="menu-item-name">Semana</div>
-          <div class="menu-item-price">120.000 Kz</div>
-        </div>
+    <div class="menu-section" id="hosp-seccao">
+      <div class="menu-section-title">🛏️ Alojamento</div>
+      <div class="menu-grid" id="grid-hospedagem"><div class="muted">A carregar os quartos…</div></div>
+      <div id="hosp-form" class="hosp-form" style="display:none">
+        <div class="hosp-escolha" id="hosp-escolha"></div>
+        <label for="hosp-inicio">Data e hora de entrada</label>
+        <input type="datetime-local" id="hosp-inicio">
+        <label for="hosp-obs">Observações (opcional)</label>
+        <input type="text" id="hosp-obs" maxlength="300" placeholder="Ex.: chegada tardia">
+        <button class="btn btn-primary" data-action="pedir-reserva-quarto">Pedir reserva</button>
+        <button class="btn btn-ghost" data-action="cancelar-reserva-quarto">Cancelar</button>
       </div>
     </div>
     <div class="menu-section">

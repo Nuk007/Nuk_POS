@@ -283,3 +283,16 @@ describe('Finanças — resultado e despesas', () => {
     expect(confirmar).toBe('anularDespesaConfirmado');
   });
 });
+
+describe('Solicitações: pedido de reserva do portal', () => {
+  test('pedido com data mostra «Reservar quarto» e o valor; o resto continua com «Confirmar»; Configurações tem o resumo diário', async () => {
+    const ctx = carregar({ nivel_acesso: 'ADMIN' });
+    ctx.tempoDesde = () => 'agora';
+    const html = ctx.linhaSolicitacao({ id: 's1', tipo: 'HOSPEDAGEM', nome_servico: 'Quarto SUITE · Noite', nome_contacto: 'Ana', telefone_contacto: '923', status: 'PENDENTE', fracao: 'PERNOITE', inicio: '2026-11-20T20:00:00Z', valor_estimado: '28000', criado_em: new Date().toISOString() });
+    expect(html).toContain("modalReservarSolicitacao('s1')");
+    expect(html).toContain('28000');
+    const outra = ctx.linhaSolicitacao({ id: 's2', tipo: 'SERVICO', nome_servico: 'Piscina', status: 'PENDENTE', criado_em: new Date().toISOString() });
+    expect(outra).toContain("actualizarSolicitacao('s2','CONFIRMADA')");
+    expect(await render(carregar({ nivel_acesso: 'ADMIN' }), 'modulo_configuracoes')).toContain('guardarResumoDiario()');
+  });
+});

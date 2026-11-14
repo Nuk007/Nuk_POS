@@ -76,6 +76,7 @@ function no(tag, cls, texto) {
 }
 function go(id) {
   const alvo = $(id); if (!alvo) return;
+  if (id === 's-servicos') carregarHospedagem();
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   alvo.classList.add('active');
   window.scrollTo(0, 0);
@@ -382,6 +383,54 @@ async function solicitarEvento(nome) {
   mostrarConfirmacao('🎉', 'Evento solicitado!', nome + ' — receberá um orçamento personalizado em breve. Obrigado!');
 }
 
+// ── Alojamento: preços reais do estabelecimento e pedido de reserva ──
+const FRACAO_ICONE = { DUAS_HORAS: '⏱️', PERNOITE: '🌙', DIARIA: '📅' };
+async function carregarHospedagem() {
+  const grid = $('grid-hospedagem'); if (!grid) return;
+  const r = await chamar('/api/cliente/hospedagem');
+  if (r.status === 404) { $('hosp-seccao').style.display = 'none'; return; }
+  grid.textContent = '';
+  if (!r.ok) { grid.appendChild(no('div', 'muted', r.rede ? MSG_REDE : 'Não foi possível carregar os quartos.')); return; }
+  session.hosp = r.data;
+  if (!r.data.tipos.length) { grid.appendChild(no('div', 'muted', 'Sem quartos disponíveis de momento.')); return; }
+  r.data.tipos.forEach(t => {
+    Object.keys(r.data.fracoes).forEach(f => {
+      const preco = t.precos[f];
+      if (!preco) return;
+      const item = no('div', 'menu-item');
+      item.dataset.action = 'escolher-quarto'; item.dataset.tipo = t.tipo; item.dataset.fracao = f;
+      item.appendChild(no('span', 'menu-item-emoji', FRACAO_ICONE[f] || '🛏️'));
+      item.appendChild(no('div', 'menu-item-name', `${t.tipo} · ${r.data.fracoes[f]}`));
+      item.appendChild(no('div', 'menu-item-price', (t.quartos > 1 ? 'desde ' : '') + fmt(preco)));
+      grid.appendChild(item);
+    });
+  });
+}
+function escolherQuarto(tipo, fracao) {
+  session.reservaQuarto = { tipo, fracao };
+  const h = session.hosp || { fracoes: {} };
+  $('hosp-escolha').textContent = `Quarto ${tipo} · ${h.fracoes[fracao] || fracao}`;
+  const agora = new Date(Date.now() + 30 * 60000 - new Date().getTimezoneOffset() * 60000);
+  if (!$('hosp-inicio').value) $('hosp-inicio').value = agora.toISOString().slice(0, 16);
+  $('hosp-form').style.display = 'block';
+  $('hosp-form').scrollIntoView({ behavior: 'smooth' });
+}
+async function pedirReservaQuarto() {
+  if (session.aEnviar) return;
+  const esc = session.reservaQuarto;
+  if (!esc) return;
+  if (!session.nome || !session.tel) { toast('Identifique-se primeiro.', 'err'); go('s-acesso'); return; }
+  const v = $('hosp-inicio').value;
+  const inicio = v ? new Date(v) : null;
+  if (!inicio || isNaN(inicio)) { toast('Indique a data e hora de entrada.', 'err'); return; }
+  session.aEnviar = true;
+  const r = await chamar('/api/cliente/reserva-quarto', { method: 'POST', body: { tipo_quarto: esc.tipo, fracao: esc.fracao, inicio: inicio.toISOString(), nome: session.nome, telefone: session.tel, observacoes: $('hosp-obs').value.trim() || undefined } });
+  session.aEnviar = false;
+  if (!r.ok) { toast(r.rede ? 'Sem ligação ao servidor. O pedido NÃO foi enviado — tente novamente.' : (r.data.erro || 'Não foi possível enviar o pedido.'), 'err'); return; }
+  $('hosp-form').style.display = 'none'; session.reservaQuarto = null;
+  mostrarConfirmacao('🛏️', 'Pedido de reserva enviado!', r.data.mensagem);
+}
+
 // ── Cadastro ────────────────────────────────────
 async function cadastrar() {
   if (session.aEnviar) return;
@@ -434,6 +483,9 @@ const ACOES = {
   'solicitar-servico':    el => solicitarServico(el.dataset.tipo, el.dataset.preco, el.dataset.categoria),
   'solicitar-evento':     el => solicitarEvento(el.dataset.tipo),
   'cadastrar':            () => cadastrar(),
+  'escolher-quarto':      el => escolherQuarto(el.dataset.tipo, el.dataset.fracao),
+  'pedir-reserva-quarto': () => pedirReservaQuarto(),
+  'cancelar-reserva-quarto': () => { $('hosp-form').style.display = 'none'; session.reservaQuarto = null; },
 };
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-action]');
