@@ -115,6 +115,49 @@ describe('Abrir, receber e fechar', () => {
     await a('patch', `/api/pedidos/${p.body.pedido_id}/status`, { status: 'FECHADO' });
     expect((await a('get', '/api/caixa/por-receber')).body.map(x => x.id)).not.toContain(p.body.pedido_id);
   });
+  test('pagamento misto: dinheiro + TPA com troco da parte em dinheiro; esperado só conta o dinheiro', async () => {
+    const p1 = await pedidoFechado([{ produto_id: picanha, quantidade: 1 }]); // 4500
+    const p2 = await pedidoFechado([{ produto_id: cuca, quantidade: 2 }]);    // 1200
+    const ids = [p1.id, p2.id];
+    const antes = (await a('get', '/api/caixa')).body.resumo.dinheiro_esperado;
+    // soma errada, forma repetida, valor nulo e forma inválida → 400 e nada gravado
+    expect((await a('post', '/api/caixa/receber', { pedido_ids: ids, pagamentos: [{ metodo: 'CASH', valor: 1000 }, { metodo: 'TPA', valor: 1000 }] })).status).toBe(400);
+    expect((await a('post', '/api/caixa/receber', { pedido_ids: ids, pagamentos: [{ metodo: 'CASH', valor: 2700 }, { metodo: 'CASH', valor: 3000 }] })).status).toBe(400);
+    expect((await a('post', '/api/caixa/receber', { pedido_ids: ids, pagamentos: [{ metodo: 'CASH', valor: 0 }, { metodo: 'TPA', valor: 5700 }] })).status).toBe(400);
+    expect((await a('post', '/api/caixa/receber', { pedido_ids: ids, pagamentos: [{ metodo: 'CHEQUE', valor: 5700 }] })).status).toBe(400);
+    expect((await a('post', '/api/caixa/receber', { pedido_ids: ids, pagamentos: [{ metodo: 'CASH', valor: 2000, valor_entregue: 1500 }, { metodo: 'TPA', valor: 3700 }] })).status).toBe(400);
+    expect(await num(`SELECT COUNT(*) AS v FROM caixa_movimentos WHERE pedido_id = ANY($1)`, [ids])).toBe(0);
+
+    const r = await a('post', '/api/caixa/receber', { pedido_ids: ids, pagamentos: [{ metodo: 'CASH', valor: 2000, valor_entregue: 5000 }, { metodo: 'TPA', valor: 3700 }] });
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ total: 5700, metodo: 'MISTO', troco: 3000 });
+    expect(r.body.pagamentos).toEqual([{ metodo: 'CASH', valor: 2000 }, { metodo: 'TPA', valor: 3700 }]);
+    // livro-razão: por forma, soma certa; cada pedido recebido pelo seu total
+    const porMetodo = Object.fromEntries((await pool.query(`SELECT metodo, SUM(valor)::numeric v FROM caixa_movimentos WHERE pedido_id = ANY($1) GROUP BY metodo`, [ids])).rows.map(x => [x.metodo, Number(x.v)]));
+    expect(porMetodo).toEqual({ CASH: 2000, TPA: 3700 });
+    for (const p of [p1, p2]) {
+      expect(await num(`SELECT SUM(valor) AS v FROM caixa_movimentos WHERE pedido_id = $1`, [p.id])).toBe(Number(p.total));
+      expect((await pool.query(`SELECT pago_metodo FROM pedidos WHERE id=$1`, [p.id])).rows[0].pago_metodo).toBe('MISTO');
+    }
+    expect((await a('get', '/api/caixa')).body.resumo.dinheiro_esperado).toBe(antes + 2000);
+    expect((await a('post', '/api/caixa/receber', { pedido_ids: ids, pagamentos: [{ metodo: 'TPA', valor: 5700 }] })).status).toBe(409);
+  });
+
+  test('pagamento misto com Nuk-Coin: PIN exigido e só a parte indicada sai do saldo', async () => {
+    const c = await novoCliente('misto');
+    await a('post', '/api/caixa/nukcoin', { cliente_id: c.id, valor: 5000, metodo: 'CASH' });
+    const p = await pedidoFechado([{ produto_id: picanha, quantidade: 2 }]); // 9000
+    const sem = await a('post', '/api/caixa/receber', { pedido_ids: [p.id], pagamentos: [{ metodo: 'NUKCOIN', valor: 5000, cliente_id: c.id }, { metodo: 'TPA', valor: 4000 }] });
+    expect(sem.status).toBe(403);
+    const mais = await a('post', '/api/caixa/receber', { pedido_ids: [p.id], pagamentos: [{ metodo: 'NUKCOIN', valor: 6000, cliente_id: c.id, pin: c.pin }, { metodo: 'TPA', valor: 3000 }] });
+    expect(mais.status).toBe(400); // saldo insuficiente para a parte Nuk-Coin
+    const r = await a('post', '/api/caixa/receber', { pedido_ids: [p.id], pagamentos: [{ metodo: 'NUKCOIN', valor: 5000, cliente_id: c.id, pin: c.pin }, { metodo: 'TPA', valor: 4000 }] });
+    expect(r.status).toBe(200);
+    expect(r.body.saldo_restante).toBe(0);
+    expect(await num(`SELECT nukcoin_saldo AS v FROM clientes WHERE id=$1`, [c.id])).toBe(0);
+    expect(await num(`SELECT nukcoin_pago AS v FROM pedidos WHERE id=$1`, [p.id])).toBe(5000);
+  });
+
   test('fechar: calcula esperado e diferença; depois tudo recusa até novo turno; histórico guarda', async () => {
     const antes = (await a('get', '/api/caixa')).body.resumo.dinheiro_esperado;
     expect((await a('post', '/api/caixa/fechar', {})).status).toBe(400);

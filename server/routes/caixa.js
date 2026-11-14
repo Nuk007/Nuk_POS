@@ -122,18 +122,20 @@ router.get('/por-receber', authMiddleware, h(async (req, res) => res.json(await 
  * @openapi
  * /api/caixa/receber:
  *   post:
- *     summary: Recebe o pagamento de um ou mais pedidos fechados (dinheiro, TPA, transferência, Express, Nuk-Coin com PIN ou cartão de consumo)
+ *     summary: Recebe o pagamento de um ou mais pedidos fechados, com uma forma ou várias (pagamento misto)
+ *     description: "Uma forma: `metodo` (+ pin/cliente_id, codigo_cartao ou valor_entregue). Várias: `pagamentos` = [{ metodo, valor, pin?, cliente_id?, codigo_cartao?, valor_entregue? }], até 4, soma igual ao total, Dinheiro/Nuk-Coin/Cartão no máximo uma vez cada."
  *     tags: [Caixa]
  *     security: [{ bearerAuth: [] }]
- *     requestBody: { content: { application/json: { schema: { type: object, required: [pedido_ids, metodo] } } } }
- *     responses: { 200: { description: "{ total, metodo, pedidos, troco, saldo_restante }" }, 400: { description: Dados ou saldo inválidos }, 403: { description: PIN inválido }, 409: { description: Caixa fechado ou pedido já recebido } }
+ *     requestBody: { content: { application/json: { schema: { type: object, required: [pedido_ids] } } } }
+ *     responses: { 200: { description: "{ total, metodo (MISTO se várias), pagamentos, pedidos, troco, saldo_restante }" }, 400: { description: Dados ou saldo inválidos }, 403: { description: PIN inválido }, 409: { description: Caixa fechado ou pedido já recebido } }
  */
 router.post('/receber', authMiddleware, h(async (req, res) => {
   const ids = Array.isArray(req.body.pedido_ids) ? req.body.pedido_ids : [];
   if (ids.some(i => !isUUID(i))) return res.status(400).json({ erro: 'pedido_ids inválidos' });
   if (req.body.cliente_id && !isUUID(req.body.cliente_id)) return res.status(400).json({ erro: 'cliente_id inválido' });
-  const { metodo, pin, cliente_id, codigo_cartao, valor_entregue } = req.body;
-  res.json(await svc.receber({ pedido_ids: ids, metodo, pin, cliente_id, codigo_cartao, valor_entregue, ...base(req) }));
+  const { metodo, pin, cliente_id, codigo_cartao, valor_entregue, pagamentos } = req.body;
+  if (Array.isArray(pagamentos) && pagamentos.some(x => x && x.cliente_id && !isUUID(x.cliente_id))) return res.status(400).json({ erro: 'cliente_id inválido' });
+  res.json(await svc.receber({ pedido_ids: ids, metodo, pin, cliente_id, codigo_cartao, valor_entregue, pagamentos, ...base(req) }));
 }));
 
 module.exports = router;

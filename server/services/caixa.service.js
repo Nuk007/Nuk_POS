@@ -14,6 +14,7 @@ const ocupacao = require('./ocupacao.service');
 const METODOS_BALCAO = ['CASH', 'TPA', 'TRANSFERENCIA', 'EXPRESS'];
 const METODOS_RECEBIMENTO = [...METODOS_BALCAO, 'NUKCOIN', 'CARTAO'];
 const CARTAO_MIN = 1000, CARTAO_MAX = 500000;
+const MAX_PARCELAS = 4; // pagamento misto: até 4 formas numa só conta
 const arred = n => Math.round(n * 100) / 100;
 const T = tenantId => tenantId || null;
 const ALFABETO = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sem 0/O/1/I para não haver enganos ao ler o cartão
@@ -168,12 +169,54 @@ async function porReceber({ tenantId }) {
   return r.rows;
 }
 
-async function receber({ tenantId, userId, pedido_ids, metodo, pin, cliente_id, codigo_cartao, valor_entregue }) {
+/**
+ * Converte o pedido de recebimento em parcelas. Formato novo: `pagamentos: [{ metodo, valor, ... }]` (pagamento misto,
+ * ex.: parte em dinheiro e o resto no TPA). Formato antigo (um só `metodo`) continua aceite: uma parcela pelo total.
+ */
+function parcelasDe({ pagamentos, metodo, pin, cliente_id, codigo_cartao, valor_entregue }, totalCent) {
+  if (pagamentos === undefined || pagamentos === null) {
+    return [{ metodo: validarMetodo(metodo, METODOS_RECEBIMENTO), cent: totalCent, pin, cliente_id, codigo_cartao, valor_entregue }];
+  }
+  if (!Array.isArray(pagamentos) || !pagamentos.length || pagamentos.length > MAX_PARCELAS) throw erro(400, `Indique de 1 a ${MAX_PARCELAS} formas de pagamento`);
+  const parcelas = pagamentos.map(x => {
+    const m = validarMetodo(x && x.metodo, METODOS_RECEBIMENTO);
+    const c = Math.round(Number(x.valor) * 100);
+    if (!Number.isFinite(c) || c <= 0) throw erro(400, 'Cada forma de pagamento precisa de um valor positivo');
+    return { metodo: m, cent: c, pin: x.pin, cliente_id: x.cliente_id, codigo_cartao: x.codigo_cartao, valor_entregue: x.valor_entregue };
+  });
+  for (const m of ['CASH', 'NUKCOIN', 'CARTAO']) {
+    if (parcelas.filter(x => x.metodo === m).length > 1) throw erro(400, 'Cada forma de pagamento só pode aparecer uma vez');
+  }
+  const soma = parcelas.reduce((a, x) => a + x.cent, 0);
+  if (soma !== totalCent) throw erro(400, `A soma das formas de pagamento (${(soma / 100).toFixed(2)} Kz) tem de ser igual ao total (${(totalCent / 100).toFixed(2)} Kz)`, { total: totalCent / 100, soma: soma / 100 });
+  return parcelas;
+}
+
+/** Reparte as parcelas pelos pedidos, por ordem (em cêntimos): devolve [{ pedido, parcela, cent }]. */
+function repartir(pedidos, parcelas) {
+  const out = [];
+  const resto = parcelas.map(x => x.cent);
+  let k = 0;
+  for (const p of pedidos) {
+    let falta = Math.round(parseFloat(p.total) * 100);
+    while (falta > 0 && k < parcelas.length) {
+      const v = Math.min(falta, resto[k]);
+      if (v > 0) out.push({ pedido: p, parcela: parcelas[k], cent: v });
+      falta -= v; resto[k] -= v;
+      if (resto[k] === 0) k++;
+    }
+  }
+  return out;
+}
+
+async function receber({ tenantId, userId, pedido_ids, ...dados }) {
   if (!Array.isArray(pedido_ids) || !pedido_ids.length || pedido_ids.length > 50) throw erro(400, 'Escolha os pedidos a receber (até 50)');
   const ids = [...new Set(pedido_ids)];
-  const m = validarMetodo(metodo, METODOS_RECEBIMENTO);
+  // Validação do formato antes de abrir a transacção
+  if (dados.pagamentos === undefined || dados.pagamentos === null) validarMetodo(dados.metodo, METODOS_RECEBIMENTO);
 
   let libertas = { mesas: [], quartos: [] };
+  let nukcoinCliente = null;
   const out = await withTx(async db => {
     const s = await exigirSessao(db, tenantId);
     const r = await db.query(`SELECT * FROM pedidos WHERE id = ANY($1::uuid[]) AND tenant_id = $2 ORDER BY id FOR UPDATE`, [ids, tenantId]);
@@ -183,57 +226,68 @@ async function receber({ tenantId, userId, pedido_ids, metodo, pin, cliente_id, 
       if (p.pago_em) throw erro(409, 'Algum dos pedidos já foi recebido');
     }
     const pedidos = r.rows;
-    const total = arred(pedidos.reduce((a, p) => a + parseFloat(p.total), 0));
-    let troco = null, cliId = null, saldo = null;
+    const totalCent = pedidos.reduce((a, p) => a + Math.round(parseFloat(p.total) * 100), 0);
+    const parcelas = parcelasDe(dados, totalCent);
+    let troco = null, saldo = null, cliId = null;
 
-    if (m === 'CASH' && valor_entregue !== undefined && valor_entregue !== '') {
-      const e = Number(valor_entregue);
-      if (!Number.isFinite(e) || e < total) throw erro(400, 'O valor entregue é inferior ao total');
-      troco = arred(e - total);
-    }
-    if (m === 'NUKCOIN') {
-      cliId = cliente_id || (pedidos.every(p => p.cliente_id && p.cliente_id === pedidos[0].cliente_id) ? pedidos[0].cliente_id : null);
-      if (!cliId) throw erro(400, 'Indique o cliente que paga com Nuk-Coin');
-      try { await portal.exigirPin(db, tenantId, cliId, pin); }
-      catch (e) { throw erro(403, e.statusCode === 401 ? 'PIN inválido' : e.message); } // 403 e não 401: o POS faria logout
-      const c = await db.query(`SELECT nukcoin_saldo FROM clientes WHERE id = $1 AND tenant_id = $2 FOR UPDATE`, [cliId, tenantId]);
-      let atual = parseFloat(c.rows[0].nukcoin_saldo);
-      if (atual < total) throw erro(400, 'Saldo Nuk-Coin insuficiente', { saldo_atual: atual, total_necessario: total });
-      for (const p of pedidos) {
-        const v = parseFloat(p.total), depois = arred(atual - v);
-        await db.query(`INSERT INTO movimentos_nukcoin (cliente_id, tipo, valor, saldo_antes, saldo_depois, descricao, pedido_id) VALUES ($1,'CONSUMO',$2,$3,$4,'Pagamento no caixa',$5)`, [cliId, v, atual, depois, p.id]);
-        await db.query(`UPDATE pedidos SET nukcoin_pago = $1 WHERE id = $2`, [v, p.id]);
-        atual = depois;
+    for (const x of parcelas) {
+      const valor = x.cent / 100;
+      if (x.metodo === 'CASH' && x.valor_entregue !== undefined && x.valor_entregue !== null && x.valor_entregue !== '') {
+        const e = Number(x.valor_entregue);
+        if (!Number.isFinite(e) || e < valor) throw erro(400, parcelas.length > 1 ? 'O valor entregue é inferior à parte em dinheiro' : 'O valor entregue é inferior ao total');
+        troco = arred(e - valor);
       }
-      await db.query(`UPDATE clientes SET nukcoin_saldo = $1 WHERE id = $2`, [atual, cliId]);
-      saldo = atual;
-    }
-    let cartaoId = null;
-    if (m === 'CARTAO') {
-      const c = await db.query(`SELECT id, saldo FROM cartoes_consumo WHERE tenant_id = $1 AND codigo = $2 FOR UPDATE`, [tenantId, normCodigo(codigo_cartao)]);
-      if (!c.rows[0]) throw erro(404, 'Cartão não encontrado');
-      cartaoId = c.rows[0].id;
-      let atual = parseFloat(c.rows[0].saldo);
-      if (atual < total) throw erro(400, 'Saldo do cartão insuficiente', { saldo_atual: atual, total_necessario: total });
-      for (const p of pedidos) {
-        const v = parseFloat(p.total), depois = arred(atual - v);
-        await db.query(`INSERT INTO movimentos_cartao (cartao_id, tipo, valor, saldo_antes, saldo_depois, pedido_id) VALUES ($1,'CONSUMO',$2,$3,$4,$5)`, [cartaoId, v, atual, depois, p.id]);
-        atual = depois;
+      if (x.metodo === 'NUKCOIN') {
+        cliId = x.cliente_id || (pedidos.every(p => p.cliente_id && p.cliente_id === pedidos[0].cliente_id) ? pedidos[0].cliente_id : null);
+        if (!cliId) throw erro(400, 'Indique o cliente que paga com Nuk-Coin');
+        try { await portal.exigirPin(db, tenantId, cliId, x.pin); }
+        catch (e) { throw erro(403, e.statusCode === 401 ? 'PIN inválido' : e.message); } // 403 e não 401: o POS faria logout
+        const c = await db.query(`SELECT nukcoin_saldo FROM clientes WHERE id = $1 AND tenant_id = $2 FOR UPDATE`, [cliId, tenantId]);
+        const atual = parseFloat(c.rows[0].nukcoin_saldo);
+        if (atual < valor) throw erro(400, 'Saldo Nuk-Coin insuficiente', { saldo_atual: atual, total_necessario: valor });
+        x.saldo = atual; x.clienteId = cliId;
       }
-      await db.query(`UPDATE cartoes_consumo SET saldo = $1 WHERE id = $2`, [atual, cartaoId]);
-      saldo = atual;
+      if (x.metodo === 'CARTAO') {
+        const c = await db.query(`SELECT id, saldo FROM cartoes_consumo WHERE tenant_id = $1 AND codigo = $2 FOR UPDATE`, [tenantId, normCodigo(x.codigo_cartao)]);
+        if (!c.rows[0]) throw erro(404, 'Cartão não encontrado');
+        const atual = parseFloat(c.rows[0].saldo);
+        if (atual < valor) throw erro(400, 'Saldo do cartão insuficiente', { saldo_atual: atual, total_necessario: valor });
+        x.saldo = atual; x.cartaoId = c.rows[0].id;
+      }
     }
-    for (const p of pedidos) {
-      await registar(db, { tenantId, sessaoId: s.id, tipo: 'RECEBIMENTO', metodo: m, valor: parseFloat(p.total), descricao: 'Recebimento de pedido', pedidoId: p.id, clienteId: cliId || p.cliente_id, cartaoId, userId });
+
+    // Cada fatia (pedido × forma de pagamento) gera o seu movimento no livro-razão do caixa
+    for (const { pedido: p, parcela: x, cent } of repartir(pedidos, parcelas)) {
+      const v = cent / 100;
+      if (x.metodo === 'NUKCOIN') {
+        const depois = arred(x.saldo - v);
+        await db.query(`INSERT INTO movimentos_nukcoin (cliente_id, tipo, valor, saldo_antes, saldo_depois, descricao, pedido_id) VALUES ($1,'CONSUMO',$2,$3,$4,'Pagamento no caixa',$5)`, [x.clienteId, v, x.saldo, depois, p.id]);
+        await db.query(`UPDATE pedidos SET nukcoin_pago = nukcoin_pago + $1 WHERE id = $2`, [v, p.id]);
+        x.saldo = depois;
+      }
+      if (x.metodo === 'CARTAO') {
+        const depois = arred(x.saldo - v);
+        await db.query(`INSERT INTO movimentos_cartao (cartao_id, tipo, valor, saldo_antes, saldo_depois, pedido_id) VALUES ($1,'CONSUMO',$2,$3,$4,$5)`, [x.cartaoId, v, x.saldo, depois, p.id]);
+        x.saldo = depois;
+      }
+      await registar(db, { tenantId, sessaoId: s.id, tipo: 'RECEBIMENTO', metodo: x.metodo, valor: v, descricao: parcelas.length > 1 ? 'Recebimento de pedido (pagamento misto)' : 'Recebimento de pedido', pedidoId: p.id, clienteId: x.clienteId || p.cliente_id, cartaoId: x.cartaoId, userId });
     }
-    await db.query(`UPDATE pedidos SET pago_em = NOW(), pago_metodo = $1, pago_por = $2 WHERE id = ANY($3::uuid[])`, [m, userId || null, ids]);
+    for (const x of parcelas) {
+      if (x.metodo === 'NUKCOIN') { await db.query(`UPDATE clientes SET nukcoin_saldo = $1 WHERE id = $2`, [x.saldo, x.clienteId]); nukcoinCliente = x.clienteId; saldo = x.saldo; }
+      if (x.metodo === 'CARTAO') { await db.query(`UPDATE cartoes_consumo SET saldo = $1 WHERE id = $2`, [x.saldo, x.cartaoId]); if (saldo === null) saldo = x.saldo; }
+    }
+    const metodoFinal = parcelas.length > 1 ? 'MISTO' : parcelas[0].metodo;
+    await db.query(`UPDATE pedidos SET pago_em = NOW(), pago_metodo = $1, pago_por = $2 WHERE id = ANY($3::uuid[])`, [metodoFinal, userId || null, ids]);
     // Pago: a mesa/quarto deixa de estar «em uso» se já não tem outras contas por pagar
     libertas = await ocupacao.libertarAposPagamento(db, tenantId, pedidos);
-    return { total, metodo: m, pedidos: ids.length, troco, saldo_restante: saldo, cliente_id: cliId };
+    return {
+      total: totalCent / 100, metodo: metodoFinal, pedidos: ids.length, troco, saldo_restante: saldo, cliente_id: cliId,
+      pagamentos: parcelas.map(x => ({ metodo: x.metodo, valor: x.cent / 100 })),
+    };
   });
   ocupacao.avisarLibertadas(tenantId, libertas);
   broadcast('caixa_atualizada', {}, tenantId);
-  if (out.cliente_id && m === 'NUKCOIN') broadcast('nukcoin_carregado', { cliente_id: out.cliente_id }, tenantId);
+  if (nukcoinCliente) broadcast('nukcoin_carregado', { cliente_id: nukcoinCliente }, tenantId);
   return out;
 }
 

@@ -150,3 +150,41 @@ describe('Compras pontuais (frontend)', () => {
     expect(ctx._chamadas).toContainEqual(['POST', '/compras/c1/anular', undefined]);
   });
 });
+
+describe('Pagamento misto no Receber mesas', () => {
+  async function abrirConta() {
+    const ctx = carregar({ '/caixa': { aberta: true, sessao, resumo, movimentos: [] }, '/caixa/por-receber': [{ id: 'p1', total: '10000', mesa_numero: 'M01', itens: [] }], '/caixa/receber': { total: 10000, pagamentos: [{ metodo: 'CASH', valor: 4000 }, { metodo: 'TPA', valor: 6000 }] } });
+    await ctx.modulo_recebimentos({ innerHTML: '' });
+    ctx.modalReceber(0);
+    return ctx;
+  }
+
+  test('dividir mostra duas formas, «Resto» completa o total e envia pagamentos', async () => {
+    const ctx = await abrirConta();
+    expect(ctx._modal).toContain('receberMisto()');
+    ctx.receberMisto();
+    const html = ctx._els['rc-misto'].innerHTML;
+    expect(html).toContain('parcelaValor(0,this.value)');
+    expect(html).toContain('parcelaResto(1)');
+    ctx.parcelaValor(0, '4000');
+    expect(ctx._els['rc-falta'].innerHTML).toContain('6000');
+    ctx.parcelaResto(1);
+    expect(ctx._els['rc-falta'].innerHTML).toContain('Soma certa');
+    ctx._els['rc-entregue'].value = '5000';
+    ctx.receberTroco();
+    expect(ctx._els['rc-troco'].textContent).toContain('1000');
+    await ctx.confirmarReceber();
+    const env = ctx._chamadas.find(c => c[1] === '/caixa/receber');
+    expect(env[2]).toEqual({ pedido_ids: ['p1'], pagamentos: [{ metodo: 'CASH', valor: 4000, valor_entregue: 5000 }, { metodo: 'TPA', valor: 6000 }] });
+  });
+
+  test('não envia com a soma errada', async () => {
+    const ctx = await abrirConta();
+    ctx.receberMisto();
+    ctx.parcelaValor(0, '3000');
+    ctx.parcelaValor(1, '3000');
+    await ctx.confirmarReceber();
+    expect(ctx._chamadas.find(c => c[1] === '/caixa/receber')).toBeUndefined();
+    expect(ctx._toast[1]).toBe('erro');
+  });
+});

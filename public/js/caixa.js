@@ -192,11 +192,14 @@ async function modulo_recebimentos(el) {
 function modalReceber(i) {
   const c = window._contas[i]; if (!c) return;
   const total = c.pedidos.reduce((a, p) => a + parseFloat(p.total), 0);
-  window._contaActual = { i, total };
+  window._contaActual = { i, total, misto: false };
+  window._parcelas = [];
   abrirModal(`Receber · ${c.titulo}`, `
     <p style="margin-bottom:.6rem;font-size:1.2rem">Total: <b class="texto-primario">${formatarMoeda(total)}</b></p>
-    <div class="campo"><label>Forma de pagamento</label><select id="rc-metodo" data-on-change="receberMetodo(this.value)">${optsFormas(FORMAS_RECEBER)}</select></div>
-    <div id="rc-cash" class="campo"><label>Valor entregue (Kz, opcional para calcular o troco)</label><input id="rc-entregue" type="number" min="0" data-on-input="receberTroco()"><div id="rc-troco" class="muted texto-pequeno"></div></div>
+    <div id="rc-simples" class="campo"><label>Forma de pagamento</label><select id="rc-metodo" data-on-change="receberMetodo(this.value)">${optsFormas(FORMAS_RECEBER)}</select>
+      <button class="btn-secundario" style="margin-top:.45rem;padding:.3rem .7rem;font-size:.8rem" data-on-click="receberMisto()">Dividir por várias formas de pagamento</button></div>
+    <div id="rc-misto" style="display:none"></div>
+    <div id="rc-cash" class="campo"><label id="rc-cash-rot">Valor entregue (Kz, opcional para calcular o troco)</label><input id="rc-entregue" type="number" min="0" data-on-input="receberTroco()"><div id="rc-troco" class="muted texto-pequeno"></div></div>
     <div id="rc-pin" class="campo" style="display:none"><label>PIN do cliente (4 dígitos)</label><input id="rc-pin-v" type="password" inputmode="numeric" maxlength="4" autocomplete="off"></div>
     <div id="rc-cartao" class="campo" style="display:none"><label>Código do cartão de consumo</label><input id="rc-codigo" placeholder="CCXXXXXXXX"></div>
     <button class="btn-primario btn-bloco" data-on-click="confirmarReceber()">Confirmar recebimento</button>`);
@@ -206,22 +209,95 @@ function receberMetodo(m) {
   document.getElementById('rc-pin').style.display = m === 'NUKCOIN' ? '' : 'none';
   document.getElementById('rc-cartao').style.display = m === 'CARTAO' ? '' : 'none';
 }
+
+// ── Pagamento misto (ex.: parte em dinheiro, resto no TPA) ──
+const MAX_PARCELAS = 4;
+const cent = v => Math.round((parseFloat(v) || 0) * 100);
+function receberMisto() {
+  window._contaActual.misto = true;
+  window._parcelas = [{ metodo: 'CASH', valor: '' }, { metodo: 'TPA', valor: '' }];
+  document.getElementById('rc-simples').style.display = 'none';
+  document.getElementById('rc-misto').style.display = '';
+  desenharParcelas();
+}
+function desenharParcelas() {
+  const ps = window._parcelas;
+  const usados = ps.map(x => x.metodo);
+  document.getElementById('rc-misto').innerHTML = `
+    <label class="negrito">Formas de pagamento</label>
+    ${ps.map((x, i) => `<div style="display:flex;gap:.4rem;align-items:center;margin:.35rem 0">
+      <select style="flex:1.2" data-on-change="parcelaMetodo(${i},this.value)">${optsFormas(FORMAS_RECEBER, x.metodo)}</select>
+      <input id="rc-par-${i}" type="number" min="0" style="flex:1" placeholder="Kz" value="${esc(x.valor)}" data-on-input="parcelaValor(${i},this.value)">
+      <button class="btn-secundario" style="padding:.3rem .5rem;font-size:.75rem" data-on-click="parcelaResto(${i})" title="Preencher com o que falta">Resto</button>
+      ${ps.length > 2 ? `<button class="btn-secundario" style="padding:.3rem .5rem;font-size:.75rem" data-on-click="parcelaRemover(${i})" title="Retirar">✕</button>` : ''}
+    </div>`).join('')}
+    ${ps.length < MAX_PARCELAS ? '<button class="btn-secundario" style="padding:.3rem .7rem;font-size:.8rem" data-on-click="parcelaAdicionar()">+ Outra forma</button>' : ''}
+    <div id="rc-falta" class="texto-pequeno" style="margin:.5rem 0 .3rem"></div>`;
+  document.getElementById('rc-cash').style.display = usados.includes('CASH') ? '' : 'none';
+  document.getElementById('rc-cash-rot').textContent = 'Dinheiro entregue pelo cliente (Kz, opcional para calcular o troco da parte em dinheiro)';
+  document.getElementById('rc-pin').style.display = usados.includes('NUKCOIN') ? '' : 'none';
+  document.getElementById('rc-cartao').style.display = usados.includes('CARTAO') ? '' : 'none';
+  actualizarFalta();
+}
+function parcelaMetodo(i, m) { window._parcelas[i].metodo = m; desenharParcelas(); }
+function parcelaValor(i, v) { window._parcelas[i].valor = v; actualizarFalta(); }
+function parcelaAdicionar() {
+  if (window._parcelas.length >= MAX_PARCELAS) return;
+  const livre = Object.keys(FORMAS_RECEBER).find(m => !window._parcelas.some(x => x.metodo === m)) || 'TPA';
+  window._parcelas.push({ metodo: livre, valor: '' });
+  desenharParcelas();
+}
+function parcelaRemover(i) { if (window._parcelas.length > 2) { window._parcelas.splice(i, 1); desenharParcelas(); } }
+function faltaCent() {
+  return cent(window._contaActual.total) - window._parcelas.reduce((a, x) => a + cent(x.valor), 0);
+}
+function parcelaResto(i) {
+  const novo = (cent(window._parcelas[i].valor) + faltaCent()) / 100;
+  if (novo <= 0) return;
+  window._parcelas[i].valor = String(novo);
+  const inp = document.getElementById(`rc-par-${i}`); if (inp) inp.value = String(novo);
+  actualizarFalta();
+}
+function actualizarFalta() {
+  const f = faltaCent(), el = document.getElementById('rc-falta');
+  if (!el) return;
+  el.innerHTML = f === 0 ? '<span style="color:var(--c-success)">✓ Soma certa</span>'
+    : f > 0 ? `Falta <b>${formatarMoeda(f / 100)}</b>` : `<span style="color:var(--c-danger)">A soma passa o total em ${formatarMoeda(-f / 100)}</span>`;
+  receberTroco();
+}
 function receberTroco() {
   const e = parseFloat(document.getElementById('rc-entregue').value);
-  const t = window._contaActual.total;
-  document.getElementById('rc-troco').textContent = Number.isFinite(e) ? (e >= t ? `Troco: ${formatarMoeda(e - t)}` : 'Valor inferior ao total') : '';
+  const a = window._contaActual;
+  const alvo = a.misto ? (window._parcelas.find(x => x.metodo === 'CASH') || {}).valor : a.total;
+  const t = parseFloat(alvo) || 0;
+  document.getElementById('rc-troco').textContent = Number.isFinite(e) ? (e >= t ? `Troco: ${formatarMoeda(e - t)}` : (a.misto ? 'Valor inferior à parte em dinheiro' : 'Valor inferior ao total')) : '';
 }
 async function confirmarReceber() {
   const c = window._contas[window._contaActual.i];
-  const metodo = document.getElementById('rc-metodo').value;
-  const corpo = { pedido_ids: c.pedidos.map(p => p.id), metodo };
-  if (metodo === 'CASH') { const e = document.getElementById('rc-entregue').value; if (e !== '') corpo.valor_entregue = parseFloat(e); }
-  if (metodo === 'NUKCOIN') { corpo.pin = document.getElementById('rc-pin-v').value; const cli = c.pedidos.find(p => p.cliente_id); if (cli) corpo.cliente_id = cli.cliente_id; }
-  if (metodo === 'CARTAO') corpo.codigo_cartao = document.getElementById('rc-codigo').value;
+  const corpo = { pedido_ids: c.pedidos.map(p => p.id) };
+  const cli = c.pedidos.find(p => p.cliente_id);
+  if (window._contaActual.misto) {
+    if (faltaCent() !== 0) { toast('A soma das formas de pagamento tem de ser igual ao total', 'erro'); return; }
+    if (window._parcelas.some(x => cent(x.valor) <= 0)) { toast('Indique o valor de cada forma de pagamento (ou retire-a)', 'erro'); return; }
+    corpo.pagamentos = window._parcelas.map(x => {
+      const p = { metodo: x.metodo, valor: cent(x.valor) / 100 };
+      if (x.metodo === 'CASH') { const e = document.getElementById('rc-entregue').value; if (e !== '') p.valor_entregue = parseFloat(e); }
+      if (x.metodo === 'NUKCOIN') { p.pin = document.getElementById('rc-pin-v').value; if (cli) p.cliente_id = cli.cliente_id; }
+      if (x.metodo === 'CARTAO') p.codigo_cartao = document.getElementById('rc-codigo').value;
+      return p;
+    });
+  } else {
+    const metodo = document.getElementById('rc-metodo').value;
+    corpo.metodo = metodo;
+    if (metodo === 'CASH') { const e = document.getElementById('rc-entregue').value; if (e !== '') corpo.valor_entregue = parseFloat(e); }
+    if (metodo === 'NUKCOIN') { corpo.pin = document.getElementById('rc-pin-v').value; if (cli) corpo.cliente_id = cli.cliente_id; }
+    if (metodo === 'CARTAO') corpo.codigo_cartao = document.getElementById('rc-codigo').value;
+  }
   try {
     const r = await api('POST', '/caixa/receber', corpo);
     fecharModal();
-    toast(`Recebido ${formatarMoeda(r.total)}` + (r.troco ? ` · troco ${formatarMoeda(r.troco)}` : '') + (r.saldo_restante !== null && r.saldo_restante !== undefined ? ` · saldo ${formatarMoeda(r.saldo_restante)}` : ''), 'sucesso', 7000);
+    const formas = r.pagamentos && r.pagamentos.length > 1 ? ` (${r.pagamentos.map(x => `${FORMAS_RECEBER[x.metodo] || x.metodo} ${formatarMoeda(x.valor)}`).join(' + ')})` : '';
+    toast(`Recebido ${formatarMoeda(r.total)}${formas}` + (r.troco ? ` · troco ${formatarMoeda(r.troco)}` : '') + (r.saldo_restante !== null && r.saldo_restante !== undefined ? ` · saldo ${formatarMoeda(r.saldo_restante)}` : ''), 'sucesso', 7000);
     carregarModulo('recebimentos');
   } catch (e) { toast(e.message, 'erro'); }
 }
