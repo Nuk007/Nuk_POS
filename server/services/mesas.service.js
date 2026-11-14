@@ -55,4 +55,29 @@ async function contar({ tenantId }) {
   return { quantidade: r.rows[0].n };
 }
 
-module.exports = { definirQuantidade, contar, MAX_MESAS };
+const ESTADOS = ['LIVRE', 'OCUPADA', 'RESERVADA', 'LIMPEZA', 'MANUTENCAO'];
+
+async function listar({ tenantId }) {
+  const r = await pool.query(
+    `SELECT m.*, COUNT(p.id) FILTER (WHERE p.status IN ('ABERTO','EM_PREPARO','PRONTO')) AS pedidos_ativos
+       FROM mesas m LEFT JOIN pedidos p ON p.mesa_id = m.id
+      WHERE ($1::uuid IS NULL OR m.tenant_id = $1)
+      GROUP BY m.id ORDER BY m.numero`, [tenantId || null]);
+  return r.rows;
+}
+
+/** Regra do dono: mesa com conta por pagar fica em uso até o Caixa receber. */
+async function mudarEstado({ tenantId, id, status }) {
+  if (!ESTADOS.includes(status)) throw erro(400, `status inválido. Valores: ${ESTADOS.join(', ')}`);
+  return withTx(async db => {
+    const m = await db.query(`SELECT id FROM mesas WHERE id = $1 AND ($2::uuid IS NULL OR tenant_id = $2) FOR UPDATE`, [id, tenantId || null]);
+    if (!m.rows[0]) throw erro(404, 'Mesa não encontrada');
+    if (status === 'LIVRE' && await require('./ocupacao.service').mesaTemContaPorPagar(db, id)) {
+      throw erro(409, 'A mesa tem uma conta por pagar: só fica livre depois de paga no Caixa.', { codigo: 'CONTA_POR_PAGAR' });
+    }
+    const r = await db.query(`UPDATE mesas SET status = $1, ultima_atividade = NOW() WHERE id = $2 RETURNING *`, [status, id]);
+    return r.rows[0];
+  });
+}
+
+module.exports = { definirQuantidade, contar, listar, mudarEstado, ESTADOS, MAX_MESAS };

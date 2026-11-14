@@ -98,7 +98,7 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 - `GET /api/solicitacoes-hospedagem` (antigo) filtra por `clientes.tenant_id`, por isso não lista pedidos de convidados; usar `solicitacoes_portal`.
 - @openapi parcial no portal (faltam hospedagem, perfil, eventos).
 - Testar a UI em navegador real (Playwright) ainda não faz parte do CI.
-- Rotas ainda sem camada de serviço: reservas (prioritária), clientes, mesas, chamadas.
+- Camada de serviço completa (14/11/2026): reservas, clientes, mesas e chamadas passaram para `reservas.service.js`, `clientes.service.js`, `mesas.service.js` (`listar`, `mudarEstado` em transacção) e `chamadas.service.js`; mudança de estado da reserva e da mesa com `FOR UPDATE`; pesquisa de clientes literal (`%`/`_` escapados). Teste: `tests/integration/camada-servicos.int.test.js`. Nos testes unitários com `withTx`, responder no `mockClient` por SQL (`mockImplementation`) e fazer `mockReset` no fim: `clearAllMocks` não limpa as filas `mockResolvedValueOnce`.
 - Cobertura unitária ~59% → meta 75%+.
 - Rate limiters em memória → Redis se houver multi-instância.
 - Certificação AGT: base feita (ver «Módulo fiscal»); faltam assinatura RSA, SAF-T (AO), envio em tempo real e QR. Os PDFs actuais não têm validade fiscal.

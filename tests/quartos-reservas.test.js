@@ -198,34 +198,35 @@ describe('GET /api/reservas', () => {
 // ─── PATCH /api/reservas/:id/status ─────────────────────────────────────────
 
 describe('PATCH /api/reservas/:id/status', () => {
-  it('faz CHECKIN na reserva', async () => {
-    mockPool.query.mockResolvedValueOnce({ rows: [reservaRow({ status: 'CHECKIN' })] });
+  // a mudança corre numa transacção: respostas do cliente conforme o SQL
+  const porSql = (mapa) => mockClient.query.mockImplementation(async (sql) => {
+    for (const [chave, rows] of mapa) if (sql.includes(chave)) return { rows };
+    return { rows: [] };
+  });
+  afterEach(() => mockClient.query.mockReset());
 
+  it('faz CHECKIN na reserva', async () => {
+    porSql([['FROM reservas rv JOIN quartos', [{ id: RESERVA_ID, status: 'CONFIRMADA', quarto_id: QUARTO_ID }]],
+      ['UPDATE reservas', [reservaRow({ status: 'CHECKIN' })]]]);
     const res = await request(app)
       .patch(`/api/reservas/${RESERVA_ID}/status`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ status: 'CHECKIN' });
-
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('CHECKIN');
+    expect(mockClient.query.mock.calls.some(c => c[0].includes('UPDATE quartos'))).toBe(false);
   });
 
   it('faz CHECKOUT e liberta o quarto (sem outras reservas)', async () => {
-    // UPDATE reserva → reserva actualizada
-    // SELECT outras reservas activas → nenhuma
-    // UPDATE quartos SET status=LIMPEZA
-    mockPool.query
-      .mockResolvedValueOnce({ rows: [reservaRow({ status: 'CHECKOUT', quarto_id: QUARTO_ID })] })
-      .mockResolvedValueOnce({ rows: [] })   // sem outras reservas activas
-      .mockResolvedValueOnce({ rows: [] });  // UPDATE quartos LIMPEZA
-
+    porSql([['FROM reservas rv JOIN quartos', [{ id: RESERVA_ID, status: 'CHECKIN', quarto_id: QUARTO_ID }]],
+      ['UPDATE reservas', [reservaRow({ status: 'CHECKOUT', quarto_id: QUARTO_ID })]]]);
     const res = await request(app)
       .patch(`/api/reservas/${RESERVA_ID}/status`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ status: 'CHECKOUT' });
-
     expect(res.status).toBe(200);
-    expect(mockPool.query).toHaveBeenCalledTimes(3);
+    expect(mockClient.query.mock.calls.some(c => c[0].includes("SET status = 'LIMPEZA'"))).toBe(true);
+    expect(mockClient.query.mock.calls.map(c => c[0])).toContain('COMMIT');
   });
 
   it('retorna 400 com status inválido', async () => {
@@ -247,7 +248,7 @@ describe('PATCH /api/reservas/:id/status', () => {
   });
 
   it('retorna 404 quando reserva não existe', async () => {
-    mockPool.query.mockResolvedValueOnce({ rows: [] });
+    porSql([]);
 
     const res = await request(app)
       .patch(`/api/reservas/${RESERVA_ID}/status`)

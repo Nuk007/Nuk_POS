@@ -1,29 +1,22 @@
 'use strict';
 const express = require('express');
 const router = express.Router();
-const { pool } = require('../db');
 const { authMiddleware, requerNivel, isUUID } = require('../middleware/auth');
 const { broadcast } = require('../middleware/broadcast');
 const { exigirModulo } = require('../middleware/modulos');
 const svc = require('../services/mesas.service');
-const ocupacao = require('../services/ocupacao.service');
 
-// GET /api/mesas
-router.get('/', authMiddleware, async (req, res) => {
-  const tenantId = req.tenantId;
-  try {
-    const r = await pool.query(
-      `SELECT m.*, COUNT(p.id) FILTER (WHERE p.status IN ('ABERTO','EM_PREPARO','PRONTO')) as pedidos_ativos
-       FROM mesas m
-       LEFT JOIN pedidos p ON p.mesa_id = m.id
-       WHERE ($1::uuid IS NULL OR m.tenant_id = $1)
-       GROUP BY m.id ORDER BY m.numero`,
-      [tenantId || null]
-    );
-    res.json(r.rows);
-  } catch (e) {
-    res.status(500).json({ erro: 'Erro interno do servidor' });
-  }
+/**
+ * @openapi
+ * /api/mesas:
+ *   get:
+ *     summary: Mesas do estabelecimento com o número de pedidos activos
+ *     tags: [Mesas]
+ *     security: [{ bearerAuth: [] }]
+ *     responses: { 200: { description: Lista de mesas } }
+ */
+router.get('/', authMiddleware, async (req, res, next) => {
+  try { res.json(await svc.listar({ tenantId: req.tenantId })); } catch (e) { next(e); }
 });
 
 /**
@@ -57,32 +50,26 @@ router.put('/quantidade', authMiddleware, requerNivel(['ADMIN']), exigirModulo('
   }
 });
 
-// PATCH /api/mesas/:id/status
-router.patch('/:id/status', authMiddleware, async (req, res) => {
-  const { id } = req.params;
-  if (!isUUID(id)) return res.status(400).json({ erro: 'id inválido' });
-  const ESTADOS = ['LIVRE', 'OCUPADA', 'RESERVADA', 'LIMPEZA', 'MANUTENCAO'];
-  const { status } = req.body;
-  if (!ESTADOS.includes(status)) {
-    return res.status(400).json({ erro: `status inválido. Valores: ${ESTADOS.join(', ')}` });
-  }
-  const tenantId = req.tenantId;
+/**
+ * @openapi
+ * /api/mesas/{id}/status:
+ *   patch:
+ *     summary: Muda o estado da mesa (LIVRE só sem conta por pagar)
+ *     tags: [Mesas]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ in: path, name: id, required: true, schema: { type: string, format: uuid } }]
+ *     requestBody: { content: { application/json: { schema: { type: object, properties: { status: { type: string, enum: [LIVRE, OCUPADA, RESERVADA, LIMPEZA, MANUTENCAO] } } } } } }
+ *     responses: { 200: { description: Mesa actualizada }, 400: { description: Estado inválido }, 404: { description: Não encontrada }, 409: { description: Conta por pagar } }
+ */
+router.patch('/:id/status', authMiddleware, async (req, res, next) => {
+  if (!isUUID(req.params.id)) return res.status(400).json({ erro: 'id inválido' });
   try {
-    // Regra do dono: mesa com conta por pagar fica em uso até o Caixa receber
-    if (status === 'LIVRE' && await ocupacao.mesaTemContaPorPagar(pool, id)) {
-      return res.status(409).json({ erro: 'A mesa tem uma conta por pagar: só fica livre depois de paga no Caixa.', codigo: 'CONTA_POR_PAGAR' });
-    }
-    const r = await pool.query(
-      `UPDATE mesas SET status = $1, ultima_atividade = NOW()
-       WHERE id = $2 AND ($3::uuid IS NULL OR tenant_id = $3)
-       RETURNING *`,
-      [status, id, tenantId || null]
-    );
-    if (!r.rows[0]) return res.status(404).json({ erro: 'Mesa não encontrada' });
-    broadcast('mesa_atualizada', r.rows[0], tenantId);
-    res.json(r.rows[0]);
+    const r = await svc.mudarEstado({ tenantId: req.tenantId, id: req.params.id, status: req.body.status });
+    broadcast('mesa_atualizada', r, req.tenantId);
+    res.json(r);
   } catch (e) {
-    res.status(500).json({ erro: 'Erro interno do servidor' });
+    if (e.statusCode) return res.status(e.statusCode).json({ erro: e.message, ...(e.codigo ? { codigo: e.codigo } : {}) });
+    next(e);
   }
 });
 

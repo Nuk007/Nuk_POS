@@ -1,63 +1,43 @@
 'use strict';
+/** Rotas finas das reservas (lógica em services/reservas.service.js). */
 const express = require('express');
 const router = express.Router();
-const { pool } = require('../db');
-const { authMiddleware, requerNivel, validarUUID } = require('../middleware/auth');
+const { authMiddleware, validarUUID } = require('../middleware/auth');
 const { broadcast } = require('../middleware/broadcast');
+const svc = require('../services/reservas.service');
 
-// GET /api/reservas
-router.get('/', authMiddleware, async (req, res) => {
-  const tenantId = req.tenantId;
-  try {
-    const r = await pool.query(
-      `SELECT r.*, q.numero as quarto_numero, q.tipo as quarto_tipo
-       FROM reservas r
-       LEFT JOIN quartos q ON q.id = r.quarto_id
-       WHERE ($1::uuid IS NULL OR q.tenant_id = $1)
-       ORDER BY r.criado_em DESC LIMIT 100`,
-      [tenantId || null]
-    );
-    res.json(r.rows);
-  } catch (e) {
-    console.error('GET /api/reservas:', e.message);
-    res.status(500).json({ erro: 'Erro interno do servidor' });
-  }
+const falha = (res, next, e) => (e.statusCode ? res.status(e.statusCode).json({ erro: e.message }) : next(e));
+
+/**
+ * @openapi
+ * /api/reservas:
+ *   get:
+ *     summary: Últimas 100 reservas do estabelecimento
+ *     tags: [Quartos]
+ *     security: [{ bearerAuth: [] }]
+ *     responses: { 200: { description: Lista de reservas } }
+ */
+router.get('/', authMiddleware, async (req, res, next) => {
+  try { res.json(await svc.listar({ tenantId: req.tenantId })); } catch (e) { falha(res, next, e); }
 });
 
-// PATCH /api/reservas/:id/status
-router.patch('/:id/status', authMiddleware, validarUUID('id'), async (req, res) => {
-  const STATUSES_VALIDOS = ['CONFIRMADA','CHECKIN','CHECKOUT','CANCELADA','NO_SHOW'];
-  const { status } = req.body;
-  if (!STATUSES_VALIDOS.includes(status)) return res.status(400).json({ erro: 'Status inválido' });
-  const tenantId = req.tenantId;
+/**
+ * @openapi
+ * /api/reservas/{id}/status:
+ *   patch:
+ *     summary: Muda o estado da reserva (CHECKOUT manda o quarto para arrumação)
+ *     tags: [Quartos]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ in: path, name: id, required: true, schema: { type: string, format: uuid } }]
+ *     requestBody: { content: { application/json: { schema: { type: object, properties: { status: { type: string, enum: [CONFIRMADA, CHECKIN, CHECKOUT, CANCELADA, NO_SHOW] } } } } } }
+ *     responses: { 200: { description: Reserva actualizada }, 400: { description: Estado inválido }, 404: { description: Não encontrada } }
+ */
+router.patch('/:id/status', authMiddleware, validarUUID('id'), async (req, res, next) => {
   try {
-    const r = await pool.query(
-      `WITH antes AS (SELECT status FROM reservas WHERE id = $2)
-       UPDATE reservas rv SET status=$1, atualizado_em=NOW()
-       FROM quartos q
-       WHERE rv.id=$2 AND rv.quarto_id = q.id
-         AND ($3::uuid IS NULL OR q.tenant_id = $3)
-       RETURNING rv.*, (SELECT status FROM antes) AS status_anterior`,
-      [status, req.params.id, tenantId || null]
-    );
-    if (!r.rows[0]) return res.status(404).json({ erro: 'Reserva não encontrada' });
-
-    // Cancelar uma reserva por iniciar não mexe no quarto; só o fim de uma ocupação o manda arrumar
-    if (status === 'CHECKOUT' || (status === 'CANCELADA' && r.rows[0].status_anterior === 'CHECKIN')) {
-      const outrasReservas = await pool.query(
-        `SELECT id FROM reservas WHERE quarto_id=$1 AND status IN ('CONFIRMADA','CHECKIN') AND id != $2`,
-        [r.rows[0].quarto_id, req.params.id]
-      );
-      if (!outrasReservas.rows.length) {
-        await pool.query(`UPDATE quartos SET status='LIMPEZA', atualizado_em=NOW() WHERE id=$1`, [r.rows[0].quarto_id]);
-      }
-    }
-
-    broadcast('quarto_atualizado', { quarto_id: r.rows[0].quarto_id, status }, tenantId);
-    res.json(r.rows[0]);
-  } catch (e) {
-    res.status(500).json({ erro: 'Erro interno do servidor' });
-  }
+    const r = await svc.mudarEstado({ tenantId: req.tenantId, id: req.params.id, status: req.body.status });
+    broadcast('quarto_atualizado', { quarto_id: r.quarto_id, status: r.status }, req.tenantId);
+    res.json(r);
+  } catch (e) { falha(res, next, e); }
 });
 
 module.exports = router;

@@ -75,8 +75,14 @@ describe('GET /api/mesas', () => {
 // ─── PATCH /api/mesas/:id/status ─────────────────────────────────────────────
 
 describe('PATCH /api/mesas/:id/status', () => {
+  const porSql = (mapa) => mockClient.query.mockImplementation(async (sql) => {
+    for (const [chave, rows] of mapa) if (sql.includes(chave)) return { rows };
+    return { rows: [] };
+  });
+  afterEach(() => mockClient.query.mockReset());
+
   it('actualiza status para OCUPADA', async () => {
-    mockPool.query.mockResolvedValueOnce({ rows: [mesaRow({ status: 'OCUPADA' })] });
+    porSql([['FROM mesas WHERE id', [{ id: MESA_ID }]], ['UPDATE mesas', [mesaRow({ status: 'OCUPADA' })]]]);
 
     const res = await request(app)
       .patch(`/api/mesas/${MESA_ID}/status`)
@@ -107,8 +113,7 @@ describe('PATCH /api/mesas/:id/status', () => {
   });
 
   it('retorna 404 quando mesa não existe', async () => {
-    mockPool.query.mockResolvedValueOnce({ rows: [] }); // sem contas por pagar
-    mockPool.query.mockResolvedValueOnce({ rows: [] }); // UPDATE sem linha
+    porSql([]); // mesa não existe neste estabelecimento
 
     const res = await request(app)
       .patch(`/api/mesas/${MESA_ID}/status`)
