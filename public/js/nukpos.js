@@ -176,6 +176,16 @@ function iniciarWebSocket() {
     if (NUK.moduloActual === 'pedidos') carregarModulo('pedidos');
   });
 
+  // Ecrã de cozinha e bar: refaz-se com qualquer mudança; a sala recebe o aviso «pronto»
+  ['cozinha_atualizada', 'novo_pedido', 'pedido_atualizado'].forEach(ev => NUK.socket.on(ev, () => {
+    if (NUK.moduloActual === 'cozinha' && typeof recarregarCozinha === 'function') recarregarCozinha();
+  }));
+  NUK.socket.on('pedido_pronto', (d) => {
+    if (NUK.moduloActual === 'cozinha') return;
+    const onde = d.mesa ? `Mesa ${d.mesa}` : d.quarto ? `Quarto ${d.quarto}` : ({ BALCAO: 'Balcão', TAKEAWAY: 'Take Away', REMOTA: 'Pedido remoto' }[d.origem] || 'Pedido');
+    toast(`🔔 ${d.posto === 'BAR' ? 'Bebidas prontas' : 'Comida pronta'} — ${onde}`, 'sucesso', 8000);
+  });
+
   NUK.socket.on('mesa_atualizada', () => {
     // não se refaz o ecrã enquanto está aberto o painel de venda da mesa (perdia-se o pedido a meio)
     if (NUK.moduloActual === 'mesas' && !document.getElementById('venda-grelha')) carregarModulo('mesas');
@@ -240,7 +250,7 @@ function carregarModulo(modulo) {
   if (window.innerWidth <= 768) fecharSidebar();
 
   const titulos = {
-    dashboard: '📊 Dashboard', pedidos: '🍽️ Pedidos', mesas: '🪑 Mesa', balcao: '🧾 Balcão', remota: '📱 Remota', takeaway: '🥡 Take Away',
+    dashboard: '📊 Dashboard', pedidos: '🍽️ Pedidos', mesas: '🪑 Mesa', balcao: '🧾 Balcão', remota: '📱 Remota', takeaway: '🥡 Take Away', cozinha: '👨‍🍳 Cozinha e bar',
     quartos: '🛏️ Quartos', caixa: '💵 Caixa do dia', nukcoin: '💜 Nuk-Coin', cartoes: '💳 Cartões de consumo', recebimentos: '🧾 Receber mesas', contas: '📒 Contas correntes', compras: '🛒 Compras pontuais', servicos: '🛠️ Avarias e danos', lazer: '🎯 Lazer', loja: '🛍️ Loja', patrimonio: '🏛️ Património', manutencao: '🗓️ Prazos de manutenção', solicitacoes: '🔔 Solicitações', produtos: '📋 Produtos', stock: '📦 Stock',
     financeiro: '💰 Financeiro', relatorios: '📈 Relatórios', clientes: '👥 Clientes',
     funcionarios: '👨‍💼 Funcionários', assiduidade: '🕒 Assiduidade', configuracoes: '⚙️ Configurações',

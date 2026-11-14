@@ -1719,6 +1719,9 @@ async function modulo_configuracoes(el) {
       </div>
 
       ${(lic('restauracao') || lic('lazer') || lic('loja')) ? cartaoTabelasPreco(window._tabelasPreco) : ''}
+      ${lic('restauracao') ? `<div class="card mt-2" style="max-width:700px"><div class="card-titulo mb-2">👨‍🍳 COZINHA E BAR</div>
+        <div class="muted" style="font-size:.82rem;margin-bottom:.6rem">Escolha em que ecrã aparece cada categoria (Cozinha, Bar ou nenhum).</div>
+        <button class="btn-secundario" data-on-click="modalPostosPreparacao()">Definir postos por categoria</button></div>` : ''}
       ${lic('caixa') ? cartaoContasCorrentes(contasCC, clientesCC) : ''}
 
       <div class="card mt-2" style="max-width:700px">

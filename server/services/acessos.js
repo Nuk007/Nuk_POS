@@ -6,11 +6,11 @@
  *    (o seu limite foi fixado pelo titular) e não cria nem edita administradores.
  * `permissoes` NULL = predefinição do nível (comportamento anterior à delegação).
  */
-const MODULOS = ['dashboard', 'caixa', 'nukcoin', 'cartoes', 'recebimentos', 'contas', 'pedidos', 'mesas', 'balcao', 'remota', 'takeaway', 'produtos', 'quartos', 'solicitacoes', 'lazer', 'loja', 'compras', 'stock', 'servicos', 'manutencao', 'funcionarios', 'assiduidade', 'financeiro', 'relatorios', 'patrimonio', 'clientes', 'configuracoes'];
+const MODULOS = ['dashboard', 'caixa', 'nukcoin', 'cartoes', 'recebimentos', 'contas', 'pedidos', 'mesas', 'balcao', 'remota', 'takeaway', 'cozinha', 'produtos', 'quartos', 'solicitacoes', 'lazer', 'loja', 'compras', 'stock', 'servicos', 'manutencao', 'funcionarios', 'assiduidade', 'financeiro', 'relatorios', 'patrimonio', 'clientes', 'configuracoes'];
 const CAPACIDADES = ['vender_quartos', 'arrumar_quartos']; // limite para atribuir os perfis de quartos
 const TODAS = [...MODULOS, ...CAPACIDADES];
 const ROTULOS = {
-  dashboard: 'Dashboard', pedidos: 'Pedidos', mesas: 'Venda · Mesa', balcao: 'Venda · Balcão', remota: 'Venda · Remota', takeaway: 'Venda · Take Away', quartos: 'Quartos', solicitacoes: 'Solicitações', produtos: 'Menu / Produtos',
+  dashboard: 'Dashboard', pedidos: 'Pedidos', mesas: 'Venda · Mesa', balcao: 'Venda · Balcão', remota: 'Venda · Remota', takeaway: 'Venda · Take Away', cozinha: 'Cozinha e bar', quartos: 'Quartos', solicitacoes: 'Solicitações', produtos: 'Menu / Produtos',
   caixa: 'Caixa do dia', nukcoin: 'Caixa · Nuk-Coin', cartoes: 'Caixa · Cartões de consumo', recebimentos: 'Caixa · Receber mesas', contas: 'Caixa · Contas correntes', lazer: 'Lazer', loja: 'Loja', compras: 'Compras', servicos: 'Avarias e danos', manutencao: 'Prazos de manutenção', patrimonio: 'Património',
   stock: 'Stock', financeiro: 'Financeiro', relatorios: 'Relatórios', clientes: 'Clientes', funcionarios: 'Funcionários', assiduidade: 'Assiduidade', configuracoes: 'Configurações',
   vender_quartos: 'Atribuir «vender quartos»', arrumar_quartos: 'Atribuir «arrumar quartos»',
@@ -36,7 +36,7 @@ const interseccao = (a, b) => a.filter(x => b.includes(x));
  * Dashboard e Configuração existem sempre (a Configuração só mostra o que está contratado).
  */
 const LICENCAS = {
-  restauracao: { rotulo: 'Vendas · Restauração', grupo: 'Vendas', acessos: ['pedidos', 'mesas', 'balcao', 'remota', 'takeaway', 'produtos', 'solicitacoes'], pronto: true },
+  restauracao: { rotulo: 'Vendas · Restauração', grupo: 'Vendas', acessos: ['pedidos', 'mesas', 'balcao', 'remota', 'takeaway', 'cozinha', 'produtos', 'solicitacoes'], pronto: true },
   hospedagem: { rotulo: 'Vendas · Hospedagem', grupo: 'Vendas', acessos: ['quartos', 'solicitacoes'], pronto: true },
   lazer: { rotulo: 'Vendas · Lazer', grupo: 'Vendas', acessos: ['lazer', 'solicitacoes', 'produtos'], pronto: true },
   loja: { rotulo: 'Vendas · Loja', grupo: 'Vendas', acessos: ['loja', 'solicitacoes', 'produtos'], pronto: true },
