@@ -13,7 +13,7 @@ const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { pool } = require('../db');
 const { broadcast } = require('../middleware/broadcast');
-const { withTx, erro } = require('./shared');
+const { withTx, erro, validarChaveIdempotencia } = require('./shared');
 const stock = require('./stock.service');
 
 const TEL_RE = /^9[0-9]{8}$/;
@@ -141,7 +141,22 @@ async function carregar({ tenantId, clienteId, valor, operadorId, aoCarregar }) 
   return { ...out, mensagem: `✅ ${v.toLocaleString('pt-AO')} Kz carregados com sucesso!` };
 }
 
-async function criarPedidoRestaurante({ tenantId, itens, mesa_ref, observacoes, cliente_id, metodo_pagamento, pin }) {
+/** Resposta do portal para um pedido já existente (reenvio da mesma chave). */
+async function respostaPortalExistente(tenantId, chave) {
+  const r = await pool.query(`SELECT id, total, desconto, metodo_pagamento FROM pedidos WHERE tenant_id = $1 AND chave_idempotencia = $2`, [T(tenantId), chave]);
+  const p = r.rows[0];
+  if (!p) return null;
+  return {
+    codigo: codigoPortal(p.id), pedido_id: p.id, total_bruto: arred(parseFloat(p.total) + parseFloat(p.desconto || 0)), desconto: parseFloat(p.desconto || 0),
+    total_final: parseFloat(p.total), metodo_pagamento: p.metodo_pagamento, estrela_ganha: false, estrelas_usadas: 0, nukcoin_saldo_novo: null,
+    repetido: true, mensagem: 'Este pedido já tinha sido recebido.',
+  };
+}
+const codigoPortal = id => 'P' + String(id).replace(/-/g, '').slice(0, 6).toUpperCase();
+
+async function criarPedidoRestaurante({ tenantId, itens, mesa_ref, observacoes, cliente_id, metodo_pagamento, pin, chave_idempotencia }) {
+  const chave = validarChaveIdempotencia(chave_idempotencia);
+  if (chave) { const ja = await respostaPortalExistente(tenantId, chave); if (ja) return ja; }
   if (!Array.isArray(itens) || itens.length === 0) throw erro(400, 'Itens do pedido são obrigatórios');
   if (itens.length > 50) throw erro(400, 'Máximo de 50 itens por pedido');
   const metodo = String(metodo_pagamento || 'CASH').toUpperCase();
@@ -152,7 +167,9 @@ async function criarPedidoRestaurante({ tenantId, itens, mesa_ref, observacoes, 
   if (metodo === 'NUKCOIN' && !cliente_id) throw erro(400, 'Pagamento Nuk-Coin exige um cliente registado');
 
   let alertasStock = [];
-  const pedido = await withTx(async db => {
+  let pedido;
+  try {
+  pedido = await withTx(async db => {
     // 1) preços sempre do servidor; qualquer produto inválido rejeita o pedido (não se cobra "só o que existe")
     let total = 0; const linhas = [];
     const precosSvc = require('./precos.service');
@@ -201,9 +218,9 @@ async function criarPedidoRestaurante({ tenantId, itens, mesa_ref, observacoes, 
     }
     const pedidoId = uuidv4();
     await db.query(
-      `INSERT INTO pedidos (id, tenant_id, mesa_id, cliente_id, status, total, desconto, observacoes, metodo_pagamento, nukcoin_pago, origem, pago_em, pago_metodo, criado_em, atualizado_em, tabela_preco_id)
-       VALUES ($1,$2,$3,$4,'ABERTO',$5,$6,$7,$8::text,$9,'REMOTA', CASE WHEN $8::text = 'NUKCOIN' THEN NOW() END, CASE WHEN $8 = 'NUKCOIN' THEN 'NUKCOIN' END, NOW(),NOW(),$10)`,
-      [pedidoId, T(tenantId), mesaId, cliente_id || null, totalFinal, desconto, observacoes || null, metodo, nukcoinPago, nivel.tabela ? nivel.tabela.id : null]);
+      `INSERT INTO pedidos (id, tenant_id, mesa_id, cliente_id, status, total, desconto, observacoes, metodo_pagamento, nukcoin_pago, origem, pago_em, pago_metodo, criado_em, atualizado_em, tabela_preco_id, chave_idempotencia)
+       VALUES ($1,$2,$3,$4,'ABERTO',$5,$6,$7,$8::text,$9,'REMOTA', CASE WHEN $8::text = 'NUKCOIN' THEN NOW() END, CASE WHEN $8 = 'NUKCOIN' THEN 'NUKCOIN' END, NOW(),NOW(),$10,$11)`,
+      [pedidoId, T(tenantId), mesaId, cliente_id || null, totalFinal, desconto, observacoes || null, metodo, nukcoinPago, nivel.tabela ? nivel.tabela.id : null, chave]);
     for (const l of linhas) {
       await db.query(`INSERT INTO itens_pedido (id, pedido_id, produto_id, quantidade, preco_unitario) VALUES ($1,$2,$3,$4,$5)`, [uuidv4(), pedidoId, l.produto_id, l.quantidade, l.preco_unitario]);
     }
@@ -222,9 +239,17 @@ async function criarPedidoRestaurante({ tenantId, itens, mesa_ref, observacoes, 
     }
     return { pedidoId, total, totalFinal, desconto, saldoNovo, estrelaGanha, estrelasGastas, linhas };
   });
+  } catch (e) {
+    // Dois envios da mesma chave ao mesmo tempo: o segundo devolve o pedido do primeiro (nada foi cobrado duas vezes)
+    if (chave && e.code === '23505' && String(e.constraint || '').includes('uq_pedidos_chave')) {
+      const ja = await respostaPortalExistente(tenantId, chave);
+      if (ja) return ja;
+    }
+    throw e;
+  }
 
   stock.avisarStockBaixo(alertasStock);
-  const codigo = 'P' + crypto.randomBytes(3).toString('hex').toUpperCase();
+  const codigo = codigoPortal(pedido.pedidoId);
   broadcast('novo_pedido_cliente', {
     pedido_id: pedido.pedidoId, codigo, mesa_ref: mesa_ref || null,
     itens: pedido.linhas.map(i => `${i.quantidade}x ${i.nome}`), total: pedido.totalFinal, metodo_pagamento: metodo, fonte: 'PORTAL_CLIENTE',

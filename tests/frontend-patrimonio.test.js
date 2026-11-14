@@ -70,7 +70,7 @@ describe('Lazer e Loja (frontend)', () => {
     ctx.vendaAdd(0);
     ctx._els['venda-obs'] = { value: '' };
     await ctx.vendaConfirmar();
-    expect(ctx._chamadas).toContainEqual(['POST', '/pedidos', { origem: 'LAZER', mesa_id: null, quarto_id: null, cliente_id: null, itens: [{ produto_id: 'p2', quantidade: 1 }], observacoes: null }]);
+    expect(ctx._chamadas).toContainEqual(['POST', '/pedidos', expect.objectContaining({ ...{ origem: 'LAZER', mesa_id: null, quarto_id: null, cliente_id: null, itens: [{ produto_id: 'p2', quantidade: 1 }], observacoes: null }, chave_idempotencia: expect.stringMatching(/^[0-9a-f]{32}$/) })]);
     expect(ctx.window._venda.carrinho).toHaveLength(0); // pronto para a venda seguinte
   });
   test('Loja mostra loja e cigarros', async () => {
@@ -98,7 +98,7 @@ describe('Consumo no quarto (frontend)', () => {
     expect(ctx.window._venda.origem).toBe('QUARTO');
     ctx.vendaAdd(0); ctx._els['venda-obs'] = { value: '' };
     await ctx.vendaConfirmar();
-    expect(ctx._chamadas).toContainEqual(['POST', '/pedidos', { origem: 'QUARTO', mesa_id: null, quarto_id: 'q1', cliente_id: null, itens: [{ produto_id: 'p1', quantidade: 1 }], observacoes: null }]);
+    expect(ctx._chamadas).toContainEqual(['POST', '/pedidos', expect.objectContaining({ ...{ origem: 'QUARTO', mesa_id: null, quarto_id: 'q1', cliente_id: null, itens: [{ produto_id: 'p1', quantidade: 1 }], observacoes: null }, chave_idempotencia: expect.stringMatching(/^[0-9a-f]{32}$/) })]);
     expect(ctx._modulo).toBe('quartos');
   });
 });

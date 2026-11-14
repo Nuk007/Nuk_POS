@@ -61,4 +61,15 @@ function validarPalavraPasse(p) {
   return String(p);
 }
 
-module.exports = { PALAVRA_PASSE_RE, validarPalavraPasse, buildWhere, withTx, erro };
+/**
+ * Chave de idempotência enviada pelo aparelho (uma por envio): 8 a 64 letras, números, «-» ou «_».
+ * Devolve null quando não vem (comportamento antigo).
+ */
+function validarChaveIdempotencia(chave) {
+  if (chave === undefined || chave === null || chave === '') return null;
+  const c = String(chave);
+  if (!/^[A-Za-z0-9_-]{8,64}$/.test(c)) throw erro(400, 'Chave de idempotência inválida');
+  return c;
+}
+
+module.exports = { PALAVRA_PASSE_RE, validarPalavraPasse, buildWhere, withTx, erro, validarChaveIdempotencia };

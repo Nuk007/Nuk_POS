@@ -707,6 +707,8 @@ async function initDB() {
     for (const sql of require('./migrations-data/comissoes-campanhas')) await client.query(sql);
     // Impressão directa: talões de cozinha/bar já impressos (migração 1751200000000)
     for (const sql of require('./migrations-data/impressao')) await client.query(sql);
+    // Idempotência dos pedidos (migração 1751300000000)
+    for (const sql of require('./migrations-data/idempotencia')) await client.query(sql);
 
     // Avaliacoes de staff
     await client.query(`

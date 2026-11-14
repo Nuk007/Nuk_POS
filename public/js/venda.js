@@ -108,6 +108,11 @@ function vendaRenderCarrinho() {
   tot.textContent = 'Total: ' + formatarMoeda(total);
 }
 
+function chaveEnvio() {
+  const b = new Uint8Array(16);
+  if (window.crypto && window.crypto.getRandomValues) window.crypto.getRandomValues(b); else b.forEach((_, i) => { b[i] = Math.floor(Math.random() * 256); });
+  return Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+}
 async function vendaConfirmar() {
   const v = window._venda;
   if (!v.carrinho.length) { toast('Adicione itens ao pedido', 'erro'); return; }
@@ -119,8 +124,12 @@ async function vendaConfirmar() {
     itens: v.carrinho.map(c => ({ produto_id: c.produto_id, quantidade: c.quantidade })),
     observacoes: (document.getElementById('venda-obs').value || '').trim() || null,
   };
+  // Uma chave por envio: se a ligação falhar a meio e se carregar de novo, o servidor não cria um segundo pedido
+  if (!v.chave) v.chave = chaveEnvio();
+  corpo.chave_idempotencia = v.chave;
   try {
     await api('POST', '/pedidos', corpo);
+    v.chave = null;
     toast(CATEGORIAS_ORIGEM_UI[v.origem] ? `Venda registada (${ROTULO_ORIGEM[v.origem]}). Receba-a no Caixa → Receber mesas` : `Pedido enviado (${ROTULO_ORIGEM[v.origem]})`, 'sucesso', CATEGORIAS_ORIGEM_UI[v.origem] ? 6000 : undefined);
     if (v.origem === 'BALCAO' || CATEGORIAS_ORIGEM_UI[v.origem]) { v.carrinho = []; document.getElementById('venda-obs').value = ''; vendaRender(); }
     else carregarModulo(v.origem === 'MESA' ? 'mesas' : v.origem === 'QUARTO' ? 'quartos' : 'takeaway');

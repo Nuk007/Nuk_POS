@@ -311,6 +311,11 @@ function selectPay(el, method) {
   $('coin-pay-info').style.display = method === 'coin' ? 'block' : 'none';
 }
 
+function novaChave() {
+  const b = new Uint8Array(16);
+  (window.crypto || {}).getRandomValues ? window.crypto.getRandomValues(b) : b.forEach((_, i) => { b[i] = Math.floor(Math.random() * 256); });
+  return Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+}
 async function confirmarPedido() {
   if (session.aEnviar) return;
   const itens = itensCarrinho();
@@ -321,6 +326,9 @@ async function confirmarPedido() {
   if (session.isCliente) { body.cliente_id = session.clienteId; body.pin = session.pin; }
   const mesa = $('cart-mesa').value.trim();
   if (mesa) body.mesa_ref = mesa;
+  // Uma chave por pedido: se a resposta se perder, o «tentar de novo» devolve o mesmo pedido em vez de o repetir
+  if (!session.chavePedido) session.chavePedido = novaChave();
+  body.chave_idempotencia = session.chavePedido;
 
   const botao = document.querySelector('[data-action="confirmar-pedido"]');
   session.aEnviar = true; ocupar(botao, true);
@@ -332,6 +340,7 @@ async function confirmarPedido() {
     return;
   }
   const d = r.data;
+  session.chavePedido = null;
   session.cart = {}; limparPagamento(); updateCartBadge(); buildMenu();
   if (session.isCliente) {
     if (d.nukcoin_saldo_novo != null) session.wallet = parseFloat(d.nukcoin_saldo_novo);

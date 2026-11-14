@@ -172,8 +172,9 @@ router.post('/', authMiddleware, async (req, res, next) => {
       itens:       req.body.itens,
       observacoes: req.body.observacoes,
       origem:      req.body.origem,
+      chave_idempotencia: req.body.chave_idempotencia,
     });
-    res.status(201).json(pedido);
+    res.status(pedido.repetido ? 200 : 201).json(pedido); // 200 = reenvio da mesma chave: devolve o pedido já criado
   } catch (e) {
     if (e.statusCode) return res.status(e.statusCode).json({ erro: e.message });
     next(e);

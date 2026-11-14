@@ -107,7 +107,8 @@ router.post('/pedido-restaurante', ...pub, h(async (req, res) => {
   for (const it of Array.isArray(req.body.itens) ? req.body.itens : []) {
     if (!it || !isUUID(it.produto_id)) return res.status(400).json({ erro: 'produto_id inválido em item do pedido' });
   }
-  res.status(201).json(await svc.criarPedidoRestaurante({ ...req.body, tenantId: req.tenantId }));
+  const r = await svc.criarPedidoRestaurante({ ...req.body, tenantId: req.tenantId });
+  res.status(r.repetido ? 200 : 201).json(r); // 200 = reenvio com a mesma chave_idempotencia
 }));
 
 router.post('/pedido-hospedagem', ...pub, h(async (req, res) => {

@@ -6,7 +6,7 @@
  */
 const { pool } = require('../db');
 const { broadcast } = require('../middleware/broadcast');
-const { buildWhere, withTx } = require('./shared');
+const { buildWhere, withTx, validarChaveIdempotencia } = require('./shared');
 const stock = require('./stock.service');
 const precos = require('./precos.service');
 const ocupacao = require('./ocupacao.service');
@@ -112,7 +112,33 @@ async function clienteJaUsouEspaco(db, { tenantId, clienteId }) {
 /** Categorias de produto que cada origem especial pode vender (dívida: devia ser configurável). */
 const CATEGORIAS_ORIGEM = { LAZER: ['LAZER'], LOJA: ['LOJA', 'CIGARROS'] };
 
-async function criarPedido({ tenantId, userId, mesa_id, quarto_id, cliente_id, itens, observacoes, origem }) {
+async function pedidoCompleto(id) {
+  const r = await pool.query(`
+      SELECT p.*, m.numero AS mesa_numero,
+             json_agg(json_build_object(
+               'id', ip.id, 'produto_id', ip.produto_id, 'produto_nome', pr.nome,
+               'quantidade', ip.quantidade, 'preco_unitario', ip.preco_unitario,
+               'status_cozinha', ip.status_cozinha
+             )) AS itens
+      FROM pedidos p
+      LEFT JOIN mesas m         ON p.mesa_id = m.id
+      LEFT JOIN itens_pedido ip ON p.id = ip.pedido_id
+      LEFT JOIN produtos pr     ON ip.produto_id = pr.id
+      WHERE p.id = $1
+      GROUP BY p.id, m.numero
+    `, [id]);
+  return r.rows[0];
+}
+async function pedidoPorChave(tenantId, chave) {
+  if (!chave || !tenantId) return null;
+  const r = await pool.query(`SELECT id FROM pedidos WHERE tenant_id = $1 AND chave_idempotencia = $2`, [tenantId, chave]);
+  return r.rows[0] ? { ...(await pedidoCompleto(r.rows[0].id)), repetido: true } : null;
+}
+
+async function criarPedido({ tenantId, userId, mesa_id, quarto_id, cliente_id, itens, observacoes, origem, chave_idempotencia }) {
+  const chave = validarChaveIdempotencia(chave_idempotencia);
+  const jaFeito = await pedidoPorChave(tenantId, chave);
+  if (jaFeito) return jaFeito; // reenvio do mesmo pedido (resposta perdida ou sincronização): não se cria outro
   if (!itens || !itens.length) {
     const err = new Error('Pedido sem itens'); err.statusCode = 400; throw err;
   }
@@ -172,9 +198,9 @@ async function criarPedido({ tenantId, userId, mesa_id, quarto_id, cliente_id, i
 
     const pedidoR = await client.query(
       // Lazer e Loja não passam pela cozinha: a venda nasce FECHADA e fica a aguardar recebimento no caixa
-      `INSERT INTO pedidos (tenant_id, mesa_id, quarto_id, cliente_id, funcionario_id, total, observacoes, origem, validado_em, validado_por, status, tabela_preco_id)
-       VALUES ($1, $2, $9, $3, $4, $5, $6, $7, NOW(), $4, $8::text, $10) RETURNING *`,
-      [tenantId || null, mesa_id || null, cliente_id || null, userId, Math.round(total * 100) / 100, observacoes || null, origem, CATEGORIAS_ORIGEM[origem] ? 'FECHADO' : 'ABERTO', quarto_id || null, nivel.tabela ? nivel.tabela.id : null]
+      `INSERT INTO pedidos (tenant_id, mesa_id, quarto_id, cliente_id, funcionario_id, total, observacoes, origem, validado_em, validado_por, status, tabela_preco_id, chave_idempotencia)
+       VALUES ($1, $2, $9, $3, $4, $5, $6, $7, NOW(), $4, $8::text, $10, $11) RETURNING *`,
+      [tenantId || null, mesa_id || null, cliente_id || null, userId, Math.round(total * 100) / 100, observacoes || null, origem, CATEGORIAS_ORIGEM[origem] ? 'FECHADO' : 'ABERTO', quarto_id || null, nivel.tabela ? nivel.tabela.id : null, chave]
     );
     const pedido = pedidoR.rows[0];
 
@@ -199,24 +225,16 @@ async function criarPedido({ tenantId, userId, mesa_id, quarto_id, cliente_id, i
     await client.query('COMMIT');
     stock.avisarStockBaixo(alertasStock);
 
-    const pedidoCompleto = await pool.query(`
-      SELECT p.*, m.numero AS mesa_numero,
-             json_agg(json_build_object(
-               'id', ip.id, 'produto_id', ip.produto_id, 'produto_nome', pr.nome,
-               'quantidade', ip.quantidade, 'preco_unitario', ip.preco_unitario,
-               'status_cozinha', ip.status_cozinha
-             )) AS itens
-      FROM pedidos p
-      LEFT JOIN mesas m         ON p.mesa_id = m.id
-      LEFT JOIN itens_pedido ip ON p.id = ip.pedido_id
-      LEFT JOIN produtos pr     ON ip.produto_id = pr.id
-      WHERE p.id = $1
-      GROUP BY p.id, m.numero
-    `, [pedido.id]);
-
-    broadcast('novo_pedido', pedidoCompleto.rows[0], tenantId || null);
-    return pedidoCompleto.rows[0];
+    const completo = await pedidoCompleto(pedido.id);
+    broadcast('novo_pedido', completo, tenantId || null);
+    return completo;
   } catch (e) {
+    // Dois envios da mesma chave ao mesmo tempo: o segundo devolve o pedido do primeiro
+    if (chave && e.code === '23505' && String(e.constraint || '').includes('uq_pedidos_chave')) {
+      try { await client.query('ROLLBACK'); } catch { /* já revertido */ }
+      const ja = await pedidoPorChave(tenantId, chave);
+      if (ja) return ja;
+    }
     await client.query('ROLLBACK');
     throw e;
   } finally {
