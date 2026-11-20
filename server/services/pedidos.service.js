@@ -9,7 +9,7 @@ const { broadcast } = require('../middleware/broadcast');
 const { buildWhere, withTx, validarChaveIdempotencia } = require('./shared');
 const stock = require('./stock.service');
 const precos = require('./precos.service');
-const balcao = require('./balcao.service');
+const fluxos = require('./fluxos-venda.service');
 const ocupacao = require('./ocupacao.service');
 
 /**
@@ -90,9 +90,8 @@ async function listarPedidosHoje({ tenantId }) {
   return r.rows;
 }
 
-// Take Away: só comidas e bebidas. Categorias de loja, tabaco, serviços de quarto, shisha e «outro» ficam de fora.
-const NAO_TAKEAWAY = /^(SHISHA|OUTRO|LAZER)$|LOJA|CIGARR|TABAC|SERVIC|QUARTO|PISCINA/; // só comidas e bebidas (piscina e lazer não, 20/11/2026)
-const categoriaTakeAway = (cat) => !NAO_TAKEAWAY.test(String(cat || '').toUpperCase());
+// Take Away sem configuração: só comidas e bebidas (regra antiga). Com configuração decide fluxos-venda.service.
+const categoriaTakeAway = (cat) => !fluxos.NAO_TAKEAWAY.test(String(cat || '').toUpperCase());
 
 /** «Já fez uso do espaço»: tem um pedido fechado ou uma reserva/estadia de quarto que não foi cancelada. */
 async function clienteJaUsouEspaco(db, { tenantId, clienteId }) {
@@ -110,8 +109,8 @@ async function clienteJaUsouEspaco(db, { tenantId, clienteId }) {
  * A origem REMOTA só nasce no portal do cliente.
  * @throws {Error} com mensagem legível em caso de falha de negócio
  */
-/** Categorias de produto que cada origem especial pode vender (dívida: devia ser configurável). */
-const CATEGORIAS_ORIGEM = { LAZER: ['LAZER'], LOJA: ['LOJA', 'CIGARROS'] };
+/** Origens que nascem FECHADAS (não passam pela cozinha). O que cada uma vende configura-se (fluxos-venda.service). */
+const NASCE_FECHADO = new Set(['LAZER', 'LOJA']);
 
 async function pedidoCompleto(id) {
   const r = await pool.query(`
@@ -192,7 +191,8 @@ async function criarPedido({ tenantId, userId, mesa_id, quarto_id, cliente_id, i
     // Nível de preço em vigor (hora de Luanda, fluxo de venda): sem tabela ou sem preço nela = preço base
     // pedido sem internet: os preços da hora em que foi feito (campanha/happy hour já acabada não muda o valor)
     const nivel = await precos.precosAplicaveis(client, { tenantId, origem, ...(offlineEm ? { agora: precos.agoraLuanda(offlineEm) } : {}) });
-    const catsBalcao = origem === 'BALCAO' ? await balcao.categorias(client, tenantId) : [];
+    // O que cada fluxo vende (Configurações → «O que cada fluxo vende»; pedido do dono, 21/11/2026)
+    const regraFluxo = fluxos.FLUXOS[origem] ? await fluxos.regra(client, tenantId, origem) : null;
     for (const item of itens) {
       const pr = await client.query(
         `SELECT preco, categoria FROM produtos
@@ -204,20 +204,15 @@ async function criarPedido({ tenantId, userId, mesa_id, quarto_id, cliente_id, i
         const err = new Error(`Produto ${item.produto_id} não disponível`);
         err.statusCode = 400; throw err;
       }
-      if (origem === 'TAKEAWAY' && !categoriaTakeAway(pr.rows[0].categoria)) {
-        const err = new Error('O Take Away é só para comidas e bebidas'); err.statusCode = 400; throw err;
-      }
       const cat = String(pr.rows[0].categoria || '').toUpperCase();
       // Regra do dono (20/11/2026): o Balcão só vende as categorias escolhidas em Configurações (bebidas, piscina…)
-      if (origem === 'BALCAO' && !catsBalcao.includes(cat)) {
-        const err = new Error(`O Balcão só vende: ${catsBalcao.map(c => c.charAt(0) + c.slice(1).toLowerCase().replace(/_/g, ' ')).join(', ')}. A estadia vende-se pelos quartos.`); err.statusCode = 400; err.codigo = 'BALCAO_CATEGORIA'; throw err;
+      if (regraFluxo && !regraFluxo.permite(cat)) {
+        const err = new Error(origem === 'BALCAO' ? `${regraFluxo.mensagem} A estadia vende-se pelos quartos.` : regraFluxo.mensagem);
+        err.statusCode = 400; err.codigo = origem === 'BALCAO' ? 'BALCAO_CATEGORIA' : 'FLUXO_CATEGORIA'; throw err;
       }
       // Regra do dono (20/11/2026): a conta da mesa não inclui nada do quarto
       if (origem === 'MESA' && cat === 'SERVICO_QUARTO') {
         const err = new Error('A conta da mesa não pode incluir serviços de quarto'); err.statusCode = 400; err.codigo = 'MESA_SEM_QUARTO'; throw err;
-      }
-      if (CATEGORIAS_ORIGEM[origem] && !CATEGORIAS_ORIGEM[origem].includes(String(pr.rows[0].categoria || '').toUpperCase())) {
-        const err = new Error(`${origem === 'LAZER' ? 'O Lazer' : 'A Loja'} só vende ${origem === 'LAZER' ? 'produtos de lazer' : 'produtos da loja e cigarros'}`); err.statusCode = 400; throw err;
       }
       const preco = precos.precoFinal(nivel, item.produto_id, pr.rows[0].preco);
       total += preco * item.quantidade;
@@ -228,7 +223,7 @@ async function criarPedido({ tenantId, userId, mesa_id, quarto_id, cliente_id, i
       // Lazer e Loja não passam pela cozinha: a venda nasce FECHADA e fica a aguardar recebimento no caixa
       `INSERT INTO pedidos (tenant_id, mesa_id, quarto_id, cliente_id, funcionario_id, total, observacoes, origem, validado_em, validado_por, status, tabela_preco_id, chave_idempotencia, registado_offline_em)
        VALUES ($1, $2, $9, $3, $4, $5, $6, $7, NOW(), $4, $8::text, $10, $11, $12) RETURNING *`,
-      [tenantId || null, mesa_id || null, cliente_id || null, userId, Math.round(total * 100) / 100, observacoes || null, origem, CATEGORIAS_ORIGEM[origem] ? 'FECHADO' : 'ABERTO', quarto_id || null, nivel.tabela ? nivel.tabela.id : null, chave, offlineEm]
+      [tenantId || null, mesa_id || null, cliente_id || null, userId, Math.round(total * 100) / 100, observacoes || null, origem, NASCE_FECHADO.has(origem) ? 'FECHADO' : 'ABERTO', quarto_id || null, nivel.tabela ? nivel.tabela.id : null, chave, offlineEm]
     );
     const pedido = pedidoR.rows[0];
 

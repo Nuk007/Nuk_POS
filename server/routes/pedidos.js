@@ -116,6 +116,20 @@ router.get('/balcao/categorias', authMiddleware, async (req, res, next) => {
   try { res.json({ categorias: await require('../services/balcao.service').categorias(null, req.tenantId) }); } catch (e) { next(e); }
 });
 
+// ── GET /api/pedidos/fluxos/categorias ───────────────────────────────────────
+/**
+ * @openapi
+ * /api/pedidos/fluxos/categorias:
+ *   get:
+ *     summary: O que cada fluxo de venda vende (Balcão, Take Away, Lazer, Loja), configurado pelo Administrador
+ *     tags: [Pedidos]
+ *     security: [{ bearerAuth: [] }]
+ *     responses: { 200: { description: "{ BALCAO: { nome, categorias, configurado }, TAKEAWAY: {…}, LAZER: {…}, LOJA: {…} }" } }
+ */
+router.get('/fluxos/categorias', authMiddleware, async (req, res, next) => {
+  try { res.json(await require('../services/fluxos-venda.service').todas(req.tenantId)); } catch (e) { next(e); }
+});
+
 // ── GET /api/pedidos/takeaway/elegivel ───────────────────────────────────────
 /**
  * @openapi

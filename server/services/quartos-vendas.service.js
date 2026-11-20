@@ -4,6 +4,8 @@
  *
  * Regras (do dono do produto):
  *  - só vende/reserva/abre quem tem o perfil «Vender quartos» (funcionarios.pode_vender_quartos);
+ *  - os tempos (Hora/Noite/Diária, arrumação, aviso, estrela) configuram-se por estabelecimento em
+ *    quartos-tempos.service (21/11/2026); os valores abaixo são os de sempre;
  *  - o quarto fica livre 30 min depois da hora limite (tempo de arrumação);
  *  - ★ amarela = há reserva futura; ★ vermelha = a reserva começa em menos de 1 h → vendas bloqueadas,
  *    só se aceitam novas reservas de períodos compatíveis;
@@ -16,13 +18,16 @@ const { erro, withTx } = require('./shared');
 const { temPerfil } = require('./funcionarios.service');
 const { broadcast } = require('../middleware/broadcast');
 const ocupacao = require('./ocupacao.service');
+const temposQ = require('./quartos-tempos.service');
 
 const MIN = 60e3;
-const DURACAO_H = { DUAS_HORAS: 2, PERNOITE: 12, DIARIA: 24 }; // Hora / Noite / Diária
 const PRECO = { DUAS_HORAS: 'preco_2h', PERNOITE: 'preco_pernoite', DIARIA: 'preco_diaria' };
-const LIMPEZA_MIN = 30;   // folga de arrumação depois da hora limite (e prazo para dar o quarto como limpo)
-const AVISO_MIN = 5;      // aviso aos arrumadores antes do fim da ocupação
-const ESTRELA_MIN = 60;   // reserva a começar em menos disto → estrela vermelha
+// Valores de sempre (sem configuração); os em vigor vêm de temposQ.ler(db, tenantId)
+const DURACAO_H = { DUAS_HORAS: temposQ.PADRAO.hora_h, PERNOITE: temposQ.PADRAO.noite_h, DIARIA: temposQ.PADRAO.diaria_h };
+const LIMPEZA_MIN = temposQ.PADRAO.limpeza_min;
+const AVISO_MIN = temposQ.PADRAO.aviso_min;
+const ESTRELA_MIN = temposQ.PADRAO.estrela_min;
+const textoMin = m => (m % 60 === 0 ? `${m / 60} hora${m === 60 ? '' : 's'}` : `${m} min`);
 const CHEFIA = ['ADMIN', 'GERENTE'];
 
 const hora = d => new Date(new Date(d).getTime() + 3600e3).toISOString().slice(11, 16); // HH:MM em Luanda (UTC+1)
@@ -51,13 +56,13 @@ function validarFracao(fracao) {
 }
 
 /** Período [inicio, fim) mais a folga de arrumação nas duas pontas não pode tocar noutra reserva activa. */
-async function exigirPeriodoLivre(c, quartoId, inicio, fim, ignorarId) {
+async function exigirPeriodoLivre(c, quartoId, inicio, fim, ignorarId, limpezaMin = LIMPEZA_MIN) {
   const r = await c.query(
     `SELECT id, checkin, checkout FROM reservas
      WHERE quarto_id = $1 AND status IN ('CONFIRMADA','CHECKIN') AND ($4::uuid IS NULL OR id <> $4)
        AND NOT (checkout + make_interval(mins => $5::int) <= $2::timestamptz OR checkin >= $3::timestamptz + make_interval(mins => $5::int))
-     ORDER BY checkin LIMIT 1`, [quartoId, inicio, fim, ignorarId || null, LIMPEZA_MIN]);
-  if (r.rows[0]) throw erro(409, `O quarto já está ocupado ou reservado entre as ${hora(r.rows[0].checkin)} e as ${hora(r.rows[0].checkout)} (mais ${LIMPEZA_MIN} min de arrumação).`);
+     ORDER BY checkin LIMIT 1`, [quartoId, inicio, fim, ignorarId || null, limpezaMin]);
+  if (r.rows[0]) throw erro(409, `O quarto já está ocupado ou reservado entre as ${hora(r.rows[0].checkin)} e as ${hora(r.rows[0].checkout)} (mais ${limpezaMin} min de arrumação).`);
 }
 
 function estadoOcupacao(q) {
@@ -66,23 +71,24 @@ function estadoOcupacao(q) {
 
 // ── listagem (com tudo o que o botão do quarto mostra) ───────────
 async function listar({ tenantId, agora = new Date() }) {
-  const [qs, rs, ls] = await Promise.all([
+  const [qs, rs, ls, t] = await Promise.all([
     pool.query(`SELECT * FROM quartos WHERE tenant_id = $1 ORDER BY tipo, numero`, [tenantId]),
     pool.query(
       `SELECT id, quarto_id, status, fracao, checkin, checkout, nome_hospede, valor_total FROM reservas
        WHERE tenant_id = $1 AND (status = 'CHECKIN' OR (status = 'CONFIRMADA' AND checkout > $2)) ORDER BY checkin`, [tenantId, agora]),
     pool.query(`SELECT id, quarto_id, origem, aviso_em, prazo_em, escalado_em FROM quarto_limpezas WHERE tenant_id = $1 AND limpo_em IS NULL`, [tenantId]),
+    temposQ.ler(null, tenantId),
   ]);
   return qs.rows.map(q => {
     const doQuarto = rs.rows.filter(r => r.quarto_id === q.id);
     const ocupacao = doQuarto.find(r => r.status === 'CHECKIN') || null;
     const futuras = doQuarto.filter(r => r.status === 'CONFIRMADA');
     const proxima = futuras[0] || null;
-    const estrela = !proxima ? null : (new Date(proxima.checkin) - agora < ESTRELA_MIN * MIN ? 'VERMELHA' : 'AMARELA');
+    const estrela = !proxima ? null : (new Date(proxima.checkin) - agora < t.estrela_min * MIN ? 'VERMELHA' : 'AMARELA');
     const l = ls.rows.find(x => x.quarto_id === q.id);
     const limpeza = l ? { id: l.id, origem: l.origem, prazo_em: l.prazo_em, escalado: !!l.escalado_em || new Date(l.prazo_em) <= agora } : null;
     let livre_as = null;
-    if (q.status === 'OCUPADO' && ocupacao) livre_as = mais(ocupacao.checkout, LIMPEZA_MIN);
+    if (q.status === 'OCUPADO' && ocupacao) livre_as = mais(ocupacao.checkout, t.limpeza_min);
     else if (q.status === 'LIMPEZA' && l) livre_as = new Date(l.prazo_em);
     return { ...q, ocupacao, reservas_futuras: futuras, proxima_reserva: proxima, estrela, limpeza, livre_as,
       venda_bloqueada: estrela === 'VERMELHA' ? `Reserva às ${hora(proxima.checkin)}: vendas bloqueadas, só reservas de períodos compatíveis` : null };
@@ -96,12 +102,13 @@ async function vender({ tenantId, userId, quartoId, fracao, nome_hospede, client
   const res = await withTx(async c => {
     const q = await bloquearQuarto(c, tenantId, quartoId);
     if (q.status !== 'DISPONIVEL') throw erro(409, estadoOcupacao(q));
-    const agora = new Date(), fim = mais(agora, DURACAO_H[fracao] * 60);
+    const t = await temposQ.ler(c, tenantId);
+    const agora = new Date(), fim = mais(agora, temposQ.duracaoMin(t, fracao));
     const prox = await c.query(`SELECT MIN(checkin) AS checkin FROM reservas WHERE quarto_id = $1 AND status = 'CONFIRMADA' AND checkout > $2`, [quartoId, agora]);
-    if (prox.rows[0].checkin && new Date(prox.rows[0].checkin) - agora < ESTRELA_MIN * MIN) {
-      throw erro(409, `Há uma reserva às ${hora(prox.rows[0].checkin)} (menos de 1 hora): vendas bloqueadas. Só é possível reservar períodos compatíveis.`, { codigo: 'ESTRELA_VERMELHA' });
+    if (prox.rows[0].checkin && new Date(prox.rows[0].checkin) - agora < t.estrela_min * MIN) {
+      throw erro(409, `Há uma reserva às ${hora(prox.rows[0].checkin)} (menos de ${textoMin(t.estrela_min)}): vendas bloqueadas. Só é possível reservar períodos compatíveis.`, { codigo: 'ESTRELA_VERMELHA' });
     }
-    await exigirPeriodoLivre(c, quartoId, agora, fim);
+    await exigirPeriodoLivre(c, quartoId, agora, fim, null, t.limpeza_min);
     const r = await c.query(
       `INSERT INTO reservas (tenant_id, quarto_id, cliente_id, nome_hospede, fracao, checkin, checkout, status, valor_total, observacoes, criado_por)
        VALUES ($1,$2,$3,$4,$5,$6,$7,'CHECKIN',$8,$9,$10) RETURNING *`,
@@ -126,10 +133,11 @@ function validarInicioReserva(inicio) {
 async function reservarEm(c, { tenantId, userId, quartoId, fracao, inicio, nome_hospede, cliente_id, observacoes }) {
   validarFracao(fracao);
   const ini = validarInicioReserva(inicio);
-  const fim = mais(ini, DURACAO_H[fracao] * 60);
+  const t = await temposQ.ler(c, tenantId);
+  const fim = mais(ini, temposQ.duracaoMin(t, fracao));
   const q = await bloquearQuarto(c, tenantId, quartoId);
   if (['MANUTENCAO', 'BLOQUEADO'].includes(q.status)) throw erro(409, estadoOcupacao(q));
-  await exigirPeriodoLivre(c, quartoId, ini, fim);
+  await exigirPeriodoLivre(c, quartoId, ini, fim, null, t.limpeza_min);
   const r = await c.query(
     `INSERT INTO reservas (tenant_id, quarto_id, cliente_id, nome_hospede, fracao, checkin, checkout, status, valor_total, observacoes, criado_por)
      VALUES ($1,$2,$3,$4,$5,$6,$7,'CONFIRMADA',$8,$9,$10) RETURNING *`,
@@ -151,13 +159,14 @@ async function reservar(dados) {
  */
 async function quartosLivres(db, { tenantId, tipo, fracao, inicio }) {
   validarFracao(fracao);
-  const ini = new Date(inicio), fim = mais(ini, DURACAO_H[fracao] * 60);
+  const t = await temposQ.ler(db, tenantId);
+  const ini = new Date(inicio), fim = mais(ini, temposQ.duracaoMin(t, fracao));
   const r = await db.query(
     `SELECT q.id, q.numero, q.tipo, q.${PRECO[fracao]} AS preco FROM quartos q
       WHERE q.tenant_id = $1 AND q.tipo = $2 AND q.status NOT IN ('MANUTENCAO','BLOQUEADO') AND q.${PRECO[fracao]} > 0
         AND NOT EXISTS (SELECT 1 FROM reservas rv WHERE rv.quarto_id = q.id AND rv.status IN ('CONFIRMADA','CHECKIN')
               AND NOT (rv.checkout + make_interval(mins => $5::int) <= $3::timestamptz OR rv.checkin >= $4::timestamptz + make_interval(mins => $5::int)))
-      ORDER BY q.${PRECO[fracao]}, q.numero`, [tenantId, tipo, ini, fim, LIMPEZA_MIN]);
+      ORDER BY q.${PRECO[fracao]}, q.numero`, [tenantId, tipo, ini, fim, t.limpeza_min]);
   return r.rows.map(x => ({ ...x, preco: Number(x.preco) }));
 }
 
@@ -170,11 +179,12 @@ async function darEntrada({ tenantId, userId, reservaId }) {
     if (rv.status !== 'CONFIRMADA') throw erro(409, 'Esta reserva já não está por iniciar');
     const q = await bloquearQuarto(c, tenantId, rv.quarto_id);
     const agora = new Date();
-    if (new Date(rv.checkin) - agora > ESTRELA_MIN * MIN) throw erro(409, `Só se pode dar entrada na última hora antes do início (${hora(rv.checkin)}).`);
+    const t = await temposQ.ler(c, tenantId);
+    if (new Date(rv.checkin) - agora > t.estrela_min * MIN) throw erro(409, `Só se pode dar entrada ${t.estrela_min === 60 ? 'na última hora' : `nos últimos ${textoMin(t.estrela_min)}`} antes do início (${hora(rv.checkin)}).`);
     if (new Date(rv.checkout) <= agora) throw erro(409, 'O período desta reserva já terminou. Cancele-a.');
     if (q.status !== 'DISPONIVEL') throw erro(409, estadoOcupacao(q));
     const fim = mais(agora, (new Date(rv.checkout) - new Date(rv.checkin)) / MIN); // mantém a duração contratada
-    await exigirPeriodoLivre(c, rv.quarto_id, agora, fim, rv.id);
+    await exigirPeriodoLivre(c, rv.quarto_id, agora, fim, rv.id, t.limpeza_min);
     const r = await c.query(`UPDATE reservas SET status = 'CHECKIN', checkin = $2, checkout = $3, aviso_fim_em = NULL, atualizado_em = NOW() WHERE id = $1 RETURNING *`, [rv.id, agora, fim]);
     await c.query(`UPDATE quartos SET status = 'OCUPADO', atualizado_em = NOW() WHERE id = $1`, [rv.quarto_id]);
     return r.rows[0];
@@ -218,7 +228,8 @@ async function abrirQuarto({ tenantId, userId, quartoId }) {
     // quarto marcado OCUPADO sem ocupação registada (dados antigos): também se pode abrir
     if (rv) await c.query(`UPDATE reservas SET status = 'CHECKOUT', saida_em = $2, atualizado_em = NOW() WHERE id = $1`, [rv.id, agora]);
     await c.query(`UPDATE quartos SET status = 'LIMPEZA', atualizado_em = NOW() WHERE id = $1`, [quartoId]);
-    return abrirArrumacao(c, { tenantId, quartoId, numero: q.numero, reservaId: rv ? rv.id : null, origem: 'ABERTO', prazo: mais(agora, LIMPEZA_MIN), agora });
+    const t = await temposQ.ler(c, tenantId);
+    return abrirArrumacao(c, { tenantId, quartoId, numero: q.numero, reservaId: rv ? rv.id : null, origem: 'ABERTO', prazo: mais(agora, t.limpeza_min), agora });
   });
   broadcast('quarto_atualizado', { quarto_id: quartoId, status: 'LIMPEZA' }, tenantId);
   avisarArrumar(aviso);
@@ -268,7 +279,8 @@ async function mudarEstado({ tenantId, userId, quartoId, status }) {
     const r = await c.query(`UPDATE quartos SET status = $2, atualizado_em = NOW() WHERE id = $1 RETURNING *`, [quartoId, status]);
     if (status === 'LIMPEZA' && cur.status !== 'LIMPEZA') {
       const agora = new Date();
-      return { quarto: r.rows[0], aviso: await abrirArrumacao(c, { tenantId, quartoId, numero: q.numero, origem: 'ABERTO', prazo: mais(agora, LIMPEZA_MIN), agora }) };
+      const t = await temposQ.ler(c, tenantId);
+      return { quarto: r.rows[0], aviso: await abrirArrumacao(c, { tenantId, quartoId, numero: q.numero, origem: 'ABERTO', prazo: mais(agora, t.limpeza_min), agora }) };
     }
     if (status !== 'LIMPEZA' && status !== cur.status) await c.query(`UPDATE quarto_limpezas SET limpo_em = NOW(), limpo_por = NULL WHERE quarto_id = $1 AND limpo_em IS NULL`, [quartoId]);
     return { quarto: r.rows[0] };
@@ -281,14 +293,19 @@ async function mudarEstado({ tenantId, userId, quartoId, status }) {
 // ── agendador (chamado de 30 em 30 s por jobs/quartos-scheduler.js) ──
 async function processarTick(agora = new Date()) {
   const avisos = [];
-  // 1) faltam ≤5 min para o fim → manda arrumar (prazo = hora limite + 30 min)
+  // 1) faltam ≤ aviso_min (5 min por omissão) para o fim → manda arrumar (prazo = hora limite + limpeza_min).
+  //    O aviso de cada estabelecimento lê-se do JSON por expressão regular (um JSON estragado nunca faz falhar a volta).
   const fim5 = await pool.query(
     `UPDATE reservas r SET aviso_fim_em = $1
      FROM quartos q
-     WHERE q.id = r.quarto_id AND r.status = 'CHECKIN' AND r.aviso_fim_em IS NULL AND r.checkout <= $2
-     RETURNING r.id, r.tenant_id, r.quarto_id, r.checkout, q.numero`, [agora, mais(agora, AVISO_MIN)]);
+     LEFT JOIN configuracoes cfg ON cfg.tenant_id = q.tenant_id AND cfg.chave = $3
+     WHERE q.id = r.quarto_id AND r.status = 'CHECKIN' AND r.aviso_fim_em IS NULL
+       AND r.checkout <= $1::timestamptz + make_interval(mins => COALESCE(substring(cfg.valor from '"aviso_min":\\s*([0-9]{1,3})')::int, $2::int))
+     RETURNING r.id, r.tenant_id, r.quarto_id, r.checkout, q.numero`, [agora, AVISO_MIN, temposQ.CHAVE]);
+  const temposDe = {};
   for (const r of fim5.rows) {
-    const a = await withTx(c => abrirArrumacao(c, { tenantId: r.tenant_id, quartoId: r.quarto_id, numero: r.numero, reservaId: r.id, origem: 'FIM_TEMPO', prazo: mais(r.checkout, LIMPEZA_MIN), agora }));
+    const t = temposDe[r.tenant_id] || (temposDe[r.tenant_id] = await temposQ.ler(null, r.tenant_id));
+    const a = await withTx(c => abrirArrumacao(c, { tenantId: r.tenant_id, quartoId: r.quarto_id, numero: r.numero, reservaId: r.id, origem: 'FIM_TEMPO', prazo: mais(r.checkout, t.limpeza_min), agora }));
     avisos.push(a);
   }
   // 2) acabou o tempo → fecha a ocupação e passa o quarto a «a arrumar»
@@ -299,7 +316,7 @@ async function processarTick(agora = new Date()) {
        WHERE id = $1 AND status = 'OCUPADO' AND NOT EXISTS (SELECT 1 FROM reservas WHERE quarto_id = $1 AND status = 'CHECKIN')`, [r.quarto_id]);
     if (u.rowCount) broadcast('quarto_atualizado', { quarto_id: r.quarto_id, status: 'LIMPEZA' }, r.tenant_id);
   }
-  // 3) prazo de 30 min esgotado → avisa a chefia; só ela abre o quarto
+  // 3) prazo de arrumação esgotado → avisa a chefia; só ela abre o quarto
   const esc = await pool.query(
     `UPDATE quarto_limpezas l SET escalado_em = $1 FROM quartos q
      WHERE q.id = l.quarto_id AND l.limpo_em IS NULL AND l.escalado_em IS NULL AND l.prazo_em <= $1

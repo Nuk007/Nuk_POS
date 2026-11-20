@@ -69,7 +69,8 @@ describe('GET /api/quartos', () => {
     mockPool.query
       .mockResolvedValueOnce({ rows: [quartoRow(), quartoRow({ id: 'q2', numero: '102' })] }) // quartos
       .mockResolvedValueOnce({ rows: [] })                                                    // reservas activas
-      .mockResolvedValueOnce({ rows: [] });                                                   // arrumações abertas
+      .mockResolvedValueOnce({ rows: [] })                                                    // arrumações abertas
+      .mockResolvedValueOnce({ rows: [] });                                                   // tempos dos quartos (sem configuração)
 
     const res = await request(app)
       .get('/api/quartos')

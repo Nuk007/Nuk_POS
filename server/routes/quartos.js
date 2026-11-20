@@ -7,6 +7,7 @@ const svc = require('../services/quartos.service');
 
 const falha = (res, next) => e => e.statusCode ? res.status(e.statusCode).json({ erro: e.message, ...(e.codigo ? { codigo: e.codigo } : {}) }) : next(e);
 const vendas = require('../services/quartos-vendas.service');
+const temposQ = require('../services/quartos-tempos.service');
 const ctx = req => ({ tenantId: req.tenantId, userId: req.user.id });
 
 /**
@@ -49,6 +50,23 @@ const ctx = req => ({ tenantId: req.tenantId, userId: req.user.id });
  */
 router.get('/', authMiddleware, async (req, res, next) => {
   try { res.json(await vendas.listar({ tenantId: req.tenantId })); } catch (e) { falha(res, next)(e); }
+});
+
+/**
+ * @openapi
+ * /api/quartos/tempos:
+ *   get:
+ *     tags: [Quartos]
+ *     summary: Tempos dos quartos em vigor (Hora/Noite/Diária em horas; arrumação, aviso e estrela em minutos)
+ *     responses: { 200: { description: "{ hora_h, noite_h, diaria_h, limpeza_min, aviso_min, estrela_min, padrao }" } }
+ *   put:
+ *     tags: [Quartos]
+ *     summary: Define os tempos dos quartos do estabelecimento (só ADMIN, no painel de Configurações); repor=true volta aos de sempre
+ *     requestBody: { content: { application/json: { schema: { type: object, properties: { hora_h: { type: integer }, noite_h: { type: integer }, diaria_h: { type: integer }, limpeza_min: { type: integer }, aviso_min: { type: integer }, estrela_min: { type: integer }, repor: { type: boolean } } } } } }
+ *     responses: { 200: { description: Tempos gravados }, 400: { description: Valor fora dos limites } }
+ */
+router.get('/tempos', authMiddleware, async (req, res, next) => {
+  try { res.json({ ...(await temposQ.ler(null, req.tenantId)), padrao: temposQ.PADRAO }); } catch (e) { falha(res, next)(e); }
 });
 router.post('/:id/vender', authMiddleware, validarUUID('id'), async (req, res, next) => {
   try { res.status(201).json(await vendas.vender({ ...ctx(req), quartoId: req.params.id, ...req.body })); } catch (e) { falha(res, next)(e); }
@@ -97,6 +115,13 @@ router.patch('/:id/status', authMiddleware, validarUUID('id'), requerNivel(['ADM
  */
 const gestor = [authMiddleware, requerNivel(['ADMIN']), exigirModulo('configuracoes')]; // configuração = só no painel de Configurações (ADMIN)
 
+router.put('/tempos', ...gestor, async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    const campos = Object.fromEntries(Object.keys(temposQ.PADRAO).map(k => [k, b[k]]));
+    res.json({ ...(await temposQ.definir({ ...campos, repor: b.repor === true, tenantId: req.tenantId })), padrao: temposQ.PADRAO });
+  } catch (e) { falha(res, next)(e); }
+});
 router.post('/', ...gestor, async (req, res, next) => {
   try { res.status(201).json(await svc.criarQuarto({ tenantId: req.tenantId, dados: req.body || {} })); }
   catch (e) { falha(res, next)(e); }

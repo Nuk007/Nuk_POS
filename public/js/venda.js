@@ -7,23 +7,36 @@
  *  - Take Away: escolhe-se um cliente cadastrado que já usou o espaço; só comidas e bebidas.
  * Sem handlers inline (CSP): data-on-click com argumentos literais.
  */
-const NAO_TAKEAWAY_UI = /^(SHISHA|OUTRO|LAZER)$|LOJA|CIGARR|TABAC|SERVIC|QUARTO|PISCINA/; // espelha pedidos.service (o servidor é que decide)
+// O que cada fluxo vende vem das Configurações (GET /pedidos/fluxos/categorias); estes padrões só servem sem rede e sem cópia
+const NAO_TAKEAWAY_UI = /^(SHISHA|OUTRO|LAZER)$|LOJA|CIGARR|TABAC|SERVIC|QUARTO|PISCINA/;
 const ROTULO_ORIGEM = { MESA: 'Mesa', BALCAO: 'Balcão', TAKEAWAY: 'Take Away', REMOTA: 'Remota', LAZER: 'Lazer', LOJA: 'Loja', QUARTO: 'Quarto' };
-const CATEGORIAS_ORIGEM_UI = { LAZER: ['LAZER'], LOJA: ['LOJA', 'CIGARROS'] }; // espelha pedidos.service (o servidor é que decide)
+const CATEGORIAS_ORIGEM_UI = { LAZER: ['LAZER'], LOJA: ['LOJA', 'CIGARROS'] }; // Lazer e Loja nascem FECHADOS (padrões sem rede)
+const FLUXOS_CONFIGURAVEIS = ['BALCAO', 'TAKEAWAY', 'LAZER', 'LOJA'];
+const rotuloCat = c => c.charAt(0) + c.slice(1).toLowerCase().replace(/_/g, ' ');
+
+/** Categorias que o fluxo vende (Configurações). Sem resposta do servidor: null (Balcão) ou o padrão antigo. */
+async function categoriasDoFluxo(origem) {
+  if (!FLUXOS_CONFIGURAVEIS.includes(origem)) return null;
+  try {
+    const todas = await api('GET', '/pedidos/fluxos/categorias');
+    if (todas && todas[origem] && Array.isArray(todas[origem].categorias)) return todas[origem].categorias;
+  } catch { /* sem rede: o servidor decide ao sincronizar */ }
+  if (origem === 'BALCAO') {
+    try { return ((await api('GET', '/pedidos/balcao/categorias')) || {}).categorias || null; } catch { return null; }
+  }
+  return CATEGORIAS_ORIGEM_UI[origem] || null;
+}
 
 // ── Painel de botões ────────────────────────────────────────
 async function abrirPainelVenda(el, { origem, mesa = null, cliente = null, quarto = null }) {
   el.innerHTML = '<div class="loading-spinner">A carregar...</div>';
   try {
     let produtos = await api('GET', '/produtos?disponivel=true') || [];
-    if (origem === 'TAKEAWAY') produtos = produtos.filter(p => !NAO_TAKEAWAY_UI.test(String(p.categoria || '').toUpperCase()));
-    if (CATEGORIAS_ORIGEM_UI[origem]) produtos = produtos.filter(p => CATEGORIAS_ORIGEM_UI[origem].includes(String(p.categoria || '').toUpperCase()));
-    // Regras do dono (20/11/2026): o Balcão só vende as categorias das Configurações; a mesa não pede serviços de quarto
-    let catsBalcao = null;
-    if (origem === 'BALCAO') {
-      try { catsBalcao = ((await api('GET', '/pedidos/balcao/categorias')) || {}).categorias || null; } catch { /* sem rede: o servidor decide ao sincronizar */ }
-      if (catsBalcao) produtos = produtos.filter(p => catsBalcao.includes(String(p.categoria || '').toUpperCase()));
-    }
+    // Regras do dono: cada fluxo só vende as categorias das Configurações (20 e 21/11/2026); a mesa não pede serviços de quarto
+    const catsFluxo = await categoriasDoFluxo(origem);
+    if (catsFluxo) produtos = produtos.filter(p => catsFluxo.includes(String(p.categoria || '').toUpperCase()));
+    else if (origem === 'TAKEAWAY') produtos = produtos.filter(p => !NAO_TAKEAWAY_UI.test(String(p.categoria || '').toUpperCase()));
+    const catsBalcao = origem === 'BALCAO' ? catsFluxo : null;
     if (origem === 'MESA') produtos = produtos.filter(p => String(p.categoria || '').toUpperCase() !== 'SERVICO_QUARTO');
     // Nível de preço em vigor (o servidor volta a decidir ao gravar o pedido) e prato do dia em primeiro lugar
     let nivel = { tabela: null, precos: {} };
@@ -33,7 +46,7 @@ async function abrirPainelVenda(el, { origem, mesa = null, cliente = null, quart
     produtos = produtos.map(p => (precosNivel[p.id] !== undefined ? { ...p, preco_base: p.preco, preco: precosNivel[p.id] }
       : descNivel ? { ...p, preco_base: p.preco, preco: Math.round(Number(p.preco) * (100 - descNivel)) / 100 } : p))
       .sort((a, b) => (b.prato_do_dia ? 1 : 0) - (a.prato_do_dia ? 1 : 0));
-    window._venda = { origem, mesa, cliente, quarto, produtos, categoria: '', carrinho: [], tabela: nivel && nivel.tabela, catsBalcao };
+    window._venda = { origem, mesa, cliente, quarto, produtos, categoria: '', carrinho: [], tabela: nivel && nivel.tabela, catsBalcao, catsFluxo };
     el.innerHTML = htmlPainelVenda();
     vendaRender();
   } catch (e) {
@@ -85,7 +98,7 @@ function vendaRender() {
           ${n ? `<span class="venda-produto-qtd">${n}</span>` : ''}
         </button>`;
       }).join('')
-    : `<div class="muted">${v.origem === 'BALCAO' && !v.produtos.length && v.catsBalcao ? `O Balcão só vende ${esc(v.catsBalcao.map(c => c.charAt(0) + c.slice(1).toLowerCase().replace(/_/g, ' ')).join(', '))}${balcaoVendeQuartos() ? ' e a estadia dos quartos' : ''}. Ainda não há produtos destas categorias: crie-os em Configurações → Ementa, ou mude as categorias em Configurações → Balcão.` : CATEGORIAS_ORIGEM_UI[v.origem] && !v.produtos.length ? `Ainda não há produtos para ${ROTULO_ORIGEM[v.origem]}. Crie-os em Configurações → Ementa com a categoria ${CATEGORIAS_ORIGEM_UI[v.origem].join(' ou ')}.` : 'Sem produtos nesta categoria.'}</div>`;
+    : `<div class="muted">${v.origem === 'BALCAO' && !v.produtos.length && v.catsBalcao ? `O Balcão só vende ${esc(v.catsBalcao.map(rotuloCat).join(', '))}${balcaoVendeQuartos() ? ' e a estadia dos quartos' : ''}. Ainda não há produtos destas categorias: crie-os em Configurações → Ementa, ou mude as categorias em Configurações → «O que cada fluxo vende».` : v.catsFluxo && !v.produtos.length ? `Ainda não há produtos para ${ROTULO_ORIGEM[v.origem]}. Crie-os em Configurações → Ementa com a categoria ${esc(v.catsFluxo.map(rotuloCat).join(' ou '))}, ou mude o que se vende em Configurações → «O que cada fluxo vende».` : 'Sem produtos nesta categoria.'}</div>`;
   vendaRenderCarrinho();
 }
 
@@ -178,7 +191,7 @@ function balcaoVendeQuartos() {
 }
 async function balcaoVenderQuarto() {
   try {
-    const quartos = await api('GET', '/quartos') || [];
+    const [quartos] = await Promise.all([api('GET', '/quartos').then(r => r || []), carregarTemposQuarto()]);
     window._quartos = quartos;
     window._quartosVoltar = 'balcao';
     const livres = quartos.filter(q => q.status === 'DISPONIVEL').length;

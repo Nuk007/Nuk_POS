@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 
 const MODULOS = ['modulos.js', 'mesas-quartos.js', 'produtos-stock.js', 'financeiro.js', 'clientes.js',
-  'funcionarios.js', 'config-cartoes.js', 'configuracoes.js'];
+  'funcionarios.js', 'config-cartoes.js', 'config-fluxos.js', 'configuracoes.js'];
 
 const ler = f => fs.readFileSync(path.join(__dirname, '../public/js', f), 'utf8');
 /** Código de todos os ficheiros dos módulos, pela ordem do index.html. */

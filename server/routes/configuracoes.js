@@ -86,4 +86,22 @@ router.put('/balcao', authMiddleware, requerNivel(['ADMIN']), exigirModulo('conf
   catch (e) { if (e.statusCode) return res.status(e.statusCode).json({ erro: e.message }); next(e); }
 });
 
+/**
+ * @openapi
+ * /api/configuracoes/fluxos/{fluxo}:
+ *   put:
+ *     summary: Define as categorias de produto que um fluxo de venda vende (BALCAO, TAKEAWAY, LAZER, LOJA; só ADMIN). categorias null repõe o padrão
+ *     tags: [Configurações]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ in: path, name: fluxo, required: true, schema: { type: string, enum: [BALCAO, TAKEAWAY, LAZER, LOJA] } }]
+ *     requestBody: { content: { application/json: { schema: { type: object, required: [categorias], properties: { categorias: { type: array, nullable: true, items: { type: string } } } } } } }
+ *     responses: { 200: { description: "{ fluxo, nome, categorias, configurado }" }, 400: { description: "Fluxo inválido, lista vazia ou categoria inexistente" } }
+ */
+router.put('/fluxos/:fluxo', authMiddleware, requerNivel(['ADMIN']), exigirModulo('configuracoes'), async (req, res, next) => {
+  try {
+    const categorias = req.body.categorias === null ? null : req.body.categorias;
+    res.json(await require('../services/fluxos-venda.service').definir({ fluxo: req.params.fluxo, categorias, tenantId: req.tenantId }));
+  } catch (e) { if (e.statusCode) return res.status(e.statusCode).json({ erro: e.message }); next(e); }
+});
+
 module.exports = router;

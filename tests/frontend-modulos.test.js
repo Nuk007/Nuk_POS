@@ -22,6 +22,9 @@ const dados = {
   '/dashboard/itens': { itens: [{ id: 'i1', nome: 'Shishas', fonte: 'PRODUTO', ref: '22222222-2222-2222-2222-222222222222', ativo: true }], servicos: { QUARTOS: 'Quartos' } },
   '/listas': { TIPO_QUARTO: { nome: 'Tipos de quarto', opcoes: [{ id: '33333333-3333-3333-3333-333333333333', valor: 'SUITE', ativo: true }] } },
   '/listas/TIPO_QUARTO': [{ valor: 'SUITE', ativo: true }], '/listas/CATEGORIA_PRODUTO': [{ valor: 'BEBIDA', ativo: true }],
+  '/pedidos/fluxos/categorias': { BALCAO: { nome: 'Balcão', categorias: ['BEBIDA'], configurado: false }, TAKEAWAY: { nome: 'Take Away', categorias: ['BEBIDA'], configurado: true },
+    LAZER: { nome: 'Lazer', categorias: ['LAZER'], configurado: false }, LOJA: { nome: 'Loja', categorias: ['LOJA', 'CIGARROS'], configurado: false } },
+  '/quartos/tempos': { hora_h: 3, noite_h: 12, diaria_h: 24, limpeza_min: 45, aviso_min: 5, estrela_min: 90, padrao: { hora_h: 2, noite_h: 12, diaria_h: 24, limpeza_min: 30, aviso_min: 5, estrela_min: 60 } },
 };
 
 function carregar(utilizador) {
@@ -175,7 +178,7 @@ describe('formulários usam as listas do estabelecimento', () => {
 describe('acções destrutivas pedem confirmação', () => {
   test('nenhum botão apaga/cancela/desactiva directamente: passa por pedirXxx → modalConfirmar', () => {
     const botoes = [...codigo.matchAll(/data-on-click="([^"]*)"/g)].map(m => m[1]);
-    const directos = botoes.filter(b => /^(apagarQuarto|apagarOpcaoLista|emitirNotaCreditoConfirmada|retirarContaConfirmado|apagarTabelaPrecoConfirmado|anularDespesaConfirmado|cancelarPedidoConfirmado|cancelarSolicitacaoConfirmada|desactivarFuncConfirmado|removerItemDashboard|revogarAgenteConfirmado)\(/.test(b)
+    const directos = botoes.filter(b => /^(apagarQuarto|apagarOpcaoLista|emitirNotaCreditoConfirmada|retirarContaConfirmado|apagarTabelaPrecoConfirmado|anularDespesaConfirmado|cancelarPedidoConfirmado|cancelarSolicitacaoConfirmada|desactivarFuncConfirmado|removerItemDashboard|revogarAgenteConfirmado|reporFluxoVenda|reporTemposQuartos)\(/.test(b)
       || /mudarStatusPedido\([^)]*CANCELADO/.test(b) || /actualizarSolicitacao\([^)]*CANCELADA/.test(b));
     // só o botão «Sim, confirmar» do modalConfirmar (construído com ${funcao}) pode chamá-las
     expect(directos).toEqual([]);
@@ -339,5 +342,40 @@ describe('Módulos divididos por área (21/11/2026)', () => {
       const n = fs.readFileSync(path.join(__dirname, '../public/js', f), 'utf8').split('\n').length;
       expect([f, n < 400]).toEqual([f, true]);
     }
+  });
+});
+
+describe('Regras configuráveis (21/11/2026): o que cada fluxo vende e tempos dos quartos', () => {
+  const admin = { nivel_acesso: 'ADMIN' };
+  test('as Configurações mostram os dois cartões com os valores do servidor', async () => {
+    const html = await render(carregar(admin), 'modulo_configuracoes');
+    expect(html).toContain('O QUE CADA FLUXO VENDE');
+    expect(html).toContain("guardarFluxoVenda('TAKEAWAY')");
+    expect(html).toContain("pedirReporFluxoVenda('TAKEAWAY')"); // configurado → pode repor
+    expect(html).not.toContain("pedirReporFluxoVenda('BALCAO')");
+    expect(html).toContain('TEMPOS DOS QUARTOS');
+    expect(html).toContain('id="tq-hora_h" value="3"');
+    expect(html).toContain('pedirReporTemposQuartos()');
+  });
+  test('guardar os tempos envia números ao servidor; o fluxo envia só as categorias marcadas', async () => {
+    const ctx = carregar(admin);
+    const env = [];
+    ctx.api = async (m, url, corpo) => { env.push({ m, url, corpo }); return {}; };
+    const valores = { 'tq-hora_h': '3', 'tq-noite_h': '12', 'tq-diaria_h': '24', 'tq-limpeza_min': '45', 'tq-aviso_min': '5', 'tq-estrela_min': '90' };
+    ctx.document.getElementById = id => ({ value: valores[id] });
+    await ctx.guardarTemposQuartos();
+    expect(env[0]).toEqual({ m: 'PUT', url: '/quartos/tempos', corpo: { hora_h: 3, noite_h: 12, diaria_h: 24, limpeza_min: 45, aviso_min: 5, estrela_min: 90 } });
+    ctx.document.querySelectorAll = () => [{ checked: true, disabled: false, value: 'BEBIDA' }, { checked: false, disabled: false, value: 'SHISHA' }, { checked: true, disabled: true, value: 'VELHA' }];
+    await ctx.guardarFluxoVenda('TAKEAWAY');
+    expect(env[1]).toEqual({ m: 'PUT', url: '/configuracoes/fluxos/TAKEAWAY', corpo: { categorias: ['BEBIDA'] } });
+  });
+  test('repor pede confirmação; o ecrã dos Quartos mostra os tempos do estabelecimento', async () => {
+    let html = '';
+    const ctx = carregar(admin);
+    ctx.abrirModal = (t, h) => { html = h; };
+    ctx.pedirReporFluxoVenda('LOJA');
+    expect(html).toContain("reporFluxoVenda('LOJA')");
+    const quartos = await render(carregar(admin), 'modulo_quartos');
+    expect(quartos).toContain('reserva em menos de 90 min');
   });
 });

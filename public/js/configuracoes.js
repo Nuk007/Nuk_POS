@@ -65,7 +65,8 @@ async function modulo_configuracoes(el) {
     const contasCC = Array.isArray(rCC) ? rCC : [];
     const resCli = lic('caixa') ? await api('GET', '/clientes?limit=500') : [];
     const clientesCC = (Array.isArray(resCli) ? resCli : (resCli && resCli.data) || []).filter(c => !contasCC.some(x => x.id === c.id && x.conta_corrente_ativa));
-    const catsBalcao = lic('restauracao') ? ((await api('GET', '/pedidos/balcao/categorias')) || {}).categorias || [] : [];
+    const fluxosVenda = (lic('restauracao') || lic('lazer') || lic('loja')) ? await api('GET', '/pedidos/fluxos/categorias') : null;
+    const temposQuartos = lic('hospedagem') ? await api('GET', '/quartos/tempos') : null;
     const dsh = await api('GET', '/dashboard/itens') || { itens: [], servicos: {} };
     window._cfgDash = { produtos, categorias: (listas.CATEGORIA_PRODUTO?.opcoes || []).filter(o => o.ativo).map(o => o.valor), servicos: dsh.servicos };
 
@@ -107,7 +108,8 @@ async function modulo_configuracoes(el) {
       ${lic('restauracao') ? `<div class="card mt-2" style="max-width:700px"><div class="card-titulo mb-2">👨‍🍳 COZINHA E BAR</div>
         <div class="muted" style="font-size:.82rem;margin-bottom:.6rem">Escolha em que ecrã aparece cada categoria (Cozinha, Bar ou nenhum).</div>
         <button class="btn-secundario" data-on-click="modalPostosPreparacao()">Definir postos por categoria</button></div>` : ''}
-      ${lic('restauracao') ? cartaoBalcao(catsBalcao, (listas.CATEGORIA_PRODUTO?.opcoes || []).filter(o => o.ativo).map(o => o.valor)) : ''}
+      ${cartaoFluxosVenda(fluxosVenda, (listas.CATEGORIA_PRODUTO?.opcoes || []).filter(o => o.ativo).map(o => o.valor), lic)}
+      ${lic('hospedagem') ? cartaoTemposQuartos(temposQuartos) : ''}
       ${lic('caixa') ? cartaoTiposCartao(tiposCartao, lotesCartao) : ''}
       ${lic('caixa') ? cartaoContasCorrentes(contasCC, clientesCC) : ''}
       ${lic('financas') ? cartaoResumoDiario(cfg) : ''}

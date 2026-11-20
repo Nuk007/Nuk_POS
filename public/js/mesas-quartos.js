@@ -77,7 +77,7 @@ async function salvarStatusMesa(id) {
 async function modulo_quartos(el) {
   window._quartosVoltar = null; // aberto pelo menu: as acções voltam aos Quartos
   try {
-    const quartos = await api('GET', '/quartos') || [];
+    const [quartos, tq] = await Promise.all([api('GET', '/quartos').then(r => r || []), carregarTemposQuarto()]);
     window._quartos = quartos;
     const tipos = [...new Set(quartos.map(q => q.tipo))].sort();
     const u = NUK.utilizador || {};
@@ -88,7 +88,7 @@ async function modulo_quartos(el) {
     el.innerHTML = `
       <div class="toolbar">
         <span class="secao-titulo">🛏️ Quartos</span>
-        <span class="quartos-legenda muted texto-pequeno"><span class="estrela amarela">★</span> reservado &nbsp; <span class="estrela vermelha">★</span> reserva em menos de 1 h (vendas bloqueadas)</span>
+        <span class="quartos-legenda muted texto-pequeno"><span class="estrela amarela">★</span> reservado &nbsp; <span class="estrela vermelha">★</span> reserva em menos de ${textoMinQuarto(tq.estrela_min)} (vendas bloqueadas)</span>
       </div>
       ${meus.length ? `<div class="quartos-aviso">🧹 ${meus.length === 1 ? 'Um quarto por arrumar' : meus.length + ' quartos por arrumar'}: ${meus.map(q => `<b>${esc(q.numero)}</b>`).join(', ')} — toque no quarto para o dar como limpo.</div>` : ''}
       ${quartos.length ? '' : '<div class="muted" style="padding:2rem;text-align:center">Ainda não há quartos. Um Administrador pode criá-los em <b>⚙️ Configurações → Quartos e preços</b>.</div>'}
@@ -138,7 +138,15 @@ function htmlBotaoQuarto(q) {
 
 /** Depois de uma acção num quarto: volta ao ecrã de onde se abriu (Quartos ou Balcão → «Vender quarto»). */
 function recarregarQuartos() { carregarModulo(window._quartosVoltar || 'quartos'); }
-const FRACOES_QUARTO = { DUAS_HORAS: ['Hora', '2 h', 'preco_2h'], PERNOITE: ['Noite', '12 h', 'preco_pernoite'], DIARIA: ['Diária', '24 h', 'preco_diaria'] };
+const FRACOES_QUARTO = { DUAS_HORAS: ['Hora', '2 h', 'preco_2h', 'hora_h'], PERNOITE: ['Noite', '12 h', 'preco_pernoite', 'noite_h'], DIARIA: ['Diária', '24 h', 'preco_diaria', 'diaria_h'] };
+const textoMinQuarto = m => (m % 60 === 0 ? `${m / 60} h` : `${m} min`);
+/** Tempos dos quartos do estabelecimento (Configurações → Tempos dos quartos); actualiza as durações dos botões. */
+async function carregarTemposQuarto() {
+  try { const t = await api('GET', '/quartos/tempos'); if (t && typeof t.hora_h === 'number') window._temposQuarto = t; } catch { /* sem rede: os últimos conhecidos */ }
+  const t = window._temposQuarto || { hora_h: 2, noite_h: 12, diaria_h: 24, limpeza_min: 30, aviso_min: 5, estrela_min: 60 };
+  Object.values(FRACOES_QUARTO).forEach(f => { if (t[f[3]]) f[1] = `${t[f[3]]} h`; });
+  return t;
+}
 const quartoPorId = id => (window._quartos || []).find(q => q.id === id);
 
 // Clique no botão do quarto: estado, serviço (Hora/Noite/Diária) e as acções Vender / Reservar / Abrir Quarto
@@ -157,7 +165,7 @@ function modalQuarto(id) {
   const escalado = q.limpeza && q.limpeza.escalado;
   const podeLimpar = q.status === 'LIMPEZA' && (q.limpeza ? (escalado ? chefia : !!u.arruma_quartos) : (chefia || !!u.arruma_quartos));
   const reservas = (q.reservas_futuras || []).map(r => {
-    const perto = new Date(r.checkin) - Date.now() <= 3600e3;
+    const perto = new Date(r.checkin) - Date.now() <= ((window._temposQuarto || {}).estrela_min || 60) * 60e3;
     return `<div class="quarto-reserva">
       <div><b>${horaQuarto(r.checkin)}</b> → ${horaQuarto(r.checkout)} · ${esc(FRACOES_QUARTO[r.fracao][0])}${r.nome_hospede ? ' · ' + esc(r.nome_hospede) : ''}</div>
       ${vende ? `<div class="row-acoes">
@@ -206,7 +214,7 @@ function passoQuarto(acao) {
   const sel = window._quartoSel, q = sel && quartoPorId(sel.id), alvo = document.getElementById('passo-quarto');
   if (!q || !alvo) return;
   if (acao === 'ABRIR') {
-    alvo.innerHTML = `<div class="quartos-aviso"><b>Abrir o quarto ${esc(q.numero)}?</b> O cliente sai antes da hora: o quarto passa a «a arrumar» e a equipa de arrumação é avisada (30 min para o dar como limpo).
+    alvo.innerHTML = `<div class="quartos-aviso"><b>Abrir o quarto ${esc(q.numero)}?</b> O cliente sai antes da hora: o quarto passa a «a arrumar» e a equipa de arrumação é avisada (${(window._temposQuarto || {}).limpeza_min || 30} min para o dar como limpo).
       <div style="display:flex;gap:.5rem;margin-top:.6rem"><button class="btn-perigo" style="flex:1" data-on-click="confirmarAbrirQuarto()">Sim, abrir</button><button class="btn-secundario" style="flex:1" data-on-click="fecharPassoQuarto()">Não, voltar</button></div></div>`;
     return;
   }

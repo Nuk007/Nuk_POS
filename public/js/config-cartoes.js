@@ -160,27 +160,8 @@ async function guardarResumoDiario() {
 // ─── Configurações → Contas correntes (crédito a clientes; só ADMIN) ───
 // Cartões de consumo: cada valor é um botão no Caixa → Cartões (como os quartos). Não se apagam: desactivam-se.
 const euAdmin = () => typeof NUK !== 'undefined' && NUK.utilizador && NUK.utilizador.nivel_acesso === 'ADMIN';
-// Balcão (regra do dono, 20/11/2026): só vende as categorias escolhidas aqui (bebidas, piscina…) e a estadia dos quartos
+// O que cada fluxo vende e os tempos dos quartos estão em config-fluxos.js
 const rotuloCategoria = c => String(c).charAt(0) + String(c).slice(1).toLowerCase().replace(/_/g, ' ');
-function cartaoBalcao(escolhidas, todas) {
-  const lista = [...new Set([...todas, ...escolhidas])];
-  return `
-      <div class="card mt-2" style="max-width:700px">
-        <div class="card-titulo mb-2">🧾 BALCÃO — O QUE SE VENDE</div>
-        <div class="muted" style="font-size:.82rem;margin-bottom:.6rem">O Balcão só vende os produtos destas categorias, e a estadia dos quartos (botão «Vender quarto», para quem pode vender quartos). Comidas pedem-se na mesa. Se faltar a categoria da piscina, crie-a em Listas → Categorias de produto.</div>
-        <div class="acessos-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(10rem,1fr));gap:.35rem .8rem;margin-bottom:.75rem">
-          ${lista.map(c => `<label style="display:flex;gap:.45rem;align-items:center;font-size:.88rem;cursor:pointer"><input type="checkbox" class="balcao-cat" value="${esc(c)}" style="width:auto;margin:0"${escolhidas.includes(c) ? ' checked' : ''}${todas.includes(c) ? '' : ' disabled'}> ${esc(rotuloCategoria(c))}</label>`).join('')}
-        </div>
-        <button class="btn-primario" data-on-click="guardarCategoriasBalcao()">Guardar</button>
-      </div>`;
-}
-async function guardarCategoriasBalcao() {
-  const categorias = Array.from(document.querySelectorAll('.balcao-cat')).filter(x => x.checked && !x.disabled).map(x => x.value);
-  if (!categorias.length) { toast('Escolha pelo menos uma categoria para o Balcão', 'erro'); return; }
-  try { await api('PUT', '/configuracoes/balcao', { categorias }); toast('Balcão actualizado', 'sucesso'); }
-  catch (e) { toast(e.message, 'erro'); }
-}
-
 function cartaoTiposCartao(tipos, lotes = []) {
   const activos = tipos.filter(t => t.ativo);
   return `
