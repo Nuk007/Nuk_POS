@@ -2,7 +2,7 @@
 /** Cartões num navegador real: botões como os quartos, gerar o lote (descarrega a folha) e vender 2 cartões pelos códigos. */
 const { test, expect } = require('@playwright/test');
 
-test('gerar lote de cartões de 3 000 Kz e vender 2 pela grelha, cobrando o valor impresso', async ({ page }) => {
+test('Administrador gera o lote em Configurações; o Caixa vende 2 pela grelha, cobrando o valor impresso', async ({ page }) => {
   const erros = [];
   page.on('pageerror', e => erros.push(e.message));
   page.on('console', m => { if (m.type() === 'error' && !/favicon|Failed to load resource/i.test(m.text())) erros.push(m.text()); });
@@ -21,13 +21,21 @@ test('gerar lote de cartões de 3 000 Kz e vender 2 pela grelha, cobrando o valo
     await expect(page.locator('button:has-text("Fechar caixa")')).toBeVisible();
   }
 
+  // o Caixa não gera códigos: só o Administrador, em Configurações
   await page.click('.nav-item[data-modulo="cartoes"]');
   for (const v of ['2.000', '3.000', '25.000']) await expect(page.locator('.cartao-card', { hasText: new RegExp(`^\\s*${v} Kz`) }).first()).toBeVisible();
+  await expect(page.locator('#main-content button:has-text("Gerar")')).toHaveCount(0);
+
+  await page.click('.nav-item[data-modulo="configuracoes"]');
+  await expect(page.getByText('GERAR CÓDIGOS (LOTES PARA IMPRIMIR)')).toBeVisible();
   await page.selectOption('#lote-valor', '3000');
   await page.fill('#lote-qtd', '4');
   const descarga = page.waitForEvent('download');
   await page.click('button:has-text("Gerar lote")');
   expect((await descarga).suggestedFilename()).toMatch(/^cartoes-lote-\d+\.pdf$/);
+  await expect(page.locator('#main-content tr', { hasText: /N\.º \d+/ }).first()).toBeVisible(); // Configurações recarregadas com o lote
+  await page.click('.nav-item[data-modulo="cartoes"]');
+  await expect(page.locator('#topbar-titulo')).toHaveText(/Cartões de consumo/);
 
   // dois códigos do lote acabado de gerar (o operador lê-os nas cartolinas)
   const codigos = await page.evaluate(async () => {

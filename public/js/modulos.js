@@ -1697,7 +1697,9 @@ async function guardarResumoDiario() {
 
 // ─── Configurações → Contas correntes (crédito a clientes; só ADMIN) ───
 // Cartões de consumo: cada valor é um botão no Caixa → Cartões (como os quartos). Não se apagam: desactivam-se.
-function cartaoTiposCartao(tipos) {
+const euAdmin = () => typeof NUK !== 'undefined' && NUK.utilizador && NUK.utilizador.nivel_acesso === 'ADMIN';
+function cartaoTiposCartao(tipos, lotes = []) {
+  const activos = tipos.filter(t => t.ativo);
   return `
       <div class="card mt-2" style="max-width:700px">
         <div class="card-titulo mb-2">💳 CARTÕES DE CONSUMO</div>
@@ -1717,8 +1719,33 @@ function cartaoTiposCartao(tipos) {
           <div class="campo" style="flex:2;min-width:10rem;margin:0"><label>Nome (opcional)</label><input id="tc-nome" maxlength="60" placeholder="Ex.: Cartão piscina"></div>
           <button class="btn-primario" data-on-click="criarTipoCartao()">+ Novo cartão</button>
         </div>
+        ${euAdmin() ? `<div class="card-titulo mt-2" style="margin-top:1.2rem">GERAR CÓDIGOS (LOTES PARA IMPRIMIR)</div>
+        <div class="muted" style="font-size:.82rem;margin:.3rem 0 .6rem">Só o Administrador gera códigos de cartão, e só aqui. Imprima a folha em cartolina (10 cartões por página) e recorte. Cada cartão fica sem saldo até o Caixa o vender: perdido antes disso, não vale nada.</div>
+        ${activos.length ? `<div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-end">
+          <div class="campo" style="flex:1;min-width:8rem;margin:0"><label>Cartão</label><select id="lote-valor">${activos.map(t => `<option value="${Number(t.valor)}">${formatarMoeda(t.valor)}${t.nome ? ' · ' + esc(t.nome) : ''}</option>`).join('')}</select></div>
+          <div class="campo" style="width:7rem;margin:0"><label>Quantidade</label><input id="lote-qtd" type="number" min="1" max="200" value="20"></div>
+          <button class="btn-primario" data-on-click="gerarLoteCartoes()">Gerar lote</button>
+        </div>` : '<div class="muted">Active ou crie um cartão primeiro.</div>'}
+        <div class="tabela-wrapper mt-2"><table>
+          <thead><tr><th>Lote</th><th style="text-align:right">Valor</th><th style="text-align:right">Cartões</th><th style="text-align:right">Vendidos</th><th>Criado</th><th></th></tr></thead>
+          <tbody>${lotes.map(l => `<tr><td><b>N.º ${l.numero}</b></td><td style="text-align:right">${formatarMoeda(l.valor)}</td><td style="text-align:right">${l.quantidade}</td><td style="text-align:right">${l.vendidos}</td>
+              <td style="font-size:.78rem">${new Date(l.criado_em).toLocaleDateString('pt-PT', { timeZone: 'Africa/Luanda' })}${l.criado_por_nome ? ` · ${esc(l.criado_por_nome)}` : ''}</td>
+              <td><button class="btn-secundario" style="padding:.2rem .55rem;font-size:.75rem" data-on-click="imprimirLoteCartoes('${esc(l.id)}','${l.numero}')">🖨️ Imprimir</button></td></tr>`).join('')
+            || '<tr><td colspan="6" class="muted" style="text-align:center;padding:1rem">Ainda não gerou lotes</td></tr>'}</tbody></table></div>` : ''}
       </div>`;
 }
+async function gerarLoteCartoes() {
+  const valor = parseInt(document.getElementById('lote-valor').value, 10);
+  const quantidade = parseInt(document.getElementById('lote-qtd').value, 10);
+  if (!(quantidade >= 1 && quantidade <= 200)) return toast('Quantidade de 1 a 200 cartões por lote', 'aviso');
+  try {
+    const l = await api('POST', '/caixa/cartoes/lotes', { valor, quantidade });
+    toast(`Lote N.º ${l.numero}: ${l.quantidade} cartões de ${formatarMoeda(l.valor)}. A descarregar a folha para imprimir…`, 'sucesso', 6000);
+    imprimirLoteCartoes(l.id, l.numero);
+    carregarModulo('configuracoes');
+  } catch (e) { toast(e.message, 'erro'); }
+}
+function imprimirLoteCartoes(id, numero) { descarregarPdf(`/caixa/cartoes/lotes/${id}/pdf`, `cartoes-lote-${numero}.pdf`); }
 async function criarTipoCartao() {
   const valor = parseInt(document.getElementById('tc-valor').value, 10);
   if (!(valor >= 1000 && valor <= 500000)) return toast('Valor de 1 000 a 500 000 Kz', 'aviso');
@@ -1814,6 +1841,8 @@ async function modulo_configuracoes(el) {
     const rCC = lic('caixa') ? await api('GET', '/caixa/conta-corrente') : [];
     const rTC = lic('caixa') ? await api('GET', '/caixa/cartoes/tipos?todos=1') : [];
     const tiposCartao = Array.isArray(rTC) ? rTC : [];
+    const rLotes = lic('caixa') && euAdmin() ? await api('GET', '/caixa/cartoes/lotes') : [];
+    const lotesCartao = Array.isArray(rLotes) ? rLotes : [];
     const contasCC = Array.isArray(rCC) ? rCC : [];
     const resCli = lic('caixa') ? await api('GET', '/clientes?limit=500') : [];
     const clientesCC = (Array.isArray(resCli) ? resCli : (resCli && resCli.data) || []).filter(c => !contasCC.some(x => x.id === c.id && x.conta_corrente_ativa));
@@ -1858,7 +1887,7 @@ async function modulo_configuracoes(el) {
       ${lic('restauracao') ? `<div class="card mt-2" style="max-width:700px"><div class="card-titulo mb-2">👨‍🍳 COZINHA E BAR</div>
         <div class="muted" style="font-size:.82rem;margin-bottom:.6rem">Escolha em que ecrã aparece cada categoria (Cozinha, Bar ou nenhum).</div>
         <button class="btn-secundario" data-on-click="modalPostosPreparacao()">Definir postos por categoria</button></div>` : ''}
-      ${lic('caixa') ? cartaoTiposCartao(tiposCartao) : ''}
+      ${lic('caixa') ? cartaoTiposCartao(tiposCartao, lotesCartao) : ''}
       ${lic('caixa') ? cartaoContasCorrentes(contasCC, clientesCC) : ''}
       ${lic('financas') ? cartaoResumoDiario(cfg) : ''}
       ${(lic('restauracao') || lic('lazer') || lic('loja')) ? '<div class="card mt-2" style="max-width:700px" id="cfg-agentes"></div>' : ''}

@@ -13,12 +13,15 @@ test('movimentos do caixa: pesquisa, verificação, rasto de cartão e exportaç
   await page.click('#btn-entrar');
   await expect(page.locator('#app')).toBeVisible();
 
-  // um movimento conhecido: abrir o caixa (se preciso) e vender um cartão de 6 000 Kz
+  // um movimento conhecido: abrir o caixa (se preciso), o Administrador gera um cartão de 6 000 Kz e o caixa vende-o
   const codigo = await page.evaluate(async () => {
     const h = { Authorization: `Bearer ${NUK.token}`, 'Content-Type': 'application/json' };
     const e = await (await fetch('/api/caixa', { headers: h })).json();
     if (!e.aberta) await fetch('/api/caixa/abrir', { method: 'POST', headers: h, body: JSON.stringify({ fundo_inicial: 0 }) });
-    return (await (await fetch('/api/caixa/cartoes', { method: 'POST', headers: h, body: JSON.stringify({ valor: 6000, metodo: 'CASH' }) })).json()).codigo;
+    const l = await (await fetch('/api/caixa/cartoes/lotes', { method: 'POST', headers: h, body: JSON.stringify({ valor: 6000, quantidade: 1 }) })).json();
+    const cod = (await (await fetch(`/api/caixa/cartoes/lotes/${l.id}`, { headers: h })).json()).cartoes[0].codigo;
+    await fetch('/api/caixa/cartoes/vender', { method: 'POST', headers: h, body: JSON.stringify({ valor: 6000, metodo: 'CASH', codigos: [cod] }) });
+    return cod;
   });
 
   await page.click('.nav-item[data-modulo="movimentos"]');

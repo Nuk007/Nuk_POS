@@ -296,3 +296,31 @@ describe('Solicitações: pedido de reserva do portal', () => {
     expect(await render(carregar({ nivel_acesso: 'ADMIN' }), 'modulo_configuracoes')).toContain('guardarResumoDiario()');
   });
 });
+
+describe('Configurações → Cartões de consumo (códigos só pelo Administrador)', () => {
+  const tipos = [{ id: 't1', valor: 3000, nome: null, ativo: true, por_vender: 4 }, { id: 't2', valor: 6000, nome: 'Piscina', ativo: false, por_vender: 0 }];
+  const lotes = [{ id: 'l1', numero: 2, valor: 3000, quantidade: 20, vendidos: 5, criado_em: '2026-11-20T09:00:00Z', criado_por_nome: 'Dono' }];
+  test('ADMIN: lista os cartões, gera lotes só dos activos e reimprime a folha', async () => {
+    const ctx = carregar({ nivel_acesso: 'ADMIN' });
+    const h = ctx.cartaoTiposCartao(tipos, lotes);
+    expect(h).toContain('GERAR CÓDIGOS');
+    expect(h).toContain('gerarLoteCartoes()');
+    expect(h).toContain('<option value="3000">');
+    expect(h).not.toContain('<option value="6000">'); // desactivado não gera
+    expect(h).toContain("imprimirLoteCartoes('l1','2')");
+    expect(h).toContain("pedirDesactivarTipoCartao('t1')");
+    expect(h).toContain("activarTipoCartao('t2')");
+    const chamadas = [], pdfs = [];
+    ctx.document.getElementById = id => ({ value: { 'lote-valor': '3000', 'lote-qtd': '30' }[id] || '' });
+    ctx.api = async (m, u, b) => { chamadas.push([m, u, b]); return { id: 'l9', numero: 3, valor: 3000, quantidade: 30 }; };
+    ctx.descarregarPdf = (c, n) => pdfs.push([c, n]);
+    await ctx.gerarLoteCartoes();
+    expect(chamadas).toContainEqual(['POST', '/caixa/cartoes/lotes', { valor: 3000, quantidade: 30 }]);
+    expect(pdfs).toContainEqual(['/caixa/cartoes/lotes/l9/pdf', 'cartoes-lote-3.pdf']);
+  });
+  test('quem não é ADMIN não vê a geração de códigos', () => {
+    const h = carregar({ nivel_acesso: 'GERENTE' }).cartaoTiposCartao(tipos, lotes);
+    expect(h).not.toContain('gerarLoteCartoes');
+    expect(h).not.toContain('imprimirLoteCartoes');
+  });
+});

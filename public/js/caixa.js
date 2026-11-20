@@ -140,63 +140,34 @@ async function nukcoinCarregar(valor) {
 // ── Cartões de consumo ──────────────────────────────────────
 // Os cartões (valores) configuram-se em Configurações → Cartões de consumo e aparecem aqui como botões, como os quartos.
 // Vende-se carregando no cartão, indicando a quantidade e os códigos dos cartões impressos entregues, e validando.
+// Regra do dono: os códigos só são gerados pelo Administrador (lotes em Configurações); aqui só se vendem.
 // Cobra-se o valor do cartão, sem desconto (decisão do dono de 20/11/2026).
-const chefiaCartoes = () => typeof NUK !== 'undefined' && NUK.utilizador && ['ADMIN', 'GERENTE'].includes(NUK.utilizador.nivel_acesso);
 const VENDA_CARTOES_MAX = 50;
 const RE_CODIGO_CARTAO = /^CC[A-Z0-9]{8}$/;
 const normCodigoCartao = c => String(c || '').trim().toUpperCase().replace(/[\s-]/g, '');
-
-/** Lotes de cartões pré-impressos (só chefia). Não mexe em dinheiro, por isso aparece mesmo com o caixa fechado. */
-async function htmlLotesCartoes(tipos) {
-  if (!chefiaCartoes()) return '';
-  const [lotes, ts] = await Promise.all([api('GET', '/caixa/cartoes/lotes'), tipos ? tipos : api('GET', '/caixa/cartoes/tipos')]);
-  const valores = (ts || []).map(t => Number(t.valor));
-  return `<div class="card mt-2" style="max-width:640px">
-      <div class="card-titulo">CARTÕES PARA IMPRIMIR (LOTES)</div>
-      <p class="muted texto-pequeno" style="margin:.4rem 0 .6rem">Gere os códigos, imprima a folha em cartolina (10 cartões por página) e recorte. Cada cartão fica sem saldo até ser vendido no caixa: perdido antes disso, não vale nada.</p>
-      ${valores.length ? `<div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-end">
-        <div class="campo" style="flex:1;min-width:140px;margin:0"><label>Valor do cartão</label><select id="lote-valor">${valores.map(v => `<option value="${v}">${formatarMoeda(v)}</option>`).join('')}</select></div>
-        <div class="campo" style="width:120px;margin:0"><label>Quantidade</label><input id="lote-qtd" type="number" min="1" max="200" value="20"></div>
-        <button class="btn-primario" data-on-click="gerarLoteCartoes()">Gerar lote</button>
-      </div>` : '<p class="muted texto-pequeno">Crie primeiro os cartões em ⚙️ Configurações → Cartões de consumo.</p>'}
-      <div class="tabela-wrapper mt-2"><table>
-        <thead><tr><th>Lote</th><th style="text-align:right">Valor</th><th style="text-align:right">Cartões</th><th style="text-align:right">Vendidos</th><th>Criado</th><th></th></tr></thead>
-        <tbody>${(lotes || []).map(l => `<tr><td><b>N.º ${l.numero}</b></td><td style="text-align:right">${formatarMoeda(l.valor)}</td><td style="text-align:right">${l.quantidade}</td><td style="text-align:right">${l.vendidos}</td>
-            <td class="texto-pequeno">${new Date(l.criado_em).toLocaleDateString('pt-PT', { timeZone: 'Africa/Luanda' })}${l.criado_por_nome ? ` · ${esc(l.criado_por_nome)}` : ''}</td>
-            <td><button class="btn-secundario" style="padding:.2rem .55rem;font-size:.75rem" data-on-click="imprimirLoteCartoes('${esc(l.id)}','${l.numero}')">🖨️ Imprimir</button></td></tr>`).join('')
-          || '<tr><td colspan="6" class="muted" style="text-align:center;padding:1rem">Ainda não gerou lotes</td></tr>'}</tbody></table></div>
-    </div>`;
-}
 
 function htmlBotaoCartao(t) {
   const n = Number(t.por_vender) || 0;
   return `<div class="quarto-card cartao-card ${n ? 'DISPONIVEL' : 'LIMPEZA'}" data-on-click="modalVenderCartoes(${Number(t.valor)})">
       <div class="card-numero">${formatarMoeda(t.valor)}</div>
       <div class="card-tipo">${esc(t.nome || 'Cartão de consumo')}</div>
-      <div class="quarto-estado">${n ? `${n} impresso${n === 1 ? '' : 's'} por vender` : 'Sem impressos por vender'}</div>
+      <div class="quarto-estado">${n ? `${n} impresso${n === 1 ? '' : 's'} por vender` : 'Sem impressos: peça um lote ao Administrador'}</div>
     </div>`;
 }
 
 async function modulo_cartoes(el) {
   try {
-    if (!await caixaAberto(el, '💳 Cartões de consumo')) { el.innerHTML += await htmlLotesCartoes(); return; }
+    if (!await caixaAberto(el, '💳 Cartões de consumo')) return;
     const [tipos, lista] = await Promise.all([api('GET', '/caixa/cartoes/tipos'), api('GET', '/caixa/cartoes')]);
     window._tiposCartao = tipos || [];
     el.innerHTML = `<div class="toolbar"><span class="secao-titulo">💳 Cartões de consumo</span></div>
       <p class="muted texto-pequeno" style="margin-bottom:.6rem">Cartão pré-pago para quem não usa telemóvel. Toque no cartão, indique a quantidade e os códigos dos cartões que entrega, e valide. Cobra-se o valor do cartão, sem desconto.</p>
       ${window._tiposCartao.length ? `<div class="grid-cards">${window._tiposCartao.map(htmlBotaoCartao).join('')}</div>`
         : '<div class="muted" style="padding:2rem;text-align:center">Ainda não há cartões. Um Administrador cria-os em <b>⚙️ Configurações → Cartões de consumo</b>.</div>'}
-      ${window._tiposCartao.length ? `<details class="card mt-2" style="max-width:640px"><summary class="muted texto-pequeno" style="cursor:pointer">Sem cartões impressos? Gerar um código na hora para escrever no cartão</summary>
-        <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-end;margin-top:.6rem">
-          <div class="campo" style="flex:1;min-width:120px;margin:0"><label>Valor</label><select id="cc-valor">${window._tiposCartao.map(t => `<option value="${Number(t.valor)}">${formatarMoeda(t.valor)}</option>`).join('')}</select></div>
-          <div class="campo" style="flex:1;min-width:120px;margin:0"><label>Forma de pagamento</label><select id="cc-metodo">${optsFormas(FORMAS_BALCAO)}</select></div>
-          <button class="btn-secundario" data-on-click="venderCartaoOutro()">Gerar e vender</button>
-        </div></details>` : ''}
       <div class="card tabela-wrapper mt-2" style="max-width:640px"><table>
         <thead><tr><th>Código</th><th style="text-align:right">Valor inicial</th><th style="text-align:right">Saldo</th><th>Vendido às</th></tr></thead>
         <tbody>${(lista || []).map(c => `<tr><td><b>${esc(c.codigo)}</b></td><td style="text-align:right">${formatarMoeda(c.valor_inicial)}</td><td style="text-align:right">${formatarMoeda(c.saldo)}</td><td>${new Date(c.criado_em).toLocaleString('pt-PT', { timeZone: 'Africa/Luanda' })}</td></tr>`).join('')
-          || '<tr><td colspan="4" class="muted" style="text-align:center;padding:1rem">Ainda não vendeu cartões</td></tr>'}</tbody></table></div>
-      ${await htmlLotesCartoes(window._tiposCartao)}`;
+          || '<tr><td colspan="4" class="muted" style="text-align:center;padding:1rem">Ainda não vendeu cartões</td></tr>'}</tbody></table></div>`;
   } catch (e) { el.innerHTML = `<div class="erro-msg">Erro: ${esc(e.message)}</div>`; }
 }
 
@@ -269,32 +240,6 @@ async function vcValidar() {
   } catch (e) { toast(e.message, 'erro'); }
 }
 
-function venderCartaoOutro() { venderCartao(parseInt(document.getElementById('cc-valor').value, 10)); }
-function modalCartaoVendido(c) {
-  abrirModal('Cartão vendido', `<p style="margin-bottom:.4rem">Escreva este código no cartão e entregue-o ao cliente:</p>
-      <div style="font-size:1.8rem;font-weight:800;letter-spacing:.12em;text-align:center;padding:.8rem;background:var(--c-bg);border-radius:8px">${esc(c.codigo)}</div>
-      <p style="text-align:center;margin:.6rem 0">Saldo: <b>${formatarMoeda(c.saldo)}</b></p>
-      <button class="btn-primario btn-bloco" data-on-click="fecharModal()">Concluído</button>`);
-}
-async function venderCartao(valor) {
-  try {
-    const c = await api('POST', '/caixa/cartoes', { valor, metodo: document.getElementById('cc-metodo').value });
-    modalCartaoVendido(c);
-    carregarModulo('cartoes');
-  } catch (e) { toast(e.message, 'erro'); }
-}
-async function gerarLoteCartoes() {
-  const valor = parseInt(document.getElementById('lote-valor').value, 10);
-  const quantidade = parseInt(document.getElementById('lote-qtd').value, 10);
-  if (!(quantidade >= 1 && quantidade <= 200)) return toast('Quantidade de 1 a 200 cartões por lote', 'aviso');
-  try {
-    const l = await api('POST', '/caixa/cartoes/lotes', { valor, quantidade });
-    toast(`Lote N.º ${l.numero}: ${l.quantidade} cartões de ${formatarMoeda(l.valor)}. A descarregar a folha para imprimir…`, 'sucesso', 6000);
-    imprimirLoteCartoes(l.id, l.numero);
-    carregarModulo('cartoes');
-  } catch (e) { toast(e.message, 'erro'); }
-}
-function imprimirLoteCartoes(id, numero) { descarregarPdf(`/caixa/cartoes/lotes/${id}/pdf`, `cartoes-lote-${numero}.pdf`); }
 
 // ── Receber mesas (pedidos fechados) ────────────────────────
 async function modulo_recebimentos(el) {

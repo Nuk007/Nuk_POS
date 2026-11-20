@@ -94,14 +94,25 @@ describe('Lotes de cartões pré-impressos', () => {
     expect(c.body).toMatchObject({ estado: 'ACTIVO', lote_numero: 1 });
   });
 
-  test('a lista de lotes conta vendidos e por vender; o cartão gerado na hora continua a funcionar', async () => {
+  test('a lista de lotes conta vendidos e por vender; gerar código fora dos lotes foi retirado', async () => {
     const l = (await a('get', '/api/caixa/cartoes/lotes')).body.find(x => x.id === lote.id);
     expect(l).toMatchObject({ quantidade: 12, vendidos: 1, por_vender: 11 });
     const v = await a('post', '/api/caixa/cartoes', { valor: 3000, metodo: 'CASH' });
-    expect(v.status).toBe(201);
-    expect(Number(v.body.saldo)).toBe(3000);
-    expect(await num(`SELECT valor AS v FROM caixa_movimentos WHERE cartao_id = $1`, [v.body.id])).toBe(3000);
-    expect((await a('get', '/api/caixa/cartoes')).body[0].codigo).toBe(v.body.codigo);
+    expect(v.status).toBe(410);
+    expect(v.body.codigo).toBe('GERAR_SO_ADMIN');
+    expect((await a('get', '/api/caixa/cartoes')).body[0].codigo).toBe(codigos[1]);
+  });
+
+  test('só o Administrador gera códigos: gerente recusado na rota e no serviço; a BD recusa cartões sem lote', async () => {
+    const G = await criarTenantFixture({ slug: 'it-lotes-ger', nivel: 'GERENTE' });
+    expect((await op(G, 'post', '/api/caixa/cartoes/lotes', { valor: 3000, quantidade: 1 })).status).toBe(403);
+    expect((await op(G, 'get', '/api/caixa/cartoes/lotes')).status).toBe(403);
+    const svc = require('../../server/services/caixa.service');
+    const ger = (await pool.query(`SELECT id FROM funcionarios WHERE tenant_id = $1 LIMIT 1`, [G.tenantId])).rows[0].id;
+    await expect(svc.criarLote({ tenantId: G.tenantId, userId: ger, valor: 3000, quantidade: 1 })).rejects.toMatchObject({ statusCode: 403 });
+    await expect(svc.criarLote({ tenantId: A.tenantId, userId: null, valor: 3000, quantidade: 1 })).rejects.toMatchObject({ statusCode: 403 });
+    await expect(pool.query(`INSERT INTO cartoes_consumo (tenant_id, codigo, valor_inicial, saldo) VALUES ($1, 'CCSEMLOTE2', 3000, 3000)`, [A.tenantId]))
+      .rejects.toThrow(/só são gerados pelo Administrador/);
   });
 
   test('duas vendas simultâneas do mesmo cartão: só uma passa', async () => {

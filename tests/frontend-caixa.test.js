@@ -74,16 +74,6 @@ describe('Caixa do dia (frontend)', () => {
     expect(ctx._chamadas).toContainEqual(['POST', '/caixa/nukcoin', { cliente_id: 'c1', valor: 5000, metodo: 'TPA' }]);
   });
 
-  test('Cartões: venda mostra o código para entregar ao cliente', async () => {
-    const ctx = carregar({ '/caixa': { aberta: true }, '/caixa/cartoes': [], });
-    await ctx.modulo_cartoes({ innerHTML: '' });
-    ctx._els['cc-metodo'] = { value: 'CASH' };
-    ctx.api = async (m, u, b) => { ctx._chamadas.push([m, u, b]); return { codigo: 'CCABCDEFGH', saldo: 10000 }; };
-    await ctx.venderCartao(3000);
-    expect(ctx._chamadas).toContainEqual(['POST', '/caixa/cartoes', { valor: 3000, metodo: 'CASH' }]);
-    expect(ctx._modal).toContain('CCABCDEFGH');
-  });
-
   const TIPOS = [{ id: 't1', valor: 3000, nome: null, ativo: true, por_vender: 12 }, { id: 't2', valor: 6000, nome: 'Piscina', ativo: true, por_vender: 0 }];
 
   test('Cartões: grelha de botões como os quartos (valor, nome, impressos por vender); sem lotes para o operador', async () => {
@@ -141,24 +131,21 @@ describe('Caixa do dia (frontend)', () => {
     expect(ctx._modulo).toBe('cartoes');
   });
 
-  test('Lotes (chefia): aparecem mesmo com o caixa fechado; gerar lote envia valor e quantidade e descarrega a folha', async () => {
-    const ctx = carregar({ '/caixa': { aberta: false }, '/caixa/cartoes/tipos': TIPOS, '/caixa/cartoes/lotes': [{ id: 'l1', numero: 2, valor: 3000, quantidade: 20, vendidos: 5, criado_em: '2026-11-20T09:00:00Z' }] });
-    ctx.NUK = { utilizador: { nivel_acesso: 'GERENTE' } };
-    const pdfs = []; ctx.descarregarPdf = (c, n) => pdfs.push([c, n]);
+  test('Caixa → Cartões nunca gera códigos (só vende), nem para o Administrador, com o caixa aberto ou fechado', async () => {
+    for (const aberta of [true, false]) {
+      const ctx = carregar({ '/caixa': { aberta }, '/caixa/cartoes': [], '/caixa/cartoes/tipos': TIPOS });
+      ctx.NUK = { utilizador: { nivel_acesso: 'ADMIN' } };
+      const el = { innerHTML: '' };
+      await ctx.modulo_cartoes(el);
+      expect(el.innerHTML).not.toMatch(/gerarLoteCartoes|venderCartao\(|Gerar/);
+      expect(typeof ctx.venderCartao).toBe('undefined');
+      expect(typeof ctx.gerarLoteCartoes).toBe('undefined');
+      expect(ctx._chamadas.some(c => c[0] === 'POST')).toBe(false);
+    }
+    const ctx = carregar({ '/caixa': { aberta: true }, '/caixa/cartoes': [], '/caixa/cartoes/tipos': TIPOS });
     const el = { innerHTML: '' };
     await ctx.modulo_cartoes(el);
-    expect(el.innerHTML).toContain('fechado');
-    expect(el.innerHTML).toContain('N.º 2');
-    expect(el.innerHTML).toContain("imprimirLoteCartoes('l1','2')");
-    expect(el.innerHTML).toContain('<option value="6000">'); // valores = cartões configurados
-    ctx._els['lote-valor'] = { value: '3000' }; ctx._els['lote-qtd'] = { value: '0' };
-    await ctx.gerarLoteCartoes();
-    expect(ctx._chamadas.some(c => c[0] === 'POST')).toBe(false);
-    ctx._els['lote-qtd'].value = '30';
-    ctx.api = async (m, u, b) => { ctx._chamadas.push([m, u, b]); return { id: 'l9', numero: 3, valor: 3000, quantidade: 30 }; };
-    await ctx.gerarLoteCartoes();
-    expect(ctx._chamadas).toContainEqual(['POST', '/caixa/cartoes/lotes', { valor: 3000, quantidade: 30 }]);
-    expect(pdfs).toContainEqual(['/caixa/cartoes/lotes/l9/pdf', 'cartoes-lote-3.pdf']);
+    expect(el.innerHTML).toContain('peça um lote ao Administrador');
   });
 
   test('Receber: agrupa por mesa, calcula troco e envia o corpo esperado (PIN e cartão)', async () => {

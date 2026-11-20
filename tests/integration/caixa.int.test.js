@@ -2,6 +2,7 @@
 /** Integração — Caixa do dia: abrir/fechar, Nuk-Coin, cartões de consumo e recebimento de pedidos fechados. */
 const request = require('supertest');
 const { app } = require('../../server/app');
+const { novoCodigo, venderCartaoNovo } = require('./helpers-cartoes');
 
 let A, B, ipN = 1, cuca, picanha;
 const ip = () => `10.66.${Math.floor(ipN / 250)}.${ipN++ % 250}`;
@@ -37,7 +38,7 @@ describe('Caixa fechado: nada que mexa em dinheiro funciona', () => {
     const r1 = await a('post', '/api/caixa/nukcoin', { cliente_id: c.id, valor: 5000 });
     expect(r1.status).toBe(409); expect(r1.body.codigo).toBe('CAIXA_FECHADO');
     expect(await num(`SELECT nukcoin_saldo AS v FROM clientes WHERE id=$1`, [c.id])).toBe(0); // nada foi carregado
-    expect((await a('post', '/api/caixa/cartoes', { valor: 5000 })).status).toBe(409);
+    expect((await a('post', '/api/caixa/cartoes/vender', { metodo: 'CASH', codigos: [await novoCodigo(op, A, 5000)] })).status).toBe(409);
     const p = await pedidoFechado([{ produto_id: cuca, quantidade: 1 }]);
     expect((await a('post', '/api/caixa/receber', { pedido_ids: [p.id], metodo: 'CASH' })).status).toBe(409);
   });
@@ -62,9 +63,9 @@ describe('Abrir, receber e fechar', () => {
     expect(e.dinheiro_esperado).toBe(15000); // fundo 10000 + 5000 em dinheiro; o TPA não entra na gaveta
   });
   test('cartão de consumo: vende com código, paga um pedido e o saldo desce; saldo insuficiente recusado', async () => {
-    expect((await a('post', '/api/caixa/cartoes', { valor: 500 })).status).toBe(400);
-    const v = await a('post', '/api/caixa/cartoes', { valor: 6000, metodo: 'CASH' });
-    expect(v.status).toBe(201); expect(v.body.codigo).toMatch(/^CC[A-Z2-9]{8}$/); expect(Number(v.body.saldo)).toBe(6000);
+    expect((await a('post', '/api/caixa/cartoes/lotes', { valor: 500, quantidade: 1 })).status).toBe(400);
+    const v = await venderCartaoNovo(op, A, 6000);
+    expect(v.status).toBe(200); expect(v.body.codigo).toMatch(/^CC[A-Z2-9]{8}$/); expect(Number(v.body.saldo)).toBe(6000);
     const p1 = await pedidoFechado([{ produto_id: picanha, quantidade: 1 }]); // 4500
     const r = await a('post', '/api/caixa/receber', { pedido_ids: [p1.id], metodo: 'CARTAO', codigo_cartao: v.body.codigo.toLowerCase() });
     expect(r.status).toBe(200); expect(r.body.saldo_restante).toBe(1500);
@@ -166,7 +167,7 @@ describe('Abrir, receber e fechar', () => {
     expect(Number(r.body.sessao.esperado)).toBe(antes); expect(Number(r.body.sessao.diferenca)).toBe(-500);
     expect((await a('get', '/api/caixa')).body.aberta).toBe(false);
     expect((await a('post', '/api/caixa/fechar', { contado: 1 })).status).toBe(409);
-    expect((await a('post', '/api/caixa/cartoes', { valor: 5000 })).status).toBe(409);
+    expect((await a('post', '/api/caixa/cartoes/vender', { metodo: 'CASH', codigos: [await novoCodigo(op, A, 5000)] })).status).toBe(409);
     expect((await a('get', '/api/caixa/sessoes')).body[0].fechada_em).toBeTruthy();
     expect((await a('post', '/api/caixa/abrir', { fundo_inicial: 0 })).status).toBe(201); // novo turno
   });

@@ -126,27 +126,8 @@ async function carregarNukcoin({ tenantId, userId, clienteId, valor, metodo }) {
 const gerarCodigo = () => 'CC' + Array.from(crypto.randomBytes(8), b => ALFABETO[b % ALFABETO.length]).join('');
 const normCodigo = c => String(c || '').trim().toUpperCase().replace(/[\s-]/g, '');
 
-async function venderCartao({ tenantId, userId, valor, metodo }) {
-  const v = Number(valor);
-  if (!Number.isInteger(v) || v < CARTAO_MIN || v > CARTAO_MAX) throw erro(400, `Valor do cartão inválido (${CARTAO_MIN} a ${CARTAO_MAX} Kz, sem cêntimos)`);
-  const m = validarMetodo(metodo, METODOS_BALCAO);
-  for (let tentativa = 0; tentativa < 5; tentativa++) {
-    try {
-      const cartao = await withTx(async db => {
-        const s = await exigirSessao(db, tenantId);
-        const c = await db.query(
-          `INSERT INTO cartoes_consumo (tenant_id, codigo, valor_inicial, saldo, vendido_por, vendido_em) VALUES ($1,$2,$3,$3,$4,NOW()) RETURNING id, codigo, valor_inicial, saldo, criado_em`,
-          [tenantId, gerarCodigo(), v, userId || null]);
-        await db.query(`INSERT INTO movimentos_cartao (cartao_id, tipo, valor, saldo_antes, saldo_depois) VALUES ($1,'VENDA',$2,0,$2)`, [c.rows[0].id, v]);
-        await registar(db, { tenantId, sessaoId: s.id, tipo: 'CARTAO_VENDA', metodo: m, valor: v, descricao: `Cartão de consumo ${c.rows[0].codigo}`, cartaoId: c.rows[0].id, userId });
-        return c.rows[0];
-      });
-      broadcast('caixa_atualizada', {}, tenantId);
-      return cartao;
-    } catch (e) { if (e.code !== '23505') throw e; } // código repetido (raríssimo): tenta outro
-  }
-  throw erro(500, 'Não foi possível gerar o código do cartão');
-}
+// Regra do dono (20/11/2026): nenhum código de cartão se gera fora da via do Administrador — só por lotes
+// (criarLote). A venda «com código gerado na hora» deixou de existir; um trigger na BD recusa cartões sem lote.
 
 async function consultarCartao({ tenantId, codigo }) {
   const r = await pool.query(
@@ -170,6 +151,9 @@ async function listarCartoes({ tenantId }) {
 const LOTE_MAX = 200;
 
 async function criarLote({ tenantId, userId, valor, quantidade }) {
+  // Só o Administrador gera códigos (verificado também aqui, não só na rota)
+  const adm = userId ? await pool.query(`SELECT 1 FROM funcionarios WHERE id = $1 AND tenant_id = $2 AND nivel_acesso = 'ADMIN' AND ativo`, [userId, tenantId]) : { rows: [] };
+  if (!adm.rows[0]) throw erro(403, 'Só o Administrador gera códigos de cartão');
   const v = Number(valor), q = Number(quantidade);
   if (!Number.isInteger(v) || v < CARTAO_MIN || v > CARTAO_MAX) throw erro(400, `Valor do cartão inválido (${CARTAO_MIN} a ${CARTAO_MAX} Kz, sem cêntimos)`);
   if (!Number.isInteger(q) || q < 1 || q > LOTE_MAX) throw erro(400, `Quantidade inválida (1 a ${LOTE_MAX} cartões por lote)`);
@@ -507,4 +491,4 @@ async function faturar({ tenantId, userId, pedido_ids, nif_cliente, nome_cliente
   return require('./fiscal/faturas.service').emitir({ tenantId, userId, tipo: 'FR', pedido_ids, nif_cliente, nome_cliente });
 }
 
-module.exports = { faturar, abrir, estado, fechar, sessoes, carregarNukcoin, venderCartao, consultarCartao, listarCartoes, criarLote, listarLotes, loteParaImprimir, venderCartaoImpresso, venderCartoesImpressos, listarTiposCartao, criarTipoCartao, actualizarTipoCartao, porReceber, receber, dividirConta, sessaoAberta, METODOS_BALCAO, METODOS_RECEBIMENTO };
+module.exports = { faturar, abrir, estado, fechar, sessoes, carregarNukcoin, consultarCartao, listarCartoes, criarLote, listarLotes, loteParaImprimir, venderCartaoImpresso, venderCartoesImpressos, listarTiposCartao, criarTipoCartao, actualizarTipoCartao, porReceber, receber, dividirConta, sessaoAberta, METODOS_BALCAO, METODOS_RECEBIMENTO };

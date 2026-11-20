@@ -5,6 +5,7 @@
  */
 const request = require('supertest');
 const { app } = require('../../server/app');
+const { venderCartaoNovo } = require('./helpers-cartoes');
 
 let A, B, OP, ipN = 1, cuca;
 const ip = () => `10.68.${Math.floor(ipN / 250)}.${ipN++ % 250}`;
@@ -32,7 +33,7 @@ beforeAll(async () => {
 describe('Livro do caixa numerado e encadeado', () => {
   let cartao;
   test('cada movimento recebe o n.º seguinte do estabelecimento e liga ao anterior', async () => {
-    cartao = (await a('post', '/api/caixa/cartoes', { valor: 3000, metodo: 'CASH' })).body;
+    cartao = (await venderCartaoNovo(op, A, 3000)).body;
     const p = await pedidoFechado(A, 2);
     expect((await a('post', '/api/caixa/receber', { pedido_ids: [p.id], metodo: 'CARTAO', codigo_cartao: cartao.codigo })).status).toBe(200);
     const p2 = await pedidoFechado(A, 1);
@@ -44,12 +45,12 @@ describe('Livro do caixa numerado e encadeado', () => {
     expect(m[2].hash_anterior).toBe(m[1].hash);
     m.forEach(x => expect(x.hash).toMatch(/^[0-9a-f]{64}$/));
     // a numeração é por estabelecimento
-    await op(B, 'post', '/api/caixa/cartoes', { valor: 2000, metodo: 'CASH' });
+    await venderCartaoNovo(op, B, 2000);
     expect((await linhas(`SELECT numero FROM caixa_movimentos WHERE tenant_id=$1`, [B.tenantId]))[0].numero).toBe('1');
   });
 
   test('movimentos simultâneos não repetem nem saltam números', async () => {
-    await Promise.all(Array.from({ length: 6 }, () => a('post', '/api/caixa/cartoes', { valor: 2000, metodo: 'CASH' })));
+    await Promise.all(Array.from({ length: 6 }, () => venderCartaoNovo(op, A, 2000)));
     const m = await linhas(`SELECT numero FROM caixa_movimentos WHERE tenant_id=$1 ORDER BY numero`, [A.tenantId]);
     expect(m.map(x => Number(x.numero))).toEqual(Array.from({ length: m.length }, (_, i) => i + 1));
     expect((await a('get', '/api/caixa/auditoria/verificar')).body.ok).toBe(true);
@@ -159,7 +160,7 @@ describe('Pesquisa e rasto', () => {
   test('apagar o estabelecimento continua possível (cascata)', async () => {
     const C = await criarTenantFixture({ slug: 'it-audit-del' });
     await op(C, 'post', '/api/caixa/abrir', { fundo_inicial: 0 });
-    await op(C, 'post', '/api/caixa/cartoes', { valor: 2000, metodo: 'CASH' });
+    await venderCartaoNovo(op, C, 2000);
     await op(C, 'post', '/api/caixa/fechar', { contado: 2000 });
     await pool.query(`DELETE FROM tenants WHERE id=$1`, [C.tenantId]);
     expect((await linhas(`SELECT COUNT(*)::int AS n FROM caixa_movimentos WHERE tenant_id=$1`, [C.tenantId]))[0].n).toBe(0);
@@ -186,7 +187,7 @@ describe('Arranque (initDB corre em cada arranque)', () => {
     expect(m[1].hash_anterior).toBe(m[0].hash);
     expect((await op(D, 'get', '/api/caixa/auditoria/verificar')).body.ok).toBe(true);
     // e o seguinte continua a cadeia
-    await op(D, 'post', '/api/caixa/cartoes', { valor: 2000, metodo: 'CASH' });
+    await venderCartaoNovo(op, D, 2000);
     expect((await linhas(`SELECT MAX(numero) AS n FROM caixa_movimentos WHERE tenant_id=$1`, [D.tenantId]))[0].n).toBe('3');
     expect((await op(D, 'get', '/api/caixa/auditoria/verificar')).body.ok).toBe(true);
   });
