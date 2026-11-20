@@ -76,11 +76,11 @@ async function estado({ tenantId }) {
   const [resumo, mov] = await Promise.all([
     resumoDe(pool, sessao),
     pool.query(
-      `SELECT m.id, m.tipo, m.metodo, m.valor, m.descricao, m.criado_em, c.nome AS cliente_nome, f.nome AS operador, p.origem, ms.numero AS mesa_numero
+      `SELECT m.id, m.numero, m.tipo, m.metodo, m.valor, m.descricao, m.criado_em, c.nome AS cliente_nome, f.nome AS operador, p.origem, ms.numero AS mesa_numero
        FROM caixa_movimentos m
        LEFT JOIN clientes c ON c.id = m.cliente_id LEFT JOIN funcionarios f ON f.id = m.criado_por
        LEFT JOIN pedidos p ON p.id = m.pedido_id LEFT JOIN mesas ms ON ms.id = p.mesa_id
-       WHERE m.sessao_id = $1 ORDER BY m.criado_em DESC LIMIT 100`, [sessao.id]),
+       WHERE m.sessao_id = $1 ORDER BY m.numero DESC LIMIT 100`, [sessao.id]),
   ]);
   return { aberta: true, sessao, resumo, movimentos: mov.rows };
 }

@@ -327,4 +327,38 @@ describe('Factura-recibo no Caixa (frontend)', () => {
     expect(ctx._chamadas.some(c => c[1] === '/caixa/receber')).toBe(true);
     expect(ctx._chamadas.some(c => c[1] === '/caixa/faturar')).toBe(false);
   });
+
+  test('Movimentos: pesquisa de hoje, tabela com n.º/referência/funcionário, totais e rasto do cartão', async () => {
+    const mov = { data: [{ numero: '7', criado_em: '2026-11-20T09:00:00Z', tipo: 'COMPRA', metodo: 'CASH', valor: '-1500', descricao: 'Compra pontual', referencia: 'Compra: Carvão', operador: 'Ana' },
+      { numero: '6', criado_em: '2026-11-20T08:00:00Z', tipo: 'CARTAO_VENDA', metodo: 'TPA', valor: '3000', referencia: 'Cartão CCABCDEFGH', cartao_codigo: 'CCABCDEFGH', operador: 'Rui' }],
+      page: 1, limit: 50, total: 2, totais: { entradas: 3000, saidas: -1500, liquido: 1500, por_metodo: [{ metodo: 'CASH', valor: -1500, n: 1 }] } };
+    const ctx = carregar({});
+    ctx.URLSearchParams = URLSearchParams;
+    ctx.api = async (m, u) => { ctx._chamadas.push([m, u]); return u.startsWith('/caixa/auditoria/movimentos') ? mov : {}; };
+    const res = { innerHTML: '' };
+    ctx._els['mv-resultado'] = res;
+    await ctx.modulo_movimentos({ innerHTML: '' });
+    const url = ctx._chamadas.find(c => c[1].startsWith('/caixa/auditoria/movimentos'))[1];
+    expect(url).toMatch(/de=\d{4}-\d{2}-\d{2}&ate=\d{4}-\d{2}-\d{2}&page=1&limit=50/);
+    expect(res.innerHTML).toContain('<b>7</b>');
+    expect(res.innerHTML).toContain('Compra: Carvão');
+    expect(res.innerHTML).toContain('Ana');
+    expect(res.innerHTML).toContain('texto-perigo');
+    expect(res.innerHTML).toContain("rastoCartao('CCABCDEFGH')");
+    // filtro por forma e cartão
+    Object.assign(ctx._els, { 'mv-de': { value: '' }, 'mv-ate': { value: '' }, 'mv-tipo': { value: '' }, 'mv-metodo': { value: 'TPA' }, 'mv-numero': { value: '' }, 'mv-cartao': { value: 'ccabcdefgh' } });
+    await ctx.pesquisarMovimentos();
+    expect(ctx._chamadas[ctx._chamadas.length - 1][1]).toBe('/caixa/auditoria/movimentos?metodo=TPA&cartao=CCABCDEFGH&page=1&limit=50');
+  });
+
+  test('Movimentos: verificação íntegra e com problemas; exportar CSV descarrega com o filtro', async () => {
+    const ctx = carregar({ '/caixa/auditoria/verificar': { ok: false, movimentos: 9, ultimo_numero: 9, problemas: [{ texto: 'Movimento n.º 2: o conteúdo do movimento foi alterado' }] } });
+    ctx.URLSearchParams = URLSearchParams;
+    await ctx.verificarLivroCaixa();
+    expect(ctx._modal).toContain('Movimento n.º 2');
+    const pdfs = []; ctx.descarregarPdf = (c, n) => pdfs.push([c, n]);
+    Object.assign(ctx._els, { 'mv-de': { value: '2026-11-01' }, 'mv-ate': { value: '2026-11-20' }, 'mv-tipo': { value: 'DESPESA' }, 'mv-metodo': { value: '' }, 'mv-numero': { value: '' }, 'mv-cartao': { value: '' } });
+    ctx.exportarMovimentos();
+    expect(pdfs[0]).toEqual(['/caixa/auditoria/movimentos.csv?de=2026-11-01&ate=2026-11-20&tipo=DESPESA', 'movimentos-caixa-2026-11-01_2026-11-20.csv']);
+  });
 });

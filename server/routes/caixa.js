@@ -7,6 +7,8 @@ const router = express.Router();
 const { authMiddleware, requerNivel, isUUID } = require('../middleware/auth');
 const svc = require('../services/caixa.service');
 const cc = require('../services/conta-corrente.service');
+const auditoria = require('../services/caixa-auditoria.service');
+const { exigirModulo } = require('../middleware/modulos');
 
 const h = fn => async (req, res, next) => {
   try { await fn(req, res); }
@@ -295,5 +297,62 @@ router.post('/conta-corrente/:clienteId/pagamentos', authMiddleware, h(async (re
   if (!isUUID(req.params.clienteId)) return res.status(400).json({ erro: 'clienteId inválido' });
   res.status(201).json(await cc.pagar({ valor: req.body.valor, metodo: req.body.metodo, observacoes: req.body.observacoes, clienteId: req.params.clienteId, ...base(req) }));
 }));
+
+// ── Rasto do caixa (auditoria) ──────────────────────────────
+// Acesso «movimentos» (por omissão só ADMIN/GERENTE). Tokens antigos, sem a lista de acessos, só passam se forem da chefia.
+const podeAuditar = [exigirModulo('movimentos'), (req, res, next) => (req.user && (Array.isArray(req.user.permissoes) || ['ADMIN', 'GERENTE'].includes(req.user.nivel_acesso)) ? next() : res.status(403).json({ erro: 'Sem permissão para ver os movimentos do caixa' }))];
+const filtrosDe = req => {
+  const { de, ate, tipo, metodo, funcionario_id, sessao_id, pedido_id, cartao, numero, page, limit } = req.query;
+  return { de, ate, tipo, metodo, funcionario_id, sessao_id, pedido_id, cartao, numero, page, limit, tenantId: req.tenantId };
+};
+
+/**
+ * @openapi
+ * /api/caixa/auditoria/movimentos:
+ *   get:
+ *     summary: Pesquisa no livro do caixa (numerado e imutável), com totais do filtro
+ *     description: "Filtros: de/ate (dias de Luanda; por omissão hoje; dispensados ao pesquisar por numero, sessao_id, pedido_id ou cartao), tipo, metodo, funcionario_id, sessao_id, pedido_id, cartao (código), numero, page, limit (≤200)."
+ *     tags: [Caixa]
+ *     security: [{ bearerAuth: [] }]
+ *     responses: { 200: { description: "{ data, page, limit, total, totais }" }, 400: { description: Filtro inválido }, 403: { description: Sem acesso } }
+ */
+router.get('/auditoria/movimentos', authMiddleware, ...podeAuditar, h(async (req, res) => res.json(await auditoria.movimentos(filtrosDe(req)))));
+
+/**
+ * @openapi
+ * /api/caixa/auditoria/movimentos.csv:
+ *   get:
+ *     summary: Exporta os movimentos do filtro em CSV (Excel em português)
+ *     tags: [Caixa]
+ *     security: [{ bearerAuth: [] }]
+ *     responses: { 200: { description: CSV } }
+ */
+router.get('/auditoria/movimentos.csv', authMiddleware, ...podeAuditar, h(async (req, res) => {
+  const csv = await auditoria.movimentosCsv(filtrosDe(req));
+  res.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="movimentos-caixa.csv"', 'Cache-Control': 'no-store' }).send(csv);
+}));
+
+/**
+ * @openapi
+ * /api/caixa/auditoria/verificar:
+ *   get:
+ *     summary: Verifica a integridade do livro do caixa (cadeia SHA-256, numeração, saldos dos cartões, esperado das sessões)
+ *     tags: [Caixa]
+ *     security: [{ bearerAuth: [] }]
+ *     responses: { 200: { description: "{ ok, movimentos, ultimo_numero, problemas }" } }
+ */
+router.get('/auditoria/verificar', authMiddleware, ...podeAuditar, h(async (req, res) => res.json(await auditoria.verificar({ tenantId: req.tenantId }))));
+
+/**
+ * @openapi
+ * /api/caixa/auditoria/cartoes/{codigo}:
+ *   get:
+ *     summary: Rasto completo de um cartão de consumo (lote, venda, consumos)
+ *     tags: [Caixa]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ in: path, name: codigo, required: true, schema: { type: string } }]
+ *     responses: { 200: { description: Rasto }, 404: { description: Não encontrado } }
+ */
+router.get('/auditoria/cartoes/:codigo', authMiddleware, ...podeAuditar, h(async (req, res) => res.json(await auditoria.rastoCartao({ codigo: req.params.codigo, tenantId: req.tenantId }))));
 
 module.exports = router;
