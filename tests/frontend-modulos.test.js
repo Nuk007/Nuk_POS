@@ -7,7 +7,8 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const codigo = fs.readFileSync(path.join(__dirname, '../public/js/modulos.js'), 'utf8');
+const { MODULOS, lerModulos } = require('./frontend-ficheiros');
+const codigo = lerModulos();
 const q = { id: '11111111-1111-1111-1111-111111111111', numero: '101', tipo: 'SUITE', status: 'DISPONIVEL', preco_2h: 1, preco_pernoite: 2, preco_diaria: 3, reservas_activas: null };
 const prod = { id: '22222222-2222-2222-2222-222222222222', nome: "Cuca d'água", preco: 600, categoria: 'BEBIDA', disponivel: true, descricao: '' };
 const dados = {
@@ -322,5 +323,21 @@ describe('Configurações → Cartões de consumo (códigos só pelo Administrad
     const h = carregar({ nivel_acesso: 'GERENTE' }).cartaoTiposCartao(tipos, lotes);
     expect(h).not.toContain('gerarLoteCartoes');
     expect(h).not.toContain('imprimirLoteCartoes');
+  });
+});
+
+describe('Módulos divididos por área (21/11/2026)', () => {
+  test('o index.html carrega todos os ficheiros dos módulos, pela ordem, antes do venda.js', () => {
+    const html = fs.readFileSync(path.join(__dirname, '../public/index.html'), 'utf8');
+    const pos = MODULOS.map(f => html.indexOf(`<script src="/js/${f}"></script>`));
+    expect(pos.every(p => p > 0)).toBe(true);
+    expect([...pos].sort((a, b) => a - b)).toEqual(pos);
+    expect(pos[pos.length - 1]).toBeLessThan(html.indexOf('/js/venda.js'));
+  });
+  test('nenhum ficheiro dos módulos passa das 400 linhas', () => {
+    for (const f of MODULOS) {
+      const n = fs.readFileSync(path.join(__dirname, '../public/js', f), 'utf8').split('\n').length;
+      expect([f, n < 400]).toEqual([f, true]);
+    }
   });
 });

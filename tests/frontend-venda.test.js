@@ -28,7 +28,7 @@ function carregar(utilizador = { nivel_acesso: 'ADMIN' }) {
   };
   ctx._els = els;
   vm.createContext(ctx);
-  vm.runInContext(ler('modulos.js') + '\n' + ler('venda.js'), ctx);
+  vm.runInContext(require('./frontend-ficheiros').lerModulos() + '\n' + ler('venda.js'), ctx);
   return ctx;
 }
 

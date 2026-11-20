@@ -18,7 +18,7 @@ function carregar(dados, ficheiros) {
   };
   ctx._chamadas = chamadas; ctx._els = els;
   vm.createContext(ctx);
-  vm.runInContext(ficheiros.map(ler).join('\n'), ctx);
+  vm.runInContext(ficheiros.map(f => (f === 'modulos.js' ? require('./frontend-ficheiros').lerModulos() : ler(f))).join('\n'), ctx);
   return ctx;
 }
 const bem = { id: 'b1', codigo: 'PAT-0001', nome: 'Gerador', categoria: 'EQUIPAMENTO', data_aquisicao: '2021-03-01', valor_aquisicao: 1000, valor_actual: 400, vida_util_anos: 10, estado: 'BOM' };

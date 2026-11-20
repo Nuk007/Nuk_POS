@@ -103,8 +103,12 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 - Cobertura unitária ~59% → meta 75%+.
 - Rate limiters em memória → Redis se houver multi-instância.
 - Certificação AGT: base feita (ver «Módulo fiscal»); faltam assinatura RSA, SAF-T (AO), envio em tempo real e QR. Os PDFs actuais não têm validade fiscal.
-- Frontend (public/, ~4.800 linhas vanilla JS) sem testes.
 
+
+## Ficheiros do ecrã principal (21/11/2026)
+- O antigo `public/js/modulos.js` (2 100 linhas) foi dividido por área, sem mudar nenhuma função: `modulos.js` (dashboard, pedidos, `modalConfirmar`, carrinho), `mesas-quartos.js`, `produtos-stock.js`, `financeiro.js` (documentos fiscais; o resultado e as despesas continuam em `financas.js`), `clientes.js` (clientes e solicitações), `funcionarios.js`, `config-cartoes.js` (cartões das Configurações: tabelas de preço, impressão em rede, resumo diário, fluxos de venda, cartões de consumo, contas correntes) e `configuracoes.js` (ecrã das Configurações, dashboard, listas).
+- São scripts clássicos: as funções e as `const` de topo são globais e partilhadas entre ficheiros. **Nunca repetir um nome de topo** noutro ficheiro (dá erro ao carregar). O `index.html` carrega-os por esta ordem, antes do `venda.js`; os testes usam `lerModulos()` de `tests/frontend-ficheiros.js` (mesma lista). `tests/frontend-modulos.test.js` verifica a ordem no `index.html` e que nenhum ficheiro passa das 400 linhas: um ficheiro que cresça divide-se outra vez.
+- Nas secções abaixo, «modulos.js» quer dizer o conjunto destes ficheiros.
 
 ## Navegação entre módulos (20/11/2026)
 - `carregarModulo` (nukpos.js) cria um **contentor próprio por carregamento** (`div.modulo-contentor` com `data-modulo`, posto em `#main-content` com `replaceChildren`) e passa-o ao `modulo_x(el)`. Ao mudar de módulo o contentor anterior sai da página: um módulo lento que acabe depois escreve num contentor desligado e não tapa o escolhido; os erros de um carregamento antigo são ignorados (`moduloEmVigor(geracao)`). Os módulos continuam a escrever em `el` e a usar `document.getElementById` para o que acabaram de desenhar. Teste: `tests/e2e/navegacao.spec.js` (Configurações atrasadas 1,5 s de propósito).

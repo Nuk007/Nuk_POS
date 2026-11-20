@@ -463,7 +463,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 
-// ── Delegação genérica para o HTML gerado dinamicamente (modulos.js) ──────────
+// ── Delegação genérica para o HTML gerado dinamicamente (modulos.js e restantes ficheiros dos módulos) ──────────
 // Substitui onclick/onchange/oninput inline (bloqueados pela CSP). Sem eval: só chama funções
 // globais já existentes, com argumentos literais (texto, número, true/false/null) ou this.value.
 function _parseArgs(txt, el) {
