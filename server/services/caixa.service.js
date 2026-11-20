@@ -215,27 +215,90 @@ async function loteParaImprimir({ tenantId, loteId }) {
   return { ...l.rows[0], cartoes: c.rows };
 }
 
-/** Vende um cartão já impresso: cobra o valor impresso, sem desconto, e só então o cartão ganha saldo. */
-async function venderCartaoImpresso({ tenantId, userId, codigo, metodo }) {
+/**
+ * Vende cartões já impressos (1 a 50 de uma vez): o caixa indica os códigos dos cartões que entrega; cada um é cobrado
+ * pelo valor impresso, sem desconto, e só então ganha saldo. Com `valor`, todos têm de ser desse valor (o botão
+ * escolhido no Caixa). Tudo ou nada: um código errado, já vendido ou de outro valor não vende nenhum.
+ */
+const VENDA_CARTOES_MAX = 50;
+async function venderCartoesImpressos({ tenantId, userId, codigos, valor, metodo }) {
   const m = validarMetodo(metodo, METODOS_BALCAO);
-  const cod = normCodigo(codigo);
-  if (!/^CC[A-Z0-9]{8}$/.test(cod)) throw erro(400, 'Código do cartão inválido (CC + 8 caracteres)');
-  const cartao = await withTx(async db => {
+  if (!Array.isArray(codigos) || !codigos.length || codigos.length > VENDA_CARTOES_MAX) throw erro(400, `Indique de 1 a ${VENDA_CARTOES_MAX} códigos de cartão`);
+  const cods = codigos.map(normCodigo);
+  const maus = cods.filter(c => !/^CC[A-Z0-9]{8}$/.test(c));
+  if (maus.length) throw erro(400, `Código inválido: ${maus.join(', ')} (CC + 8 caracteres)`);
+  const repetidos = cods.filter((c, i) => cods.indexOf(c) !== i);
+  if (repetidos.length) throw erro(400, `Código repetido: ${[...new Set(repetidos)].join(', ')}`);
+  const v = valor === undefined || valor === null || valor === '' ? null : Number(valor);
+  if (v !== null && !(v > 0)) throw erro(400, 'Valor do cartão inválido');
+  const vendidos = await withTx(async db => {
     const s = await exigirSessao(db, tenantId);
-    const r = await db.query(`SELECT id, codigo, valor_inicial, estado FROM cartoes_consumo WHERE tenant_id = $1 AND codigo = $2 FOR UPDATE`, [tenantId, cod]);
-    const c = r.rows[0];
-    if (!c) throw erro(404, 'Cartão não encontrado');
-    if (c.estado !== 'POR_VENDER') throw erro(409, 'Este cartão já foi vendido', { codigo: 'CARTAO_JA_VENDIDO' });
-    const v = parseFloat(c.valor_inicial);
-    const u = await db.query(
-      `UPDATE cartoes_consumo SET estado = 'ACTIVO', saldo = valor_inicial, vendido_por = $2, vendido_em = NOW() WHERE id = $1
-       RETURNING id, codigo, valor_inicial, saldo, estado, vendido_em`, [c.id, userId || null]);
-    await db.query(`INSERT INTO movimentos_cartao (cartao_id, tipo, valor, saldo_antes, saldo_depois) VALUES ($1,'VENDA',$2,0,$2)`, [c.id, v]);
-    await registar(db, { tenantId, sessaoId: s.id, tipo: 'CARTAO_VENDA', metodo: m, valor: v, descricao: `Cartão de consumo ${c.codigo}`, cartaoId: c.id, userId });
-    return u.rows[0];
+    const r = await db.query(`SELECT id, codigo, valor_inicial, estado FROM cartoes_consumo WHERE tenant_id = $1 AND codigo = ANY($2::text[]) ORDER BY id FOR UPDATE`, [tenantId, cods]);
+    const faltam = cods.filter(c => !r.rows.some(x => x.codigo === c));
+    if (faltam.length) throw erro(404, `Cartão não encontrado: ${faltam.join(', ')}`);
+    const jaVendidos = r.rows.filter(x => x.estado !== 'POR_VENDER').map(x => x.codigo);
+    if (jaVendidos.length) throw erro(409, jaVendidos.length === 1 ? `Este cartão já foi vendido: ${jaVendidos[0]}` : `Estes cartões já foram vendidos: ${jaVendidos.join(', ')}`, { codigo: 'CARTAO_JA_VENDIDO', codigos: jaVendidos });
+    const outros = v === null ? [] : r.rows.filter(x => Math.round(parseFloat(x.valor_inicial) * 100) !== Math.round(v * 100));
+    if (outros.length) throw erro(409, outros.map(x => `O cartão ${x.codigo} é de ${parseFloat(x.valor_inicial)} Kz`).join('; ') + `, não de ${v} Kz`, { codigo: 'CARTAO_OUTRO_VALOR', codigos: outros.map(x => x.codigo) });
+    const saida = [];
+    for (const cod of cods) { // pela ordem em que o caixa os leu
+      const c = r.rows.find(x => x.codigo === cod);
+      const val = parseFloat(c.valor_inicial);
+      const u = await db.query(
+        `UPDATE cartoes_consumo SET estado = 'ACTIVO', saldo = valor_inicial, vendido_por = $2, vendido_em = NOW() WHERE id = $1
+         RETURNING id, codigo, valor_inicial, saldo, estado, vendido_em`, [c.id, userId || null]);
+      await db.query(`INSERT INTO movimentos_cartao (cartao_id, tipo, valor, saldo_antes, saldo_depois) VALUES ($1,'VENDA',$2,0,$2)`, [c.id, val]);
+      await registar(db, { tenantId, sessaoId: s.id, tipo: 'CARTAO_VENDA', metodo: m, valor: val, descricao: `Cartão de consumo ${c.codigo}`, cartaoId: c.id, userId });
+      saida.push(u.rows[0]);
+    }
+    return saida;
   });
   broadcast('caixa_atualizada', {}, tenantId);
-  return cartao;
+  const total = Math.round(vendidos.reduce((t, c) => t + parseFloat(c.valor_inicial) * 100, 0)) / 100;
+  return { cartoes: vendidos, quantidade: vendidos.length, total, metodo: m };
+}
+
+/** Vende um cartão já impresso pelo código (o valor é o impresso). */
+async function venderCartaoImpresso({ tenantId, userId, codigo, metodo }) {
+  const cod = normCodigo(codigo);
+  if (!/^CC[A-Z0-9]{8}$/.test(cod)) throw erro(400, 'Código do cartão inválido (CC + 8 caracteres)');
+  return (await venderCartoesImpressos({ tenantId, userId, codigos: [cod], metodo })).cartoes[0];
+}
+
+// ── Tipos de cartão (botões do Caixa; configuração só ADMIN) ──
+const CARTAO_VALORES_PADRAO = [2000, 3000, 5000, 6000, 12000, 15000, 20000, 25000]; // decisão do dono de 20/11/2026
+
+async function listarTiposCartao({ tenantId, todos = false }) {
+  const existe = await pool.query(`SELECT 1 FROM cartoes_tipos WHERE tenant_id = $1 LIMIT 1`, [tenantId]);
+  if (!existe.rows[0]) { // 1.ª leitura: semeia os valores padrão
+    await pool.query(`INSERT INTO cartoes_tipos (tenant_id, valor) SELECT $1, x FROM unnest($2::numeric[]) AS x ON CONFLICT (tenant_id, valor) DO NOTHING`, [tenantId, CARTAO_VALORES_PADRAO]);
+  }
+  const r = await pool.query(
+    `SELECT t.id, t.valor, t.nome, t.ativo,
+            (SELECT COUNT(*) FROM cartoes_consumo c WHERE c.tenant_id = t.tenant_id AND c.estado = 'POR_VENDER' AND c.valor_inicial = t.valor)::int AS por_vender
+       FROM cartoes_tipos t WHERE t.tenant_id = $1 ${todos ? '' : 'AND t.ativo'} ORDER BY t.valor`, [tenantId]);
+  return r.rows;
+}
+async function criarTipoCartao({ tenantId, valor, nome }) {
+  const v = Number(valor);
+  if (!Number.isInteger(v) || v < CARTAO_MIN || v > CARTAO_MAX) throw erro(400, `Valor do cartão inválido (${CARTAO_MIN} a ${CARTAO_MAX} Kz, sem cêntimos)`);
+  const n = nome === undefined || nome === null ? null : String(nome).trim().slice(0, 60) || null;
+  try {
+    const r = await pool.query(`INSERT INTO cartoes_tipos (tenant_id, valor, nome) VALUES ($1,$2,$3) RETURNING id, valor, nome, ativo`, [tenantId, v, n]);
+    return r.rows[0];
+  } catch (e) {
+    if (e.code === '23505') throw erro(409, 'Já existe um cartão com esse valor (se estiver desactivado, active-o)');
+    throw e;
+  }
+}
+async function actualizarTipoCartao({ tenantId, id, nome, ativo }) {
+  const sets = [], vals = [id, tenantId];
+  if (nome !== undefined) { vals.push(nome === null ? null : String(nome).trim().slice(0, 60) || null); sets.push(`nome = $${vals.length}`); }
+  if (ativo !== undefined) { if (typeof ativo !== 'boolean') throw erro(400, 'ativo deve ser verdadeiro ou falso'); vals.push(ativo); sets.push(`ativo = $${vals.length}`); }
+  if (!sets.length) throw erro(400, 'Nada para alterar (o valor de um cartão não muda: crie outro)');
+  const r = await pool.query(`UPDATE cartoes_tipos SET ${sets.join(', ')} WHERE id = $1 AND tenant_id = $2 RETURNING id, valor, nome, ativo`, vals);
+  if (!r.rows[0]) throw erro(404, 'Cartão não encontrado');
+  return r.rows[0];
 }
 
 // ── Recebimento dos pedidos fechados ────────────────────────
@@ -444,4 +507,4 @@ async function faturar({ tenantId, userId, pedido_ids, nif_cliente, nome_cliente
   return require('./fiscal/faturas.service').emitir({ tenantId, userId, tipo: 'FR', pedido_ids, nif_cliente, nome_cliente });
 }
 
-module.exports = { faturar, abrir, estado, fechar, sessoes, carregarNukcoin, venderCartao, consultarCartao, listarCartoes, criarLote, listarLotes, loteParaImprimir, venderCartaoImpresso, porReceber, receber, dividirConta, sessaoAberta, METODOS_BALCAO, METODOS_RECEBIMENTO };
+module.exports = { faturar, abrir, estado, fechar, sessoes, carregarNukcoin, venderCartao, consultarCartao, listarCartoes, criarLote, listarLotes, loteParaImprimir, venderCartaoImpresso, venderCartoesImpressos, listarTiposCartao, criarTipoCartao, actualizarTipoCartao, porReceber, receber, dividirConta, sessaoAberta, METODOS_BALCAO, METODOS_RECEBIMENTO };

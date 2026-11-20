@@ -725,6 +725,8 @@ async function initDB() {
     for (const sql of require('./migrations-data/offline')) await client.query(sql);
     // Cartões de consumo pré-impressos por lotes (migração 1752100000000)
     for (const sql of require('./migrations-data/cartoes-lotes')) await client.query(sql);
+    // Tipos de cartão de consumo (botões no Caixa, configurados em Configurações) — migração 1752300000000
+    for (const sql of require('./migrations-data/cartoes-tipos')) await client.query(sql);
     // Livro do caixa numerado, encadeado e imutável (migração 1752200000000) — depois de todas as colunas de caixa_movimentos
     for (const sql of require('./migrations-data/caixa-auditoria')) await client.query(sql);
 

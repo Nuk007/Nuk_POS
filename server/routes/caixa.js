@@ -13,7 +13,7 @@ const { exigirModulo } = require('../middleware/modulos');
 const h = fn => async (req, res, next) => {
   try { await fn(req, res); }
   catch (e) {
-    if (e.statusCode) return res.status(e.statusCode).json({ erro: e.message, ...(e.codigo ? { codigo: e.codigo } : {}), ...(e.disponivel !== undefined ? { disponivel: e.disponivel } : {}), ...(e.divida !== undefined ? { divida: e.divida } : {}), ...(e.saldo_atual !== undefined ? { saldo_atual: e.saldo_atual, total_necessario: e.total_necessario } : {}) });
+    if (e.statusCode) return res.status(e.statusCode).json({ erro: e.message, ...(e.codigo ? { codigo: e.codigo } : {}), ...(e.disponivel !== undefined ? { disponivel: e.disponivel } : {}), ...(e.codigos ? { codigos: e.codigos } : {}), ...(e.divida !== undefined ? { divida: e.divida } : {}), ...(e.saldo_atual !== undefined ? { saldo_atual: e.saldo_atual, total_necessario: e.total_necessario } : {}) });
     next(e);
   }
 };
@@ -97,6 +97,52 @@ router.post('/nukcoin', authMiddleware, h(async (req, res) => {
  */
 router.get('/cartoes', authMiddleware, h(async (req, res) => res.json(await svc.listarCartoes(base(req)))));
 router.post('/cartoes', authMiddleware, h(async (req, res) => res.status(201).json(await svc.venderCartao({ valor: req.body.valor, metodo: req.body.metodo, ...base(req) }))));
+
+/**
+ * @openapi
+ * /api/caixa/cartoes/tipos:
+ *   get:
+ *     summary: Cartões configurados (botões do Caixa) com quantos impressos há por vender; `todos=1` inclui os desactivados
+ *     tags: [Caixa]
+ *     security: [{ bearerAuth: [] }]
+ *     responses: { 200: { description: Lista } }
+ *   post:
+ *     summary: Novo cartão (valor e nome opcional) — só ADMIN
+ *     tags: [Caixa]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody: { content: { application/json: { schema: { type: object, required: [valor], properties: { valor: { type: integer, minimum: 1000, maximum: 500000 }, nome: { type: string, maxLength: 60 } } } } } }
+ *     responses: { 201: { description: Criado }, 409: { description: Já existe esse valor } }
+ */
+router.get('/cartoes/tipos', authMiddleware, h(async (req, res) => res.json(await svc.listarTiposCartao({ todos: req.query.todos === '1', ...base(req) }))));
+router.post('/cartoes/tipos', authMiddleware, requerNivel(['ADMIN']), h(async (req, res) => res.status(201).json(await svc.criarTipoCartao({ valor: req.body.valor, nome: req.body.nome, ...base(req) }))));
+
+/**
+ * @openapi
+ * /api/caixa/cartoes/tipos/{id}:
+ *   put:
+ *     summary: Muda o nome ou activa/desactiva um cartão (o valor não muda) — só ADMIN
+ *     tags: [Caixa]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ in: path, name: id, required: true, schema: { type: string, format: uuid } }]
+ *     requestBody: { content: { application/json: { schema: { type: object, properties: { nome: { type: string }, ativo: { type: boolean } } } } } }
+ *     responses: { 200: { description: Actualizado }, 404: { description: Não encontrado } }
+ */
+router.put('/cartoes/tipos/:id', authMiddleware, requerNivel(['ADMIN']), h(async (req, res) => {
+  if (!isUUID(req.params.id)) return res.status(400).json({ erro: 'id inválido' });
+  res.json(await svc.actualizarTipoCartao({ id: req.params.id, nome: req.body.nome, ativo: req.body.ativo, ...base(req) }));
+}));
+
+/**
+ * @openapi
+ * /api/caixa/cartoes/vender:
+ *   post:
+ *     summary: Vende 1 a 50 cartões já impressos pelos códigos (tudo ou nada); cada um é cobrado pelo valor impresso, sem desconto
+ *     tags: [Caixa]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody: { content: { application/json: { schema: { type: object, required: [codigos, metodo], properties: { codigos: { type: array, items: { type: string } }, valor: { type: integer, description: Se indicado todos os cartões têm de ser deste valor }, metodo: { type: string, enum: [CASH, TPA, TRANSFERENCIA, EXPRESS] } } } } } }
+ *     responses: { 200: { description: "{ cartoes, quantidade, total }" }, 400: { description: Códigos inválidos ou repetidos }, 404: { description: Código desconhecido }, 409: { description: Caixa fechado, já vendido ou de outro valor } }
+ */
+router.post('/cartoes/vender', authMiddleware, h(async (req, res) => res.json(await svc.venderCartoesImpressos({ codigos: req.body.codigos, valor: req.body.valor, metodo: req.body.metodo, ...base(req) }))));
 
 /**
  * @openapi

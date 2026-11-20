@@ -1696,6 +1696,54 @@ async function guardarResumoDiario() {
 }
 
 // ─── Configurações → Contas correntes (crédito a clientes; só ADMIN) ───
+// Cartões de consumo: cada valor é um botão no Caixa → Cartões (como os quartos). Não se apagam: desactivam-se.
+function cartaoTiposCartao(tipos) {
+  return `
+      <div class="card mt-2" style="max-width:700px">
+        <div class="card-titulo mb-2">💳 CARTÕES DE CONSUMO</div>
+        <div class="muted" style="font-size:.82rem;margin-bottom:.75rem">Cada cartão aparece como botão em Caixa → Cartões de consumo. Cobra-se o valor do cartão, sem desconto. O valor não muda depois de criado: crie outro e desactive o antigo.</div>
+        ${tipos.length ? tipos.map(t => `
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;padding:.35rem 0;border-bottom:1px solid var(--c-border);flex-wrap:wrap${t.ativo ? '' : ';opacity:.55'}">
+            <div style="min-width:0"><b>${formatarMoeda(t.valor)}</b>${t.ativo ? '' : ' <span class="muted" style="font-size:.78rem">(desactivado)</span>'} <span class="muted" style="font-size:.78rem">${Number(t.por_vender) || 0} impressos por vender</span></div>
+            <div class="row-acoes" style="align-items:center">
+              <input id="tc-nome-${esc(t.id)}" value="${esc(t.nome || '')}" placeholder="Nome (opcional)" maxlength="60" style="width:11rem">
+              <button class="btn-secundario" style="padding:.25rem .6rem;font-size:.78rem" data-on-click="guardarNomeTipoCartao('${esc(t.id)}')">Guardar</button>
+              ${t.ativo ? `<button class="btn-perigo" style="padding:.25rem .6rem;font-size:.78rem" data-on-click="pedirDesactivarTipoCartao('${esc(t.id)}')">Desactivar</button>`
+                : `<button class="btn-secundario" style="padding:.25rem .6rem;font-size:.78rem" data-on-click="activarTipoCartao('${esc(t.id)}')">Activar</button>`}
+            </div>
+          </div>`).join('') : '<div class="muted" style="margin-bottom:.5rem">Ainda não há cartões.</div>'}
+        <div style="margin-top:.9rem;display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-end">
+          <div class="campo" style="flex:1;min-width:8rem;margin:0"><label>Valor (Kz)</label><input type="number" id="tc-valor" min="1000" max="500000" step="500" placeholder="3000"></div>
+          <div class="campo" style="flex:2;min-width:10rem;margin:0"><label>Nome (opcional)</label><input id="tc-nome" maxlength="60" placeholder="Ex.: Cartão piscina"></div>
+          <button class="btn-primario" data-on-click="criarTipoCartao()">+ Novo cartão</button>
+        </div>
+      </div>`;
+}
+async function criarTipoCartao() {
+  const valor = parseInt(document.getElementById('tc-valor').value, 10);
+  if (!(valor >= 1000 && valor <= 500000)) return toast('Valor de 1 000 a 500 000 Kz', 'aviso');
+  try {
+    await api('POST', '/caixa/cartoes/tipos', { valor, nome: document.getElementById('tc-nome').value });
+    toast(`Cartão de ${formatarMoeda(valor)} criado`, 'sucesso');
+    carregarModulo('configuracoes');
+  } catch (e) { toast(e.message, 'erro'); }
+}
+async function guardarNomeTipoCartao(id) {
+  try {
+    await api('PUT', `/caixa/cartoes/tipos/${id}`, { nome: document.getElementById(`tc-nome-${id}`).value });
+    toast('Nome guardado', 'sucesso');
+  } catch (e) { toast(e.message, 'erro'); }
+}
+function pedirDesactivarTipoCartao(id) {
+  modalConfirmar('Desactivar cartão', 'O botão deixa de aparecer no Caixa. Os cartões já vendidos continuam a valer e os impressos deste valor ainda podem ser vendidos pelo código noutra altura (active-o de novo).', 'desactivarTipoCartaoConfirmado', id);
+}
+async function desactivarTipoCartaoConfirmado(id) {
+  try { await api('PUT', `/caixa/cartoes/tipos/${id}`, { ativo: false }); fecharModal(); carregarModulo('configuracoes'); } catch (e) { toast(e.message, 'erro'); }
+}
+async function activarTipoCartao(id) {
+  try { await api('PUT', `/caixa/cartoes/tipos/${id}`, { ativo: true }); carregarModulo('configuracoes'); } catch (e) { toast(e.message, 'erro'); }
+}
+
 function cartaoContasCorrentes(contas, clientes) {
   const ativas = contas.filter(c => c.conta_corrente_ativa);
   return `
@@ -1764,6 +1812,8 @@ async function modulo_configuracoes(el) {
     window._tabelasPreco = Array.isArray(rTP) ? rTP : [];
     window._produtosCfg = produtos;
     const rCC = lic('caixa') ? await api('GET', '/caixa/conta-corrente') : [];
+    const rTC = lic('caixa') ? await api('GET', '/caixa/cartoes/tipos?todos=1') : [];
+    const tiposCartao = Array.isArray(rTC) ? rTC : [];
     const contasCC = Array.isArray(rCC) ? rCC : [];
     const resCli = lic('caixa') ? await api('GET', '/clientes?limit=500') : [];
     const clientesCC = (Array.isArray(resCli) ? resCli : (resCli && resCli.data) || []).filter(c => !contasCC.some(x => x.id === c.id && x.conta_corrente_ativa));
@@ -1808,6 +1858,7 @@ async function modulo_configuracoes(el) {
       ${lic('restauracao') ? `<div class="card mt-2" style="max-width:700px"><div class="card-titulo mb-2">👨‍🍳 COZINHA E BAR</div>
         <div class="muted" style="font-size:.82rem;margin-bottom:.6rem">Escolha em que ecrã aparece cada categoria (Cozinha, Bar ou nenhum).</div>
         <button class="btn-secundario" data-on-click="modalPostosPreparacao()">Definir postos por categoria</button></div>` : ''}
+      ${lic('caixa') ? cartaoTiposCartao(tiposCartao) : ''}
       ${lic('caixa') ? cartaoContasCorrentes(contasCC, clientesCC) : ''}
       ${lic('financas') ? cartaoResumoDiario(cfg) : ''}
       ${(lic('restauracao') || lic('lazer') || lic('loja')) ? '<div class="card mt-2" style="max-width:700px" id="cfg-agentes"></div>' : ''}

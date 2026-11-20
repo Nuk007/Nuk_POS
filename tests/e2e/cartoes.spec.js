@@ -1,8 +1,8 @@
 'use strict';
-/** Cartões pré-impressos num navegador real: gerar o lote (descarrega a folha) e vender um cartão pelo código. */
+/** Cartões num navegador real: botões como os quartos, gerar o lote (descarrega a folha) e vender 2 cartões pelos códigos. */
 const { test, expect } = require('@playwright/test');
 
-test('gerar lote de cartões de 3 000 Kz e vender um pelo código, cobrando o valor impresso', async ({ page }) => {
+test('gerar lote de cartões de 3 000 Kz e vender 2 pela grelha, cobrando o valor impresso', async ({ page }) => {
   const erros = [];
   page.on('pageerror', e => erros.push(e.message));
   page.on('console', m => { if (m.type() === 'error' && !/favicon|Failed to load resource/i.test(m.text())) erros.push(m.text()); });
@@ -22,30 +22,34 @@ test('gerar lote de cartões de 3 000 Kz e vender um pelo código, cobrando o va
   }
 
   await page.click('.nav-item[data-modulo="cartoes"]');
-  for (const v of ['2 000', '3 000', '25 000']) await expect(page.locator('button', { hasText: new RegExp(v.replace(' ', '.')) }).first()).toBeVisible();
+  for (const v of ['2.000', '3.000', '25.000']) await expect(page.locator('.cartao-card', { hasText: new RegExp(`^\\s*${v} Kz`) }).first()).toBeVisible();
   await page.selectOption('#lote-valor', '3000');
   await page.fill('#lote-qtd', '4');
   const descarga = page.waitForEvent('download');
   await page.click('button:has-text("Gerar lote")');
   expect((await descarga).suggestedFilename()).toMatch(/^cartoes-lote-\d+\.pdf$/);
 
-  // um código do lote acabado de gerar (o operador lê-o na cartolina)
-  const codigo = await page.evaluate(async () => {
+  // dois códigos do lote acabado de gerar (o operador lê-os nas cartolinas)
+  const codigos = await page.evaluate(async () => {
     const h = { Authorization: `Bearer ${NUK.token}` };
     const lotes = await (await fetch('/api/caixa/cartoes/lotes', { headers: h })).json();
     const det = await (await fetch(`/api/caixa/cartoes/lotes/${lotes[0].id}`, { headers: h })).json();
-    return det.cartoes.find(c => c.estado === 'POR_VENDER').codigo;
+    return det.cartoes.filter(c => c.estado === 'POR_VENDER').slice(0, 2).map(c => c.codigo);
   });
 
-  await page.selectOption('#cc-metodo', 'CASH');
-  await page.fill('#cc-codigo', codigo.toLowerCase());
-  await page.click('button:has-text("Vender") >> nth=0');
-  await expect(page.getByText(/Cobrar ao cliente/)).toBeVisible();
-  await expect(page.locator('button', { hasText: /Recebi 3.000/ })).toBeVisible(); // valor impresso, sem desconto
-  await page.click('button:has-text("Recebi")');
-  await expect(page.getByText('Cartão vendido')).toBeVisible();
-  const c = await page.evaluate(async cod => (await (await fetch(`/api/caixa/cartoes/${cod}`, { headers: { Authorization: `Bearer ${NUK.token}` } })).json()), codigo);
-  expect(c.estado).toBe('ACTIVO');
-  expect(Number(c.saldo)).toBe(3000);
+  const botao = page.locator('.cartao-card', { hasText: /^\s*3.000 Kz/ });
+  await expect(botao).toContainText('impressos por vender');
+  await botao.click();
+  await page.click('button:has-text("+")');
+  await expect(page.locator('#vc-cod-1')).toBeVisible();
+  await expect(page.locator('#vc-total')).toContainText(/6.000 Kz/); // 2 × 3 000, sem desconto
+  await page.selectOption('#vc-metodo', 'CASH');
+  await page.fill('#vc-cod-0', codigos[0].toLowerCase());
+  await page.fill('#vc-cod-1', codigos[1]);
+  await page.click('button:has-text("Validar venda")');
+  await expect(page.getByText('Venda concluída')).toBeVisible();
+  for (const c of codigos) await expect(page.getByText(c).first()).toBeVisible();
+  const estados = await page.evaluate(async cods => Promise.all(cods.map(async cod => (await (await fetch(`/api/caixa/cartoes/${cod}`, { headers: { Authorization: `Bearer ${NUK.token}` } })).json()))), codigos);
+  expect(estados.map(c => [c.estado, Number(c.saldo)])).toEqual([['ACTIVO', 3000], ['ACTIVO', 3000]]);
   expect(erros).toEqual([]);
 });
