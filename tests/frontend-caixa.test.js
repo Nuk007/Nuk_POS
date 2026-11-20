@@ -79,9 +79,60 @@ describe('Caixa do dia (frontend)', () => {
     await ctx.modulo_cartoes({ innerHTML: '' });
     ctx._els['cc-metodo'] = { value: 'CASH' };
     ctx.api = async (m, u, b) => { ctx._chamadas.push([m, u, b]); return { codigo: 'CCABCDEFGH', saldo: 10000 }; };
-    await ctx.venderCartao(10000);
-    expect(ctx._chamadas).toContainEqual(['POST', '/caixa/cartoes', { valor: 10000, metodo: 'CASH' }]);
+    await ctx.venderCartao(3000);
+    expect(ctx._chamadas).toContainEqual(['POST', '/caixa/cartoes', { valor: 3000, metodo: 'CASH' }]);
     expect(ctx._modal).toContain('CCABCDEFGH');
+  });
+
+  test('Cartões: botões com os valores do estabelecimento; sem lotes para o operador', async () => {
+    const ctx = carregar({ '/caixa': { aberta: true }, '/caixa/cartoes': [] });
+    const el = { innerHTML: '' };
+    await ctx.modulo_cartoes(el);
+    for (const v of [2000, 3000, 5000, 6000, 12000, 15000, 20000, 25000]) expect(el.innerHTML).toContain(`venderCartao(${v})`);
+    expect(el.innerHTML).not.toContain('venderCartao(50000)');
+    expect(el.innerHTML).not.toContain('gerarLoteCartoes()');
+    expect(ctx._chamadas.some(c => c[1] === '/caixa/cartoes/lotes')).toBe(false);
+  });
+
+  test('Cartão impresso: mostra o valor a cobrar (sem desconto) e só vende depois de confirmar', async () => {
+    const ctx = carregar({ '/caixa': { aberta: true }, '/caixa/cartoes': [], '/caixa/cartoes/CCABCDEFGH': { codigo: 'CCABCDEFGH', valor_inicial: 3000, saldo: 0, estado: 'POR_VENDER', lote_numero: 4 } });
+    await ctx.modulo_cartoes({ innerHTML: '' });
+    ctx._els['cc-metodo'] = { value: 'TPA' };
+    ctx._els['cc-codigo'] = { value: ' ccab-cdefgh ' };
+    await ctx.verificarCartaoImpresso();
+    expect(ctx._modal).toContain('3000 Kz');
+    expect(ctx._modal).toContain("venderCartaoImpresso('CCABCDEFGH','TPA')");
+    expect(ctx._chamadas.some(c => c[0] === 'POST')).toBe(false); // ainda nada vendido
+    await ctx.venderCartaoImpresso('CCABCDEFGH', 'TPA');
+    expect(ctx._chamadas).toContainEqual(['POST', '/caixa/cartoes/CCABCDEFGH/vender', { metodo: 'TPA' }]);
+  });
+
+  test('Cartão impresso já vendido: avisa e não abre a venda', async () => {
+    const ctx = carregar({ '/caixa': { aberta: true }, '/caixa/cartoes': [], '/caixa/cartoes/CCABCDEFGH': { codigo: 'CCABCDEFGH', valor_inicial: 3000, saldo: 1200, estado: 'ACTIVO' } });
+    await ctx.modulo_cartoes({ innerHTML: '' });
+    ctx._els['cc-metodo'] = { value: 'CASH' }; ctx._els['cc-codigo'] = { value: 'CCABCDEFGH' };
+    await ctx.verificarCartaoImpresso();
+    expect(ctx._toast[0]).toContain('já foi vendido');
+    expect(ctx._modal).toBeUndefined();
+  });
+
+  test('Lotes (chefia): aparecem mesmo com o caixa fechado; gerar lote envia valor e quantidade e descarrega a folha', async () => {
+    const ctx = carregar({ '/caixa': { aberta: false }, '/caixa/cartoes/lotes': [{ id: 'l1', numero: 2, valor: 3000, quantidade: 20, vendidos: 5, criado_em: '2026-11-20T09:00:00Z' }] });
+    ctx.NUK = { utilizador: { nivel_acesso: 'GERENTE' } };
+    const pdfs = []; ctx.descarregarPdf = (c, n) => pdfs.push([c, n]);
+    const el = { innerHTML: '' };
+    await ctx.modulo_cartoes(el);
+    expect(el.innerHTML).toContain('fechado');
+    expect(el.innerHTML).toContain('N.º 2');
+    expect(el.innerHTML).toContain("imprimirLoteCartoes('l1','2')");
+    ctx._els['lote-valor'] = { value: '3000' }; ctx._els['lote-qtd'] = { value: '0' };
+    await ctx.gerarLoteCartoes();
+    expect(ctx._chamadas.some(c => c[0] === 'POST')).toBe(false);
+    ctx._els['lote-qtd'].value = '30';
+    ctx.api = async (m, u, b) => { ctx._chamadas.push([m, u, b]); return { id: 'l9', numero: 3, valor: 3000, quantidade: 30 }; };
+    await ctx.gerarLoteCartoes();
+    expect(ctx._chamadas).toContainEqual(['POST', '/caixa/cartoes/lotes', { valor: 3000, quantidade: 30 }]);
+    expect(pdfs).toContainEqual(['/caixa/cartoes/lotes/l9/pdf', 'cartoes-lote-3.pdf']);
   });
 
   test('Receber: agrupa por mesa, calcula troco e envia o corpo esperado (PIN e cartão)', async () => {

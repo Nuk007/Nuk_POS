@@ -187,4 +187,37 @@ async function talaoFechoCaixa({ tenantId, sessaoId }) {
   return renderizar(doc);
 }
 
-module.exports = { talaoPedido, facturaPdf, tenantInfo, talaoFechoCaixa };
+/**
+ * Folha A4 com os cartões de um lote para imprimir em cartolina: 10 por página (2 × 5), tamanho de cartão bancário
+ * (85 × 54 mm), com linha tracejada para cortar. Leva o valor impresso e o código; o cartão só vale depois de vendido
+ * no caixa (os já vendidos saem marcados, para uma reimpressão não criar dúvidas).
+ */
+async function folhaCartoesLote({ tenantId, loteId }) {
+  const lote = await require('./caixa.service').loteParaImprimir({ tenantId, loteId });
+  const t = await tenantInfo(tenantId);
+  const mm = v => v * 72 / 25.4;
+  const CW = mm(85), CH = mm(54), GX = mm(6), GY = mm(4);
+  const X0 = (595.28 - 2 * CW - GX) / 2, Y0 = (841.89 - 5 * CH - 4 * GY) / 2;
+  const doc = new PDFDocument({ size: 'A4', margin: 0, autoFirstPage: false, info: { Title: `Cartões de consumo — lote ${lote.numero}`, Author: 'Nuk_POS' } });
+  const valor = `${String(Math.round(Number(lote.valor))).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} Kz`; // «3 000 Kz» (o pt-PT não agrupa 4 dígitos)
+  lote.cartoes.forEach((c, i) => {
+    const k = i % 10;
+    if (k === 0) doc.addPage();
+    const x = X0 + (k % 2) * (CW + GX), y = Y0 + Math.floor(k / 2) * (CH + GY);
+    doc.save().lineWidth(0.5).dash(3, { space: 3 }).strokeColor('#9ca3af').rect(x, y, CW, CH).stroke().undash().restore();
+    doc.rect(x, y, CW, mm(13)).fill(NAVY);
+    doc.rect(x, y + mm(13), mm(2.2), CH - mm(13)).fill(LARANJA);
+    doc.font('Helvetica-Bold').fontSize(10).fillColor('#fff').text(t.nome, x + mm(4), y + mm(3), { width: CW - mm(8), height: mm(5), ellipsis: true, lineBreak: false });
+    doc.font('Helvetica').fontSize(6.5).fillColor('#fff').text('CARTÃO DE CONSUMO', x + mm(4), y + mm(8.3), { width: CW - mm(8), characterSpacing: 1 });
+    doc.font('Helvetica-Bold').fontSize(22).fillColor(NAVY).text(valor, x + mm(5), y + mm(17), { width: CW - mm(9), align: 'center' });
+    doc.font('Courier-Bold').fontSize(15).fillColor('#000').text(c.codigo, x + mm(5), y + mm(29), { width: CW - mm(9), align: 'center', characterSpacing: 2 });
+    doc.font('Helvetica').fontSize(6).fillColor(CINZA)
+      .text('Válido só depois de pago no caixa. Apresente este cartão ao pagar; o valor gasto desconta do saldo.', x + mm(5), y + mm(38), { width: CW - mm(9), align: 'center' })
+      .text(`Lote ${lote.numero} · Nuk_POS`, x + mm(5), y + mm(47.5), { width: CW - mm(9), align: 'center' });
+    if (c.estado !== 'POR_VENDER') doc.save().rotate(-18, { origin: [x + CW / 2, y + CH / 2] }).font('Helvetica-Bold').fontSize(18).fillColor(LARANJA).opacity(0.55)
+      .text('JÁ VENDIDO', x, y + CH / 2 - 9, { width: CW, align: 'center' }).restore();
+  });
+  return renderizar(doc);
+}
+
+module.exports = { talaoPedido, facturaPdf, tenantInfo, talaoFechoCaixa, folhaCartoesLote };

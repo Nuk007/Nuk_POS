@@ -82,7 +82,7 @@ router.post('/nukcoin', authMiddleware, h(async (req, res) => {
  * @openapi
  * /api/caixa/cartoes:
  *   get:
- *     summary: Últimos cartões de consumo vendidos
+ *     summary: Últimos cartões de consumo vendidos (os pré-impressos por vender estão nos lotes)
  *     tags: [Caixa]
  *     security: [{ bearerAuth: [] }]
  *     responses: { 200: { description: Lista } }
@@ -95,6 +95,68 @@ router.post('/nukcoin', authMiddleware, h(async (req, res) => {
  */
 router.get('/cartoes', authMiddleware, h(async (req, res) => res.json(await svc.listarCartoes(base(req)))));
 router.post('/cartoes', authMiddleware, h(async (req, res) => res.status(201).json(await svc.venderCartao({ valor: req.body.valor, metodo: req.body.metodo, ...base(req) }))));
+
+/**
+ * @openapi
+ * /api/caixa/cartoes/lotes:
+ *   get:
+ *     summary: Lotes de cartões pré-impressos (vendidos e por vender) — ADMIN/GERENTE
+ *     tags: [Caixa]
+ *     security: [{ bearerAuth: [] }]
+ *     responses: { 200: { description: Lista }, 403: { description: Sem permissão } }
+ *   post:
+ *     summary: Gera um lote de cartões para imprimir (ficam sem saldo até serem vendidos no caixa) — ADMIN/GERENTE
+ *     tags: [Caixa]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody: { content: { application/json: { schema: { type: object, required: [valor, quantidade], properties: { valor: { type: integer, minimum: 1000, maximum: 500000 }, quantidade: { type: integer, minimum: 1, maximum: 200 } } } } } }
+ *     responses: { 201: { description: Lote criado }, 400: { description: Valor ou quantidade inválidos } }
+ */
+router.get('/cartoes/lotes', authMiddleware, requerNivel(['ADMIN', 'GERENTE']), h(async (req, res) => res.json(await svc.listarLotes(base(req)))));
+router.post('/cartoes/lotes', authMiddleware, requerNivel(['ADMIN', 'GERENTE']), h(async (req, res) => res.status(201).json(await svc.criarLote({ valor: req.body.valor, quantidade: req.body.quantidade, ...base(req) }))));
+
+/**
+ * @openapi
+ * /api/caixa/cartoes/lotes/{id}:
+ *   get:
+ *     summary: Lote com os códigos e o estado de cada cartão (vendido / por vender) — ADMIN/GERENTE
+ *     tags: [Caixa]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ in: path, name: id, required: true, schema: { type: string, format: uuid } }]
+ *     responses: { 200: { description: Lote }, 404: { description: Lote não encontrado } }
+ */
+router.get('/cartoes/lotes/:id', authMiddleware, requerNivel(['ADMIN', 'GERENTE']), h(async (req, res) => {
+  if (!isUUID(req.params.id)) return res.status(400).json({ erro: 'id inválido' });
+  res.json(await svc.loteParaImprimir({ loteId: req.params.id, ...base(req) }));
+}));
+
+/**
+ * @openapi
+ * /api/caixa/cartoes/lotes/{id}/pdf:
+ *   get:
+ *     summary: Folha A4 com os cartões do lote para imprimir em cartolina — ADMIN/GERENTE
+ *     tags: [Caixa]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ in: path, name: id, required: true, schema: { type: string, format: uuid } }]
+ *     responses: { 200: { description: PDF }, 404: { description: Lote não encontrado } }
+ */
+router.get('/cartoes/lotes/:id/pdf', authMiddleware, requerNivel(['ADMIN', 'GERENTE']), h(async (req, res) => {
+  if (!isUUID(req.params.id)) return res.status(400).json({ erro: 'id inválido' });
+  const pdf = await require('../services/documentos.service').folhaCartoesLote({ tenantId: req.tenantId, loteId: req.params.id });
+  res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="cartoes-lote-${req.params.id.slice(0, 8)}.pdf"`, 'Cache-Control': 'no-store' }).send(pdf);
+}));
+
+/**
+ * @openapi
+ * /api/caixa/cartoes/{codigo}/vender:
+ *   post:
+ *     summary: Vende um cartão já impresso — cobra o valor impresso, sem desconto, e activa o saldo (exige o caixa aberto)
+ *     tags: [Caixa]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ in: path, name: codigo, required: true, schema: { type: string } }]
+ *     requestBody: { content: { application/json: { schema: { type: object, properties: { metodo: { type: string, enum: [CASH, TPA, TRANSFERENCIA, EXPRESS] } } } } } }
+ *     responses: { 200: { description: Cartão activo com saldo }, 404: { description: Não encontrado }, 409: { description: Caixa fechado ou cartão já vendido } }
+ */
+router.post('/cartoes/:codigo/vender', authMiddleware, h(async (req, res) => res.json(await svc.venderCartaoImpresso({ codigo: req.params.codigo, metodo: req.body.metodo, ...base(req) }))));
 
 /**
  * @openapi

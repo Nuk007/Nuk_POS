@@ -723,6 +723,8 @@ async function initDB() {
     for (const sql of require('./migrations-data/agente-impressao')) await client.query(sql);
     // Pedidos registados sem internet (migração 1752000000000)
     for (const sql of require('./migrations-data/offline')) await client.query(sql);
+    // Cartões de consumo pré-impressos por lotes (migração 1752100000000)
+    for (const sql of require('./migrations-data/cartoes-lotes')) await client.query(sql);
 
     // Avaliacoes de staff
     await client.query(`

@@ -1,6 +1,7 @@
 'use strict';
 /**
  * CaixaService — Caixa do dia (turno): abrir com fundo, receber valores, carregar Nuk-Coin, vender cartões de consumo
+ * (gerados na hora ou pré-impressos por lotes)
  * e fechar com contagem. Tudo o que mexe em dinheiro exige o caixa aberto e fica no livro-razão `caixa_movimentos`.
  * Dinheiro esperado na gaveta = fundo + Σ movimentos em CASH (TPA, transferência, Nuk-Coin e cartão não entram na gaveta).
  */
@@ -134,7 +135,7 @@ async function venderCartao({ tenantId, userId, valor, metodo }) {
       const cartao = await withTx(async db => {
         const s = await exigirSessao(db, tenantId);
         const c = await db.query(
-          `INSERT INTO cartoes_consumo (tenant_id, codigo, valor_inicial, saldo, vendido_por) VALUES ($1,$2,$3,$3,$4) RETURNING id, codigo, valor_inicial, saldo, criado_em`,
+          `INSERT INTO cartoes_consumo (tenant_id, codigo, valor_inicial, saldo, vendido_por, vendido_em) VALUES ($1,$2,$3,$3,$4,NOW()) RETURNING id, codigo, valor_inicial, saldo, criado_em`,
           [tenantId, gerarCodigo(), v, userId || null]);
         await db.query(`INSERT INTO movimentos_cartao (cartao_id, tipo, valor, saldo_antes, saldo_depois) VALUES ($1,'VENDA',$2,0,$2)`, [c.rows[0].id, v]);
         await registar(db, { tenantId, sessaoId: s.id, tipo: 'CARTAO_VENDA', metodo: m, valor: v, descricao: `Cartão de consumo ${c.rows[0].codigo}`, cartaoId: c.rows[0].id, userId });
@@ -148,13 +149,93 @@ async function venderCartao({ tenantId, userId, valor, metodo }) {
 }
 
 async function consultarCartao({ tenantId, codigo }) {
-  const r = await pool.query(`SELECT id, codigo, valor_inicial, saldo, criado_em FROM cartoes_consumo WHERE tenant_id = $1 AND codigo = $2`, [tenantId, normCodigo(codigo)]);
+  const r = await pool.query(
+    `SELECT c.id, c.codigo, c.valor_inicial, c.saldo, c.estado, c.criado_em, c.vendido_em, l.numero AS lote_numero
+       FROM cartoes_consumo c LEFT JOIN cartoes_lotes l ON l.id = c.lote_id
+      WHERE c.tenant_id = $1 AND c.codigo = $2`, [tenantId, normCodigo(codigo)]);
   if (!r.rows[0]) throw erro(404, 'Cartão não encontrado');
   return r.rows[0];
 }
+/** Últimos cartões vendidos (os pré-impressos por vender não aparecem aqui: estão nos lotes). */
 async function listarCartoes({ tenantId }) {
-  const r = await pool.query(`SELECT id, codigo, valor_inicial, saldo, criado_em FROM cartoes_consumo WHERE tenant_id = $1 ORDER BY criado_em DESC LIMIT 50`, [tenantId]);
+  const r = await pool.query(
+    `SELECT id, codigo, valor_inicial, saldo, COALESCE(vendido_em, criado_em) AS criado_em FROM cartoes_consumo
+      WHERE tenant_id = $1 AND estado = 'ACTIVO' ORDER BY COALESCE(vendido_em, criado_em) DESC LIMIT 50`, [tenantId]);
   return r.rows;
+}
+
+// ── Cartões pré-impressos (lotes) ───────────────────────────
+// O lote só cria códigos: nenhum dinheiro entra e nenhum cartão tem saldo até ser vendido no caixa.
+// Por isso um cartão perdido ou roubado antes da venda não vale nada, e gerar um lote não exige o caixa aberto.
+const LOTE_MAX = 200;
+
+async function criarLote({ tenantId, userId, valor, quantidade }) {
+  const v = Number(valor), q = Number(quantidade);
+  if (!Number.isInteger(v) || v < CARTAO_MIN || v > CARTAO_MAX) throw erro(400, `Valor do cartão inválido (${CARTAO_MIN} a ${CARTAO_MAX} Kz, sem cêntimos)`);
+  if (!Number.isInteger(q) || q < 1 || q > LOTE_MAX) throw erro(400, `Quantidade inválida (1 a ${LOTE_MAX} cartões por lote)`);
+  const lote = await withTx(async db => {
+    await db.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`cartoes_lote:${tenantId}`]);
+    const n = await db.query(`SELECT COALESCE(MAX(numero), 0) + 1 AS n FROM cartoes_lotes WHERE tenant_id = $1`, [tenantId]);
+    const l = (await db.query(
+      `INSERT INTO cartoes_lotes (tenant_id, numero, valor, quantidade, criado_por) VALUES ($1,$2,$3,$4,$5) RETURNING id, numero, valor, quantidade, criado_em`,
+      [tenantId, n.rows[0].n, v, q, userId || null])).rows[0];
+    let feitos = 0;
+    for (let volta = 0; feitos < q && volta < 10; volta++) { // código repetido (raríssimo): ON CONFLICT ignora e gera outro
+      const codigos = Array.from({ length: q - feitos }, gerarCodigo);
+      const r = await db.query(
+        `INSERT INTO cartoes_consumo (tenant_id, codigo, valor_inicial, saldo, estado, lote_id)
+         SELECT $1, x, $2, 0, 'POR_VENDER', $3 FROM unnest($4::text[]) AS x
+         ON CONFLICT (tenant_id, codigo) DO NOTHING`, [tenantId, v, l.id, codigos]);
+      feitos += r.rowCount;
+    }
+    if (feitos < q) throw erro(500, 'Não foi possível gerar os códigos do lote');
+    return l;
+  });
+  return { ...lote, vendidos: 0, por_vender: lote.quantidade };
+}
+
+async function listarLotes({ tenantId }) {
+  const r = await pool.query(
+    `SELECT l.id, l.numero, l.valor, l.quantidade, l.criado_em, f.nome AS criado_por_nome,
+            COUNT(c.id) FILTER (WHERE c.estado = 'ACTIVO')::int AS vendidos,
+            COUNT(c.id) FILTER (WHERE c.estado = 'POR_VENDER')::int AS por_vender
+       FROM cartoes_lotes l
+       LEFT JOIN cartoes_consumo c ON c.lote_id = l.id
+       LEFT JOIN funcionarios f ON f.id = l.criado_por
+      WHERE l.tenant_id = $1
+      GROUP BY l.id, f.nome ORDER BY l.numero DESC LIMIT 30`, [tenantId]);
+  return r.rows;
+}
+
+/** Lote com os seus códigos, para imprimir em cartolina. */
+async function loteParaImprimir({ tenantId, loteId }) {
+  const l = await pool.query(`SELECT id, numero, valor, quantidade, criado_em FROM cartoes_lotes WHERE id = $1 AND tenant_id = $2`, [loteId, tenantId]);
+  if (!l.rows[0]) throw erro(404, 'Lote não encontrado');
+  const c = await pool.query(`SELECT codigo, estado FROM cartoes_consumo WHERE lote_id = $1 ORDER BY codigo`, [loteId]);
+  return { ...l.rows[0], cartoes: c.rows };
+}
+
+/** Vende um cartão já impresso: cobra o valor impresso, sem desconto, e só então o cartão ganha saldo. */
+async function venderCartaoImpresso({ tenantId, userId, codigo, metodo }) {
+  const m = validarMetodo(metodo, METODOS_BALCAO);
+  const cod = normCodigo(codigo);
+  if (!/^CC[A-Z0-9]{8}$/.test(cod)) throw erro(400, 'Código do cartão inválido (CC + 8 caracteres)');
+  const cartao = await withTx(async db => {
+    const s = await exigirSessao(db, tenantId);
+    const r = await db.query(`SELECT id, codigo, valor_inicial, estado FROM cartoes_consumo WHERE tenant_id = $1 AND codigo = $2 FOR UPDATE`, [tenantId, cod]);
+    const c = r.rows[0];
+    if (!c) throw erro(404, 'Cartão não encontrado');
+    if (c.estado !== 'POR_VENDER') throw erro(409, 'Este cartão já foi vendido', { codigo: 'CARTAO_JA_VENDIDO' });
+    const v = parseFloat(c.valor_inicial);
+    const u = await db.query(
+      `UPDATE cartoes_consumo SET estado = 'ACTIVO', saldo = valor_inicial, vendido_por = $2, vendido_em = NOW() WHERE id = $1
+       RETURNING id, codigo, valor_inicial, saldo, estado, vendido_em`, [c.id, userId || null]);
+    await db.query(`INSERT INTO movimentos_cartao (cartao_id, tipo, valor, saldo_antes, saldo_depois) VALUES ($1,'VENDA',$2,0,$2)`, [c.id, v]);
+    await registar(db, { tenantId, sessaoId: s.id, tipo: 'CARTAO_VENDA', metodo: m, valor: v, descricao: `Cartão de consumo ${c.codigo}`, cartaoId: c.id, userId });
+    return u.rows[0];
+  });
+  broadcast('caixa_atualizada', {}, tenantId);
+  return cartao;
 }
 
 // ── Recebimento dos pedidos fechados ────────────────────────
@@ -256,8 +337,9 @@ async function receber({ tenantId, userId, pedido_ids, ...dados }) {
         x.clienteId = cid;
       }
       if (x.metodo === 'CARTAO') {
-        const c = await db.query(`SELECT id, saldo FROM cartoes_consumo WHERE tenant_id = $1 AND codigo = $2 FOR UPDATE`, [tenantId, normCodigo(x.codigo_cartao)]);
+        const c = await db.query(`SELECT id, saldo, estado FROM cartoes_consumo WHERE tenant_id = $1 AND codigo = $2 FOR UPDATE`, [tenantId, normCodigo(x.codigo_cartao)]);
         if (!c.rows[0]) throw erro(404, 'Cartão não encontrado');
+        if (c.rows[0].estado !== 'ACTIVO') throw erro(409, 'Este cartão ainda não foi vendido no caixa', { codigo: 'CARTAO_POR_VENDER' });
         const atual = parseFloat(c.rows[0].saldo);
         if (atual < valor) throw erro(400, 'Saldo do cartão insuficiente', { saldo_atual: atual, total_necessario: valor });
         x.saldo = atual; x.cartaoId = c.rows[0].id;
@@ -362,4 +444,4 @@ async function faturar({ tenantId, userId, pedido_ids, nif_cliente, nome_cliente
   return require('./fiscal/faturas.service').emitir({ tenantId, userId, tipo: 'FR', pedido_ids, nif_cliente, nome_cliente });
 }
 
-module.exports = { faturar, abrir, estado, fechar, sessoes, carregarNukcoin, venderCartao, consultarCartao, listarCartoes, porReceber, receber, dividirConta, sessaoAberta, METODOS_BALCAO, METODOS_RECEBIMENTO };
+module.exports = { faturar, abrir, estado, fechar, sessoes, carregarNukcoin, venderCartao, consultarCartao, listarCartoes, criarLote, listarLotes, loteParaImprimir, venderCartaoImpresso, porReceber, receber, dividirConta, sessaoAberta, METODOS_BALCAO, METODOS_RECEBIMENTO };
