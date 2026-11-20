@@ -3,7 +3,7 @@
 const express = require('express');
 const router = express.Router();
 const { authMiddleware, isUUID } = require('../middleware/auth');
-const { loginLimiter } = require('../middleware/rateLimiters');
+const { loginLimiter, loginIpLimiter } = require('../middleware/rateLimiters');
 const svc = require('../services/cadeia.service');
 
 const h = fn => async (req, res, next) => {
@@ -39,7 +39,7 @@ const h = fn => async (req, res, next) => {
  *     responses: { 200: { description: "{ periodo, cadeia, estabelecimentos, total }" }, 403: { description: Só administradores }, 409: { description: Sem cadeia } }
  */
 router.get('/estabelecimentos', authMiddleware, h(async (req, res) => res.json(await svc.estabelecimentos({ userId: req.user.id }))));
-router.post('/trocar', loginLimiter, authMiddleware, h(async (req, res) => {
+router.post('/trocar', authMiddleware, loginIpLimiter, loginLimiter, h(async (req, res) => {
   if (!isUUID(req.body.tenant_id)) return res.status(400).json({ erro: 'tenant_id inválido' });
   res.json(await svc.trocar({ userId: req.user.id, tenant_id: req.body.tenant_id, palavra_passe: req.body.palavra_passe }));
 }));

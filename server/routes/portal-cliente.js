@@ -5,7 +5,6 @@
  * Os endpoints públicos identificam o estabelecimento por X-Tenant-Slug (ou ?slug=).
  */
 const express = require('express');
-const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const svc = require('../services/portal.service');
 const solicitacoes = require('../services/solicitacoes.service');
@@ -13,11 +12,9 @@ const caixa = require('../services/caixa.service');
 const { authMiddleware, requerNivel, isUUID } = require('../middleware/auth');
 const { resolverTenantPublico } = require('../saas');
 
-const clienteLimiter = rateLimit({
-  windowMs: 10 * 60 * 1000,
-  max: 60,
-  message: { erro: 'Demasiadas tentativas. Tente novamente em 10 minutos.' },
-});
+// Limitadores em middleware/rateLimiters.js (revisão de 20/11/2026): o portal geral conta por IP com tecto largo (os
+// clientes partilham o Wi-Fi do estabelecimento); as rotas que verificam o PIN só contam falhas, por IP + telefone/cliente.
+const { portalLimiter: clienteLimiter, portalPinLimiter } = require('../middleware/rateLimiters');
 
 // Executa o serviço e mapeia erros de negócio → HTTP
 const h = fn => async (req, res, next) => {
@@ -31,6 +28,7 @@ const h = fn => async (req, res, next) => {
   }
 };
 const pub = [clienteLimiter, resolverTenantPublico];
+const pubPin = [clienteLimiter, portalPinLimiter, resolverTenantPublico];
 
 /**
  * @openapi
@@ -54,7 +52,7 @@ router.get('/eventos', ...pub, h(async (req, res) => res.json(await svc.eventos(
  *     security: []
  *     responses: { 200: { description: Cliente }, 401: { description: Credenciais inválidas }, 403: { description: Cliente sem PIN (sem_pin) } }
  */
-router.post('/login', ...pub, h(async (req, res) => res.json(await svc.login({ ...req.body, tenantId: req.tenantId }))));
+router.post('/login', ...pubPin, h(async (req, res) => res.json(await svc.login({ ...req.body, tenantId: req.tenantId }))));
 
 /**
  * @openapi
@@ -65,7 +63,7 @@ router.post('/login', ...pub, h(async (req, res) => res.json(await svc.login({ .
  *     security: []
  *     responses: { 200: { description: PIN definido }, 403: { description: PIN já definido } }
  */
-router.post('/definir-pin', ...pub, h(async (req, res) => res.json(await svc.definirPin({ ...req.body, tenantId: req.tenantId }))));
+router.post('/definir-pin', ...pubPin, h(async (req, res) => res.json(await svc.definirPin({ ...req.body, tenantId: req.tenantId }))));
 
 /**
  * @openapi
@@ -101,7 +99,7 @@ router.post('/cadastrar', ...pub, h(async (req, res) => res.status(201).json(awa
  *     security: []
  *     responses: { 201: { description: Pedido criado }, 400: { description: Dados inválidos ou saldo insuficiente }, 401: { description: PIN inválido } }
  */
-router.post('/pedido-restaurante', ...pub, h(async (req, res) => {
+router.post('/pedido-restaurante', ...pubPin, h(async (req, res) => {
   const { cliente_id } = req.body;
   if (cliente_id && !isUUID(cliente_id)) return res.status(400).json({ erro: 'cliente_id inválido' });
   for (const it of Array.isArray(req.body.itens) ? req.body.itens : []) {
@@ -153,7 +151,7 @@ router.post('/reserva-quarto', ...pub, h(async (req, res) => {
   res.status(201).json(await solicitacoes.pedirReservaQuarto({ tenantId: req.tenantId, tipo_quarto, fracao, inicio, nome, telefone, observacoes }));
 }));
 
-router.post('/perfil', ...pub, h(async (req, res) => res.json(await svc.perfil({ ...req.body, tenantId: req.tenantId }))));
+router.post('/perfil', ...pubPin, h(async (req, res) => res.json(await svc.perfil({ ...req.body, tenantId: req.tenantId }))));
 
 /**
  * @openapi
@@ -179,7 +177,7 @@ router.post('/nukcoin/carregar', clienteLimiter, authMiddleware, h(async (req, r
  *     security: []
  *     responses: { 200: { description: Movimentos }, 401: { description: PIN inválido } }
  */
-router.get('/nukcoin/historico', ...pub, h(async (req, res) => {
+router.get('/nukcoin/historico', ...pubPin, h(async (req, res) => {
   if (!isUUID(req.query.cliente_id)) return res.status(400).json({ erro: 'cliente_id inválido' });
   res.json(await svc.historico({ tenantId: req.tenantId, clienteId: req.query.cliente_id, pin: req.headers['x-cliente-pin'] }));
 }));

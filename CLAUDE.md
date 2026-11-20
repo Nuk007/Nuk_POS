@@ -26,7 +26,7 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 ## Segurança
 - JWT (8h) com `nivel_acesso` (ADMIN/GERENTE/OPERADOR); middleware `authMiddleware`, `requerNivel`, `validarUUID`.
 - **Palavra-passe dos funcionários: 6 a 8 dígitos** (decisão do dono de 14/11/2026, para todas as aplicações dele): `validarPalavraPasse`/`PALAVRA_PASSE_RE` em `services/shared.js`, aplicada ao criar, alterar e na activação do estabelecimento. No login não se valida o formato: as palavras-passe antigas (letras) continuam a entrar até serem mudadas. O PIN do Nuk-Coin no portal continua com 4 dígitos (decisão do dono). Teste: `tests/integration/palavra-passe.int.test.js`.
-- Rate limiting centralizado em `server/middleware/rateLimiters.js` (global 200/15min, escrita 60/min, login 10/15min só-falhas, saas 5/15min, stock 30/min). Novos limiters vão para esse ficheiro, nunca inline.
+- Rate limiting centralizado em `server/middleware/rateLimiters.js`; novos limiters vão para esse ficheiro, nunca inline. **Revisão de 20/11/2026 (pedido do dono):** contar por IP bloqueava o serviço (todos os aparelhos de um estabelecimento — caixa, KDS, impressoras a consultar de 15 em 15 s, clientes no portal — saem pelo mesmo IP, e as operadoras usam CGNAT). Agora `quem(req)`: com JWT válido (assinatura verificada, `lerTokenOpcional`) conta por **pessoa** (`u:<id>`), sem sessão por IP. Global 3000/10 min por pessoa · 1500/10 min por IP; escrita 300/min por pessoa · 120/min por IP; login 10 falhas/15 min por IP+email (`loginLimiter`) + 60 falhas/15 min por IP (`loginIpLimiter`), também em `/api/cadeia/trocar`; portal público 600/10 min por IP (`portalLimiter`) e PIN 10 falhas/15 min por IP+telefone/cliente (`portalPinLimiter`, não conta pedidos de convidado) em login, definir-pin, perfil, histórico e pedido; saas 5/15 min; stock 60/min por pessoa. Teste: `tests/integration/limites.int.test.js` (usa sempre o mesmo IP).
 - Helmet com CSP sem `unsafe-inline` em scripts (excepção única: rota /api/docs do Swagger). **O frontend não pode usar `onclick=`/`onchange=` inline** (`script-src-attr 'none'`): no HTML gerado usar `data-on-click="funcao('arg')"` (delegação em `public/js/nukpos.js`, só chama funções globais com argumentos literais). `tests/frontend.test.js` garante isto.
 - Contrato do login: `POST /api/auth/login` devolve `{ token, funcionario }`; o frontend lê `res.funcionario`.
 - Logs via Pino (`server/monitoring.js`) com redacção de campos sensíveis; erros 5xx vão ao Sentry.
@@ -95,7 +95,7 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 
 ## Dívida conhecida (próximos passos)
 - Se o admin demo `admin@nukpos.ao` já existir numa BD de produção antiga, apagá-lo/desactivá-lo (o seed deixou de o criar em produção; ver «Reset»).
-- Força bruta ao PIN do portal só limitada pelo clienteLimiter (60/10min por IP).
+- Força bruta ao PIN do portal limitada a 10 falhas/15 min por IP+telefone (`portalPinLimiter`): quem muda de IP (dados móveis) recomeça a contagem — falta um bloqueio por cliente gravado na BD.
 - Preços dos serviços extra do portal (piscina, sauna, lavandaria…) estão escritos à mão no `cliente.html` (indicativos, iguais para todos). O alojamento já usa os preços reais (ver «Reservas de quarto pelo portal»).
 - `GET /api/solicitacoes-hospedagem` (antigo) filtra por `clientes.tenant_id`, por isso não lista pedidos de convidados; usar `solicitacoes_portal`.
 - @openapi parcial no portal (faltam hospedagem, perfil, eventos).

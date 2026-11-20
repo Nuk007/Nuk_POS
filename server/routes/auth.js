@@ -6,7 +6,7 @@
 const express = require('express');
 const router = express.Router();
 const { authMiddleware } = require('../middleware/auth');
-const { loginLimiter } = require('../middleware/rateLimiters');
+const { loginLimiter, loginIpLimiter } = require('../middleware/rateLimiters');
 const svc = require('../services/auth.service');
 
 // ── POST /api/auth/login ──────────────────────────────────────────────────────
@@ -43,7 +43,7 @@ const svc = require('../services/auth.service');
  *       403:
  *         $ref: '#/components/responses/Forbidden'
  */
-router.post('/login', loginLimiter, async (req, res, next) => {
+router.post('/login', loginIpLimiter, loginLimiter, async (req, res, next) => {
   try {
     const result = await svc.login({ email: req.body.email, password: req.body.password });
     res.json(result);
