@@ -71,11 +71,12 @@ async function abrirCaixa() {
 // esperado, só com justificação escrita. O servidor decide sempre; o ecrã mostra antes para não haver surpresas.
 const ESTADO_PEDIDO_CX = { ABERTO: 'na cozinha', EM_PREPARO: 'em preparação', PRONTO: 'pronto, por fechar', FECHADO: 'por receber' };
 function htmlContasPorPagar(p) {
+  window._pendenciasFecho = p;
   const ref = c => c.mesa_numero ? `Mesa ${esc(c.mesa_numero)}` : c.quarto_numero ? `Quarto ${esc(c.quarto_numero)}` : esc(c.cliente_nome || (c.origem === 'REMOTA' ? 'Pedido remoto' : 'Balcão'));
   return `<div class="erro-msg" style="margin-bottom:.6rem"><b>Não pode fechar o caixa:</b> ${p.n === 1 ? 'existe 1 conta' : `existem ${p.n} contas`} por pagar (${formatarMoeda(p.total)}). ${p.n === 1 ? 'Receba-a ou termine-a' : 'Receba-as ou termine-as'} primeiro.</div>
     <div class="tabela-wrapper" style="max-height:40vh;overflow:auto;margin-bottom:.8rem"><table>
       <thead><tr><th>Conta</th><th>Situação</th><th style="text-align:right">Valor</th></tr></thead>
-      <tbody>${p.contas.map(c => `<tr><td>${ref(c)}</td><td class="texto-pequeno">${c.por_validar ? 'remoto por validar' : esc(ESTADO_PEDIDO_CX[c.status] || c.status)}</td><td style="text-align:right">${formatarMoeda(c.total)}</td></tr>`).join('')}</tbody></table></div>
+      <tbody>${p.contas.map(c => `<tr><td>${ref(c)}</td><td class="texto-pequeno">${c.por_validar ? 'remoto por validar' : esc(ESTADO_PEDIDO_CX[c.status] || c.status)}</td><td style="text-align:right">${formatarMoeda(c.total)}</td>${euChefiaCaixa() && !c.por_validar ? `<td><button class="btn-perigo" style="padding:.2rem .5rem;font-size:.72rem" data-on-click="pedirPerdaPendencia('${esc(c.id)}')">Não paga…</button></td>` : ''}</tr>`).join('')}</tbody></table></div>
     <div style="display:flex;gap:.5rem"><button class="btn-primario" style="flex:1" data-on-click="fecharModal();carregarModulo('recebimentos')">Ir para Receber mesas</button>
     <button class="btn-secundario" style="flex:1" data-on-click="fecharModal()">Voltar</button></div>`;
 }
@@ -132,6 +133,38 @@ async function fecharCaixa() {
     if (e.codigo === 'CONTAS_POR_PAGAR' && e.dados && e.dados.pendencias) { abrirModal('Fechar caixa', htmlContasPorPagar(e.dados.pendencias)); return; }
     toast(e.message, 'erro', 7000);
   }
+}
+
+// Cliente saiu sem pagar (decisão do dono, 20/11/2026): só a chefia regista, com motivo; não se desfaz.
+function euChefiaCaixa() { return ['ADMIN', 'GERENTE'].includes(((typeof NUK !== 'undefined' && NUK.utilizador) || {}).nivel_acesso); }
+function pedirPerdaConta(i) {
+  const c = (window._contas || [])[i];
+  if (!c) return;
+  const total = c.pedidos.reduce((a, p) => a + parseFloat(p.total), 0);
+  pedirPerdaPedidos(c.pedidos.map(p => p.id).join(','), c.titulo, String(total));
+}
+function pedirPerdaPendencia(id) {
+  const c = ((window._pendenciasFecho || {}).contas || []).find(x => x.id === id);
+  if (!c) return;
+  const titulo = c.mesa_numero ? `Mesa ${c.mesa_numero}` : c.quarto_numero ? `Quarto ${c.quarto_numero}` : (c.cliente_nome || 'Balcão');
+  pedirPerdaPedidos(c.id, titulo, String(c.total));
+}
+function pedirPerdaPedidos(ids, titulo, total) {
+  modalConfirmar('Cliente saiu sem pagar',
+    `A conta <b>${esc(titulo)}</b> (${formatarMoeda(Number(total))}) fica registada como <b>não paga</b>: deixa de contar como por pagar, a mesa ou o quarto ficam livres e o valor aparece nos Relatórios como perda. <b>Não pode ser desfeito</b> e fica registado quem o fez.<br><br>
+     <label for="perda-motivo" class="negrito">Motivo (obrigatório)</label><br>
+     <input type="text" id="perda-motivo" maxlength="300" placeholder="Ex.: cliente da mesa 4 saiu sem pagar, chamado o segurança" class="campo-motivo">`,
+    'registarPerdaConfirmada', ids);
+}
+async function registarPerdaConfirmada(ids) {
+  const motivo = (document.getElementById('perda-motivo').value || '').trim();
+  if (motivo.length < 10) { toast('Escreva o motivo (pelo menos 10 caracteres)', 'erro'); return; }
+  try {
+    const r = await api('POST', '/caixa/perdas', { pedido_ids: String(ids).split(',').filter(Boolean), motivo });
+    fecharModal();
+    toast(`Conta registada como não paga (${formatarMoeda(r.total)})`, 'aviso', 6000);
+    carregarModulo(NUK.moduloActual === 'caixa' ? 'caixa' : 'recebimentos');
+  } catch (e) { toast(e.message, 'erro'); }
 }
 
 // ── Nuk-Coin ────────────────────────────────────────────────
@@ -307,7 +340,8 @@ async function modulo_recebimentos(el) {
           <div style="display:flex;gap:.5rem;margin-top:.6rem">
             ${podeDividir(c) ? `<button class="btn-secundario" style="flex:1" data-on-click="modalDividir(${i})">Dividir conta</button>` : ''}
             <button class="btn-primario" style="flex:2" data-on-click="modalReceber(${i})">Receber ${c.pedidos.length > 1 ? 'tudo · ' : ''}${formatarMoeda(total)}</button>
-          </div></div>`;
+          </div>
+          ${euChefiaCaixa() ? `<button class="btn-perigo btn-bloco" style="margin-top:.45rem;font-size:.8rem;padding:.35rem" data-on-click="pedirPerdaConta(${i})">Cliente saiu sem pagar…</button>` : ''}</div>`;
       }).join('') : '<div class="card muted">Nada por receber.</div>'}`;
   } catch (e) { el.innerHTML = `<div class="erro-msg">Erro: ${esc(e.message)}</div>`; }
 }

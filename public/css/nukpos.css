@@ -192,7 +192,8 @@ body {
 /* ── COMPONENTES ────────────────────────────────────────────── */
 .campo { margin-bottom: 1rem; }
 .campo label { display: block; font-size: .8rem; font-weight: 600; color: var(--c-muted); margin-bottom: .3rem; text-transform: uppercase; letter-spacing: .04em; }
-.campo input, .campo select, .campo textarea {
+/* .campo-motivo: campo de motivo dentro do texto do modalConfirmar (fica dentro de um <p>, sem .campo à volta) */
+.campo input, .campo select, .campo textarea, input.campo-motivo {
   width: 100%;
   background: var(--c-bg);
   border: 1px solid var(--c-border);
@@ -202,7 +203,7 @@ body {
   font-size: .9rem;
   transition: border-color .15s;
 }
-.campo input:focus, .campo select:focus, .campo textarea:focus {
+.campo input:focus, .campo select:focus, .campo textarea:focus, input.campo-motivo:focus {
   outline: none;
   border-color: var(--c-primary);
 }
@@ -651,3 +652,4 @@ tr:hover td { background: rgba(255,255,255,.02); }
 .aviso-licenca { display: flex; align-items: center; gap: .75rem; padding: .6rem 1rem; background: rgba(245, 158, 11, .12); border-bottom: 1px solid var(--c-warning); color: var(--c-warning); font-size: .88rem; }
 .aviso-licenca span { flex: 1; }
 .aviso-licenca a { padding: .3rem .8rem; font-size: .8rem; text-decoration: none; }
+input.campo-motivo { display: block; margin-top: .35rem; }

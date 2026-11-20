@@ -31,11 +31,56 @@ async function configDe(db, tenantId, chaves) {
   return cfg;
 }
 
-/** Verifica o PIN de um cliente (por id). Mensagem genérica para não revelar o que falhou. */
+// ── Bloqueio do PIN gravado por cliente (20/11/2026) ─────────
+// O limitador por IP recomeçava quando o cliente mudava de rede (Wi-Fi → dados). Agora as falhas contam no próprio
+// cliente: 5 falhas seguidas bloqueiam o PIN 15 min; cada novo bloqueio dobra o tempo (30, 60…) até 4 h. Sempre
+// temporário (um telefone não é segredo: um bloqueio permanente deixava qualquer pessoa trancar a conta de outra).
+// Um PIN certo limpa a contagem; a chefia desbloqueia ao repor o PIN (reset-pin).
+const PIN_FALHAS_MAX = 5, PIN_BLOQUEIO_MIN = 15, PIN_BLOQUEIO_TECTO_MIN = 240;
+const horaLuanda = d => new Date(d).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Luanda' });
+function exigirNaoBloqueado(c) {
+  if (c && c.pin_bloqueado_ate && new Date(c.pin_bloqueado_ate) > new Date()) {
+    throw erro(423, `O PIN está bloqueado por tentativas erradas até às ${horaLuanda(c.pin_bloqueado_ate)}. Peça ajuda no balcão.`, { codigo: 'PIN_BLOQUEADO', bloqueado_ate: c.pin_bloqueado_ate });
+  }
+}
+/** Falha de PIN: o registo faz-se FORA da transacção (que vai ser desfeita), em tratarFalhaPin. */
+const falhaPin = (clienteId, status = 401, msg = 'Credenciais inválidas') => erro(status, msg, { pinFalhou: clienteId });
+async function registarFalhaPin(clienteId) {
+  const r = await pool.query(`UPDATE clientes SET pin_falhas = pin_falhas + 1 WHERE id = $1 RETURNING pin_falhas, pin_bloqueios`, [clienteId]);
+  const c = r.rows[0];
+  if (!c || c.pin_falhas < PIN_FALHAS_MAX) return null;
+  const min = Math.min(PIN_BLOQUEIO_TECTO_MIN, PIN_BLOQUEIO_MIN * 2 ** Math.min(c.pin_bloqueios, 8));
+  const b = await pool.query(
+    `UPDATE clientes SET pin_falhas = 0, pin_bloqueios = pin_bloqueios + 1, pin_bloqueado_ate = NOW() + make_interval(mins => $2) WHERE id = $1 RETURNING pin_bloqueado_ate`,
+    [clienteId, min]);
+  return b.rows[0] || null;
+}
+async function limparFalhasPin(db, clienteId) {
+  await db.query(`UPDATE clientes SET pin_falhas = 0, pin_bloqueios = 0, pin_bloqueado_ate = NULL WHERE id = $1 AND (pin_falhas > 0 OR pin_bloqueios > 0 OR pin_bloqueado_ate IS NOT NULL)`, [clienteId]);
+}
+/** Chamar no catch, depois da transacção: grava a falha e, se o PIN ficou bloqueado, di-lo na mensagem. Relança sempre. */
+async function tratarFalhaPin(e) {
+  if (e && e.pinFalhou) {
+    const id = e.pinFalhou;
+    delete e.pinFalhou; // nunca vai para a resposta
+    const b = await registarFalhaPin(id).catch(() => null);
+    if (b && b.pin_bloqueado_ate) {
+      e.message = `${e.message}. Demasiadas tentativas: o PIN fica bloqueado até às ${horaLuanda(b.pin_bloqueado_ate)}.`;
+      e.codigo = 'PIN_BLOQUEADO';
+    }
+  }
+  throw e;
+}
+
+/** Verifica o PIN de um cliente (por id). Mensagem genérica para não revelar o que falhou. Chamar tratarFalhaPin no catch. */
 async function exigirPin(db, tenantId, clienteId, pin) {
   if (!PIN_RE.test(String(pin || ''))) throw erro(401, 'PIN obrigatório (4 dígitos)');
-  const r = await db.query(`SELECT pin_hash FROM clientes WHERE id = $1 AND ativo = true AND ($2::uuid IS NULL OR tenant_id = $2)`, [clienteId, T(tenantId)]);
-  if (!r.rows[0] || !r.rows[0].pin_hash || !(await bcrypt.compare(String(pin), r.rows[0].pin_hash))) throw erro(401, 'Credenciais inválidas');
+  const r = await db.query(`SELECT pin_hash, pin_bloqueado_ate FROM clientes WHERE id = $1 AND ativo = true AND ($2::uuid IS NULL OR tenant_id = $2)`, [clienteId, T(tenantId)]);
+  const c = r.rows[0];
+  if (!c || !c.pin_hash) throw erro(401, 'Credenciais inválidas');
+  exigirNaoBloqueado(c);
+  if (!(await bcrypt.compare(String(pin), c.pin_hash))) throw falhaPin(clienteId);
+  await limparFalhasPin(db, clienteId);
 }
 
 async function cardapio({ tenantId }) {
@@ -57,13 +102,15 @@ async function login({ tenantId, telefone, pin }) {
   if (!TEL_RE.test(tel)) throw erro(400, 'Número de telefone inválido');
   if (!PIN_RE.test(String(pin || ''))) throw erro(400, 'PIN obrigatório (4 dígitos)');
   const r = await pool.query(
-    `SELECT id, nome, telefone, provincia, pontos, nivel_fidelizacao, nukcoin_saldo, estrelas, criado_em, pin_hash
+    `SELECT id, nome, telefone, provincia, pontos, nivel_fidelizacao, nukcoin_saldo, estrelas, criado_em, pin_hash, pin_bloqueado_ate
      FROM clientes WHERE telefone = $1 AND ativo = true AND ($2::uuid IS NULL OR tenant_id = $2)`, [tel, T(tenantId)]);
   const c = r.rows[0];
   if (!c) throw erro(401, 'Credenciais inválidas');
   if (!c.pin_hash) throw erro(403, 'PIN não configurado. Por favor defina o seu PIN.', { sem_pin: true });
-  if (!(await bcrypt.compare(String(pin), c.pin_hash))) throw erro(401, 'Credenciais inválidas');
-  const { pin_hash: _, ...semPin } = c;
+  exigirNaoBloqueado(c);
+  if (!(await bcrypt.compare(String(pin), c.pin_hash))) await tratarFalhaPin(falhaPin(c.id));
+  await limparFalhasPin(pool, c.id);
+  const { pin_hash: _, pin_bloqueado_ate: __, ...semPin } = c;
   return { cliente: semPin };
 }
 
@@ -84,7 +131,8 @@ async function definirPin({ tenantId, telefone, pin }) {
 
 /** Operador repõe o PIN: o cliente fica sem PIN e define um novo no próximo acesso. */
 async function reporPin({ tenantId, clienteId }) {
-  const r = await pool.query(`UPDATE clientes SET pin_hash = NULL WHERE id = $1 AND ativo = true AND ($2::uuid IS NULL OR tenant_id = $2) RETURNING id`, [clienteId, T(tenantId)]);
+  // repor o PIN também desbloqueia (a chefia confirmou a pessoa ao balcão)
+  const r = await pool.query(`UPDATE clientes SET pin_hash = NULL, pin_falhas = 0, pin_bloqueios = 0, pin_bloqueado_ate = NULL WHERE id = $1 AND ativo = true AND ($2::uuid IS NULL OR tenant_id = $2) RETURNING id`, [clienteId, T(tenantId)]);
   if (!r.rows[0]) throw erro(404, 'Cliente não encontrado');
   return { mensagem: 'PIN reposto. O cliente define um novo PIN no próximo acesso.' };
 }
@@ -188,13 +236,19 @@ async function criarPedidoRestaurante({ tenantId, itens, mesa_ref, observacoes, 
     let totalFinal = total, desconto = 0, nukcoinPago = 0, saldoNovo = null, estrelasGastas = 0;
     let cli = null;
     if (cliente_id) {
-      const c = await db.query(`SELECT id, nukcoin_saldo, estrelas, pin_hash FROM clientes WHERE id = $1 AND ativo = true AND ($2::uuid IS NULL OR tenant_id = $2) FOR UPDATE`, [cliente_id, T(tenantId)]);
+      const c = await db.query(`SELECT id, nukcoin_saldo, estrelas, pin_hash, pin_bloqueado_ate FROM clientes WHERE id = $1 AND ativo = true AND ($2::uuid IS NULL OR tenant_id = $2) FOR UPDATE`, [cliente_id, T(tenantId)]);
       cli = c.rows[0];
       if (!cli) throw erro(400, 'Cliente não encontrado');
     }
     // Desconto de estrelas: qualquer método de pagamento, mas só com o PIN do cliente (consome as estrelas).
-    const pinOk = !!(cli && cli.pin_hash && PIN_RE.test(String(pin || '')) && await bcrypt.compare(String(pin), cli.pin_hash));
-    if (metodo === 'NUKCOIN' && !pinOk) throw erro(401, 'PIN inválido');
+    const pinDado = !!(cli && cli.pin_hash && PIN_RE.test(String(pin || '')));
+    const bloqueado = !!(cli && cli.pin_bloqueado_ate && new Date(cli.pin_bloqueado_ate) > new Date());
+    if (metodo === 'NUKCOIN' && bloqueado) exigirNaoBloqueado(cli);
+    const pinOk = pinDado && !bloqueado && await bcrypt.compare(String(pin), cli.pin_hash);
+    if (metodo === 'NUKCOIN' && !pinOk) throw pinDado ? falhaPin(cli.id, 401, 'PIN inválido') : erro(401, 'PIN inválido');
+    if (pinOk) await limparFalhasPin(db, cli.id);
+    // PIN errado sem Nuk-Coin: o pedido segue sem desconto, mas a falha conta (o cliente está bloqueado por nós nesta transacção)
+    else if (pinDado && !bloqueado) await db.query(`UPDATE clientes SET pin_falhas = pin_falhas + 1 WHERE id = $1`, [cli.id]);
     const elegivelEstrelas = !!cli && cli.estrelas >= (cfg.estrelas_para_desconto || 5) && total <= (cfg.desconto_estrelas_limite || 25000);
     const usaEstrelas = elegivelEstrelas && pinOk;
     if (usaEstrelas || metodo === 'NUKCOIN') {
@@ -247,7 +301,7 @@ async function criarPedidoRestaurante({ tenantId, itens, mesa_ref, observacoes, 
       const ja = await respostaPortalExistente(tenantId, chave);
       if (ja) return ja;
     }
-    throw e;
+    await tratarFalhaPin(e);
   }
 
   stock.avisarStockBaixo(alertasStock);
@@ -288,11 +342,11 @@ async function perfil({ tenantId, telefone, pin }) {
 }
 
 async function historico({ tenantId, clienteId, pin, limite = 20 }) {
-  await exigirPin(pool, tenantId, clienteId, pin);
+  try { await exigirPin(pool, tenantId, clienteId, pin); } catch (e) { await tratarFalhaPin(e); }
   const r = await pool.query(
     `SELECT tipo, valor, saldo_antes, saldo_depois, descricao, pedido_id, criado_em FROM movimentos_nukcoin WHERE cliente_id = $1 ORDER BY criado_em DESC, id LIMIT $2`,
     [clienteId, Math.min(100, Math.max(1, limite))]);
   return { movimentos: r.rows };
 }
 
-module.exports = { cardapio, eventos, login, definirPin, reporPin, cadastrar, carregar, criarPedidoRestaurante, criarPedidoHospedagem, perfil, historico, exigirPin };
+module.exports = { cardapio, eventos, login, definirPin, reporPin, cadastrar, carregar, criarPedidoRestaurante, criarPedidoHospedagem, perfil, historico, exigirPin, tratarFalhaPin };

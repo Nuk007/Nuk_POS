@@ -35,7 +35,19 @@ test('fecho do caixa: contas por pagar bloqueiam; diferença exige justificaçã
   await expect(page.getByText('Não pode fechar o caixa:')).toBeVisible();
   await expect(page.locator('#modal-box button:has-text("Fechar caixa")')).toHaveCount(0);
   await page.screenshot({ path: process.env.E2E_CAPTURAS ? `${process.env.E2E_CAPTURAS}/fecho-1-contas.png` : undefined });
-  await page.click('button:has-text("Ir para Receber mesas")');
+  // a chefia regista a conta deste teste como não paga (cliente saiu sem pagar), com motivo
+  const n = await page.evaluate(() => window._pendenciasFecho.contas.length);
+  const idx = await page.evaluate(id => window._pendenciasFecho.contas.findIndex(c => c.id === id), pedidoId);
+  await page.locator('#modal-box button:has-text("Não paga")').nth(idx).click();
+  await expect(page.locator('#modal-box')).toContainText('Cliente saiu sem pagar');
+  await page.click('#modal-box button:has-text("Sim, confirmar")');
+  await expect(page.locator('.toast', { hasText: 'Escreva o motivo' })).toBeVisible();
+  await page.fill('#perda-motivo', 'Cliente do balcão saiu sem pagar');
+  if (process.env.E2E_CAPTURAS) await page.screenshot({ path: `${process.env.E2E_CAPTURAS}/fecho-1b-nao-paga.png` });
+  await page.click('#modal-box button:has-text("Sim, confirmar")');
+  await expect(page.locator('.toast', { hasText: 'registada como não paga' })).toBeVisible();
+  expect(await page.evaluate(async () => (await (await fetch('/api/caixa', { headers: { Authorization: `Bearer ${NUK.token}` } })).json()).pendencias.n)).toBe(n - 1);
+  await page.evaluate(() => carregarModulo('recebimentos'));
   await expect(page.locator('#topbar-titulo')).toHaveText(/Receber/);
 
   // recebe todas as contas em aberto (as deste teste e as que outros testes deixaram)

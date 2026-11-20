@@ -78,7 +78,7 @@ async function resultado({ tenantId, de, ate }) {
   const [vendas, porReceber, aloj, itens, desp, caixa, custos] = await Promise.all([
     pool.query(`SELECT COUNT(*)::int AS n, COALESCE(SUM(total),0) AS valor, COALESCE(SUM(desconto),0) AS descontos
                   FROM pedidos WHERE tenant_id = $1 AND status <> 'CANCELADO' AND pago_em IS NOT NULL AND ${NO_PERIODO('pago_em')}`, v),
-    pool.query(`SELECT COUNT(*)::int AS n, COALESCE(SUM(total),0) AS valor FROM pedidos WHERE tenant_id = $1 AND status = 'FECHADO' AND pago_em IS NULL`, [tenantId]),
+    pool.query(`SELECT COUNT(*)::int AS n, COALESCE(SUM(total),0) AS valor FROM pedidos WHERE tenant_id = $1 AND status = 'FECHADO' AND pago_em IS NULL AND perda_em IS NULL`, [tenantId]),
     pool.query(`SELECT COUNT(*)::int AS n, COALESCE(SUM(rv.valor_total),0) AS valor FROM reservas rv JOIN quartos q ON q.id = rv.quarto_id
                  WHERE q.tenant_id = $1 AND rv.status <> 'CANCELADA' AND ${NO_PERIODO('rv.criado_em')}`, v),
     pool.query(`SELECT pr.id, pr.nome, pr.categoria, SUM(ip.quantidade) AS qtd, SUM(ip.quantidade * ip.preco_unitario) AS receita

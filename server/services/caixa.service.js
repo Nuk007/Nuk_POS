@@ -97,7 +97,7 @@ async function contasPorPagar(db, tenantId) {
             ms.numero AS mesa_numero, qt.numero AS quarto_numero, c.nome AS cliente_nome
        FROM pedidos p
        LEFT JOIN mesas ms ON ms.id = p.mesa_id LEFT JOIN quartos qt ON qt.id = p.quarto_id LEFT JOIN clientes c ON c.id = p.cliente_id
-      WHERE p.tenant_id = $1 AND p.status <> 'CANCELADO' AND p.pago_em IS NULL AND p.total > 0
+      WHERE p.tenant_id = $1 AND p.status <> 'CANCELADO' AND p.pago_em IS NULL AND p.perda_em IS NULL AND p.total > 0
       ORDER BY p.criado_em ASC LIMIT 200`, [tenantId]);
   const contas = r.rows;
   return { n: contas.length, total: arred(contas.reduce((a, x) => a + parseFloat(x.total || 0), 0)), contas };
@@ -135,6 +135,39 @@ async function fechar({ tenantId, userId, contado, observacoes, justificacao }) 
     return { sessao: r.rows[0], resumo };
   });
   broadcast('caixa_atualizada', { aberta: false }, tenantId);
+  return out;
+}
+
+/**
+ * Conta não paga — o cliente saiu sem pagar (decisão do dono, 20/11/2026). Só a chefia (a rota garante ADMIN/GERENTE),
+ * com motivo escrito. A conta deixa de estar por pagar (o caixa pode fechar, a mesa/quarto ficam livres), não é receita
+ * e fica selada: não se recebe, não se cancela, não se desfaz. O stock já servido não volta.
+ */
+const MOTIVO_PERDA_MIN = 10, MOTIVO_PERDA_MAX = 300;
+async function registarPerda({ tenantId, userId, pedido_ids, motivo }) {
+  if (!Array.isArray(pedido_ids) || !pedido_ids.length || pedido_ids.length > 50) throw erro(400, 'Escolha as contas (até 50)');
+  const m = String(motivo || '').trim();
+  if (m.length < MOTIVO_PERDA_MIN) throw erro(400, `Escreva o motivo (pelo menos ${MOTIVO_PERDA_MIN} caracteres): o que aconteceu e quem era o cliente, se se souber`);
+  const ids = [...new Set(pedido_ids)];
+  let libertas = { mesas: [], quartos: [] };
+  const out = await withTx(async db => {
+    const r = await db.query(`SELECT * FROM pedidos WHERE id = ANY($1::uuid[]) AND tenant_id = $2 ORDER BY id FOR UPDATE`, [ids, tenantId]);
+    if (r.rows.length !== ids.length) throw erro(404, 'Alguma das contas não foi encontrada');
+    for (const p of r.rows) {
+      if (p.status === 'CANCELADO') throw erro(409, 'Uma das contas está cancelada');
+      if (p.pago_em) throw erro(409, 'Uma das contas já foi recebida');
+      if (p.perda_em) throw erro(409, 'Uma das contas já foi registada como não paga');
+      if (!(parseFloat(p.total) > 0)) throw erro(409, 'Uma das contas não tem valor a cobrar');
+    }
+    const u = await db.query(
+      `UPDATE pedidos SET perda_em = NOW(), perda_por = $1, perda_motivo = $2,
+              status = CASE WHEN status = 'CANCELADO' THEN status ELSE 'FECHADO' END, atualizado_em = NOW()
+        WHERE id = ANY($3::uuid[]) RETURNING id, total, mesa_id, quarto_id, perda_em`, [userId || null, m.slice(0, MOTIVO_PERDA_MAX), ids]);
+    libertas = await ocupacao.libertarAposPagamento(db, tenantId, u.rows);
+    return { contas: u.rows.length, total: arred(u.rows.reduce((a, x) => a + parseFloat(x.total), 0)) };
+  });
+  ocupacao.avisarLibertadas(tenantId, libertas);
+  broadcast('caixa_atualizada', {}, tenantId);
   return out;
 }
 
@@ -330,7 +363,7 @@ async function porReceber({ tenantId }) {
     FROM pedidos p
     LEFT JOIN mesas ms ON ms.id = p.mesa_id LEFT JOIN quartos qt ON qt.id = p.quarto_id LEFT JOIN clientes c ON c.id = p.cliente_id
     LEFT JOIN itens_pedido ip ON ip.pedido_id = p.id LEFT JOIN produtos pr ON pr.id = ip.produto_id
-    WHERE p.tenant_id = $1 AND p.status = 'FECHADO' AND p.pago_em IS NULL
+    WHERE p.tenant_id = $1 AND p.status = 'FECHADO' AND p.pago_em IS NULL AND p.perda_em IS NULL
     GROUP BY p.id, ms.numero, qt.numero, c.nome ORDER BY p.atualizado_em ASC`, [tenantId]);
   return r.rows;
 }
@@ -394,6 +427,7 @@ async function receber({ tenantId, userId, pedido_ids, ...dados }) {
     for (const p of r.rows) {
       if (p.status !== 'FECHADO') throw erro(409, 'Só se recebe depois de a mesa ou o pedido estar fechado');
       if (p.pago_em) throw erro(409, 'Algum dos pedidos já foi recebido');
+      if (p.perda_em) throw erro(409, 'Esta conta foi registada como não paga e já não se recebe', { codigo: 'CONTA_NAO_PAGA' });
     }
     const pedidos = r.rows;
     const totalCent = pedidos.reduce((a, p) => a + Math.round(parseFloat(p.total) * 100), 0);
@@ -411,7 +445,8 @@ async function receber({ tenantId, userId, pedido_ids, ...dados }) {
         cliId = x.cliente_id || (pedidos.every(p => p.cliente_id && p.cliente_id === pedidos[0].cliente_id) ? pedidos[0].cliente_id : null);
         if (!cliId) throw erro(400, 'Indique o cliente que paga com Nuk-Coin');
         try { await portal.exigirPin(db, tenantId, cliId, x.pin); }
-        catch (e) { throw erro(403, e.statusCode === 401 ? 'PIN inválido' : e.message); } // 403 e não 401: o POS faria logout
+        // 403 e não 401: o POS faria logout. A falha do PIN regista-se depois da transacção (portal.tratarFalhaPin)
+        catch (e) { throw erro(e.statusCode === 423 ? 423 : 403, e.statusCode === 401 ? 'PIN inválido' : e.message, { ...(e.pinFalhou ? { pinFalhou: e.pinFalhou } : {}), ...(e.codigo ? { codigo: e.codigo } : {}) }); }
         const c = await db.query(`SELECT nukcoin_saldo FROM clientes WHERE id = $1 AND tenant_id = $2 FOR UPDATE`, [cliId, tenantId]);
         const atual = parseFloat(c.rows[0].nukcoin_saldo);
         if (atual < valor) throw erro(400, 'Saldo Nuk-Coin insuficiente', { saldo_atual: atual, total_necessario: valor });
@@ -466,7 +501,7 @@ async function receber({ tenantId, userId, pedido_ids, ...dados }) {
       total: totalCent / 100, metodo: metodoFinal, pedidos: ids.length, troco, saldo_restante: saldo, cliente_id: cliId,
       pagamentos: parcelas.map(x => ({ metodo: x.metodo, valor: x.cent / 100 })),
     };
-  });
+  }).catch(portal.tratarFalhaPin);
   ocupacao.avisarLibertadas(tenantId, libertas);
   broadcast('caixa_atualizada', {}, tenantId);
   if (nukcoinCliente) broadcast('nukcoin_carregado', { cliente_id: nukcoinCliente }, tenantId);
@@ -531,4 +566,4 @@ async function faturar({ tenantId, userId, pedido_ids, nif_cliente, nome_cliente
   return require('./fiscal/faturas.service').emitir({ tenantId, userId, tipo: 'FR', pedido_ids, nif_cliente, nome_cliente });
 }
 
-module.exports = { faturar, abrir, estado, fechar, contasPorPagar, sessoes, carregarNukcoin, consultarCartao, listarCartoes, criarLote, listarLotes, loteParaImprimir, venderCartaoImpresso, venderCartoesImpressos, listarTiposCartao, criarTipoCartao, actualizarTipoCartao, porReceber, receber, dividirConta, sessaoAberta, METODOS_BALCAO, METODOS_RECEBIMENTO };
+module.exports = { faturar, abrir, estado, fechar, contasPorPagar, registarPerda, sessoes, carregarNukcoin, consultarCartao, listarCartoes, criarLote, listarLotes, loteParaImprimir, venderCartaoImpresso, venderCartoesImpressos, listarTiposCartao, criarTipoCartao, actualizarTipoCartao, porReceber, receber, dividirConta, sessaoAberta, METODOS_BALCAO, METODOS_RECEBIMENTO };

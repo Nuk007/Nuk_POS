@@ -73,7 +73,7 @@ async function guardarDespesa() {
 function pedirAnularDespesa(id) {
   const d = (window._finDespesas || []).find(x => x.id === id); if (!d) return;
   modalConfirmar('Anular despesa', `Anular <b>${esc(d.descricao)}</b> (${formatarMoeda(d.valor)})?${d.pela_gaveta ? ' O dinheiro volta à gaveta.' : ''} Fica registada como anulada.<br><br>
-    <label for="dp-motivo" class="negrito">Motivo (obrigatório)</label><br><input type="text" id="dp-motivo" maxlength="200" style="width:100%;margin-top:.35rem">`, 'anularDespesaConfirmado', id);
+    <label for="dp-motivo" class="negrito">Motivo (obrigatório)</label><br><input type="text" id="dp-motivo" maxlength="200" class="campo-motivo">`, 'anularDespesaConfirmado', id);
 }
 async function anularDespesaConfirmado(id) {
   const motivo = (document.getElementById('dp-motivo') || {}).value || '';

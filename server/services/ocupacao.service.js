@@ -1,8 +1,8 @@
 'use strict';
 /**
  * Mesa e quarto «em uso» enquanto houver conta por pagar.
- * Conta por pagar = pedido não cancelado sem `pago_em`. Só o Caixa (receber) ou o cancelamento
- * dentro dos primeiros 5 minutos libertam a mesa / o quarto.
+ * Conta por pagar = pedido não cancelado sem `pago_em` nem registo de «não paga» (`perda_em`). Libertam a mesa / o
+ * quarto: o Caixa (receber), o cancelamento nos primeiros 5 minutos ou a chefia ao registar a conta como não paga.
  */
 const { broadcast } = require('../middleware/broadcast');
 
@@ -11,14 +11,14 @@ const JANELA_CANCELAR_MIN = 5;
 /** Há contas por pagar nesta mesa? (opcionalmente ignorando um pedido) */
 async function mesaTemContaPorPagar(db, mesaId, ignorarPedidoId = null) {
   const r = await db.query(
-    `SELECT 1 FROM pedidos WHERE mesa_id = $1 AND status <> 'CANCELADO' AND pago_em IS NULL AND ($2::uuid IS NULL OR id <> $2) LIMIT 1`,
+    `SELECT 1 FROM pedidos WHERE mesa_id = $1 AND status <> 'CANCELADO' AND pago_em IS NULL AND perda_em IS NULL AND ($2::uuid IS NULL OR id <> $2) LIMIT 1`,
     [mesaId, ignorarPedidoId]);
   return r.rows.length > 0;
 }
 
 async function quartoTemContaPorPagar(db, quartoId, ignorarPedidoId = null) {
   const r = await db.query(
-    `SELECT 1 FROM pedidos WHERE quarto_id = $1 AND status <> 'CANCELADO' AND pago_em IS NULL AND ($2::uuid IS NULL OR id <> $2) LIMIT 1`,
+    `SELECT 1 FROM pedidos WHERE quarto_id = $1 AND status <> 'CANCELADO' AND pago_em IS NULL AND perda_em IS NULL AND ($2::uuid IS NULL OR id <> $2) LIMIT 1`,
     [quartoId, ignorarPedidoId]);
   return r.rows.length > 0;
 }

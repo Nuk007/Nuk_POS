@@ -84,8 +84,7 @@ module.exports = [
 
   // Fecho do caixa (20/11/2026, regra do dono): a justificação de uma diferença na contagem fica selada com o fecho.
   `ALTER TABLE caixa_sessoes ADD COLUMN IF NOT EXISTS justificacao TEXT`,
-  // Contas por pagar (pedido não cancelado sem pago_em): consultadas no estado do caixa e em cada fecho.
-  `CREATE INDEX IF NOT EXISTS idx_pedidos_por_pagar ON pedidos (tenant_id, criado_em) WHERE status <> 'CANCELADO' AND pago_em IS NULL`,
+  // (o índice das contas por pagar vive em contas-perda.js: precisa da coluna perda_em)
   `CREATE OR REPLACE FUNCTION nukpos_caixa_sessao_protegida() RETURNS trigger AS $$
    BEGIN
      IF TG_OP = 'DELETE' THEN

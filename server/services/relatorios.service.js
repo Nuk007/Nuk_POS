@@ -27,14 +27,14 @@ const NO_PERIODO = col => `(${col} AT TIME ZONE 'Africa/Luanda')::date BETWEEN $
 async function vendas({ tenantId, de, ate }) {
   const p = periodo(de, ate);
   const v = [tenantId, p.de, p.ate];
-  const [tot, formas, conta, porFunc, cancPorFunc, porProd, porHora, canc] = await Promise.all([
+  const [tot, formas, conta, porFunc, cancPorFunc, porProd, porHora, canc, perdas] = await Promise.all([
     pool.query(`
       SELECT COUNT(*) FILTER (WHERE status = 'FECHADO')::int AS pedidos,
              COALESCE(SUM(total) FILTER (WHERE status = 'FECHADO'), 0) AS valor,
              COALESCE(SUM(desconto) FILTER (WHERE status = 'FECHADO'), 0) AS descontos,
              COUNT(*) FILTER (WHERE status = 'CANCELADO')::int AS cancelados,
              COALESCE(SUM(total) FILTER (WHERE status = 'CANCELADO'), 0) AS valor_cancelado,
-             COALESCE(SUM(total) FILTER (WHERE status = 'FECHADO' AND pago_em IS NULL), 0) AS por_receber
+             COALESCE(SUM(total) FILTER (WHERE status = 'FECHADO' AND pago_em IS NULL AND perda_em IS NULL), 0) AS por_receber
         FROM pedidos WHERE tenant_id = $1 AND ${NO_PERIODO('criado_em')}`, v),
     pool.query(`
       SELECT metodo, tipo, COALESCE(SUM(valor), 0) AS valor, COUNT(*)::int AS n
@@ -68,6 +68,13 @@ async function vendas({ tenantId, de, ate }) {
         LEFT JOIN funcionarios fc ON fc.id = p.cancelado_por LEFT JOIN funcionarios fp ON fp.id = p.funcionario_id
        WHERE p.tenant_id = $1 AND p.status = 'CANCELADO' AND ${NO_PERIODO('p.criado_em')}
        ORDER BY COALESCE(p.cancelado_em, p.atualizado_em) DESC LIMIT 200`, v),
+    // Contas não pagas (cliente saiu sem pagar), pela data em que a chefia as registou
+    pool.query(`
+      SELECT p.id, p.criado_em, p.perda_em, p.origem, p.total, p.perda_motivo, m.numero AS mesa, q.numero AS quarto, fr.nome AS registado_por_nome
+        FROM pedidos p LEFT JOIN mesas m ON m.id = p.mesa_id LEFT JOIN quartos q ON q.id = p.quarto_id
+        LEFT JOIN funcionarios fr ON fr.id = p.perda_por
+       WHERE p.tenant_id = $1 AND p.perda_em IS NOT NULL AND ${NO_PERIODO('p.perda_em')}
+       ORDER BY p.perda_em DESC LIMIT 200`, v),
   ]);
 
   const t = tot.rows[0];
@@ -93,6 +100,8 @@ async function vendas({ tenantId, de, ate }) {
     por_produto: porProd.rows.map(r => ({ ...r, quantidade: N(r.quantidade), valor: N(r.valor) })),
     por_hora: porHora.rows.map(r => ({ hora: r.hora, pedidos: r.pedidos, valor: N(r.valor) })),
     cancelamentos: canc.rows.map(r => ({ ...r, total: N(r.total) })),
+    perdas: perdas.rows.map(r => ({ ...r, total: N(r.total) })),
+    valor_perdas: Math.round(perdas.rows.reduce((a, r) => a + N(r.total), 0) * 100) / 100,
   };
 }
 

@@ -56,6 +56,8 @@ async function modulo_relatorios(el) {
       </div>
       <div class="card mt-2"><div class="card-header"><span class="card-titulo">Cancelamentos — quem e porquê</span></div>
         ${tabelaRel(['Quando', 'Origem', 'Valor', 'Cancelado por', 'Motivo'], r.cancelamentos.map(c => [dataHoraRel(c.cancelado_em || c.criado_em), (ORIGENS_REL[c.origem] || c.origem || '') + (c.mesa ? ` ${esc(c.mesa)}` : ''), formatarMoeda(c.total), esc(c.cancelado_por_nome || '—'), esc(c.motivo_cancelamento || '—')]), 'Sem cancelamentos no período')}</div>
+      <div class="card mt-2"><div class="card-header"><span class="card-titulo">Contas não pagas${(r.perdas || []).length ? ` — ${formatarMoeda(r.valor_perdas)}` : ''}</span></div>
+        ${tabelaRel(['Registada', 'Conta', 'Valor', 'Registada por', 'Motivo'], (r.perdas || []).map(c => [dataHoraRel(c.perda_em), (ORIGENS_REL[c.origem] || c.origem || '') + (c.mesa ? ` ${esc(c.mesa)}` : c.quarto ? ` ${esc(c.quarto)}` : ''), formatarMoeda(c.total), esc(c.registado_por_nome || '—'), esc(c.perda_motivo || '—')]), 'Sem contas não pagas no período')}</div>
       ${Array.isArray(sessoes) && sessoes.length ? `<div class="card mt-2"><div class="card-header"><span class="card-titulo">Fechos de caixa (talão Z)</span></div>
         ${tabelaRel(['Aberto', 'Fechado', 'Esperado', 'Diferença', ''], sessoes.slice(0, 15).map(s => [
           `${dataHoraRel(s.aberta_em)}<div class="muted texto-pequeno">${esc(s.aberta_por_nome || '')}</div>`,

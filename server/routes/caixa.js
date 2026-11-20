@@ -44,6 +44,18 @@ router.post('/abrir', authMiddleware, h(async (req, res) => res.status(201).json
 
 /**
  * @openapi
+ * /api/caixa/perdas:
+ *   post:
+ *     summary: Regista contas como não pagas (cliente saiu sem pagar) — só ADMIN/GERENTE, motivo obrigatório; não se desfaz
+ *     tags: [Caixa]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody: { content: { application/json: { schema: { type: object, required: [pedido_ids, motivo], properties: { pedido_ids: { type: array, items: { type: string, format: uuid } }, motivo: { type: string } } } } } }
+ *     responses: { 200: { description: "{ contas, total }" }, 400: { description: "Sem contas ou motivo curto" }, 403: { description: "Só a chefia" }, 409: { description: "Conta cancelada, recebida ou já registada" } }
+ */
+router.post('/perdas', authMiddleware, requerNivel(['ADMIN', 'GERENTE']), h(async (req, res) => res.json(await svc.registarPerda({ pedido_ids: req.body.pedido_ids, motivo: req.body.motivo, ...base(req) }))));
+
+/**
+ * @openapi
  * /api/caixa/fechar:
  *   post:
  *     summary: Fecha o caixa com a contagem do dinheiro (nunca com contas por pagar; diferença só com justificação)

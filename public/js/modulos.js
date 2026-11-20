@@ -213,7 +213,7 @@ function modalConfirmar(titulo, texto, funcao, ...args) {
 
 function pedirCancelarPedido(id) {
   modalConfirmar('Cancelar pedido', `Tem a certeza que quer <b>cancelar este pedido</b>? O stock é devolvido e, se foi pago com Nuk-Coin, o valor é estornado. Não pode ser desfeito. Fica registado quem cancelou.<br><br>
-    <label for="canc-motivo" class="negrito">Motivo</label><br><input type="text" id="canc-motivo" maxlength="200" placeholder="Ex.: cliente desistiu, pedido em duplicado" style="width:100%;margin-top:.35rem">`, 'cancelarPedidoConfirmado', id);
+    <label for="canc-motivo" class="negrito">Motivo</label><br><input type="text" id="canc-motivo" maxlength="200" placeholder="Ex.: cliente desistiu, pedido em duplicado" class="campo-motivo">`, 'cancelarPedidoConfirmado', id);
 }
 function cancelarPedidoConfirmado(id) {
   const m = document.getElementById('canc-motivo');
@@ -1126,7 +1126,7 @@ function pedirNotaCredito(id) {
   modalConfirmar('Anular documento',
     `Vai emitir uma <b>nota de crédito</b> que anula <b>${esc(f.numero_fatura)}</b> (${formatarMoeda(f.total)}). O documento original fica guardado e marcado como anulado. <b>Não pode ser desfeito.</b><br><br>
      <label for="nc-motivo" class="negrito">Motivo (obrigatório)</label><br>
-     <input type="text" id="nc-motivo" maxlength="250" placeholder="Ex.: NIF do cliente errado" style="width:100%;margin-top:.35rem">`,
+     <input type="text" id="nc-motivo" maxlength="250" placeholder="Ex.: NIF do cliente errado" class="campo-motivo">`,
     'emitirNotaCreditoConfirmada', f.id);
 }
 

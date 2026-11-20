@@ -94,6 +94,29 @@ describe('Caixa do dia (frontend)', () => {
     expect(ctx._modal).toContain('existe 1 conta');
   });
 
+  test('cliente saiu sem pagar: só a chefia vê o botão; exige motivo e envia as contas da mesa', async () => {
+    const lista = [{ id: 'p1', mesa_numero: 'M04', total: 1200, itens: [] }, { id: 'p2', mesa_numero: 'M04', total: 600, itens: [] }];
+    let ctx = carregar({ '/caixa': { aberta: true }, '/caixa/por-receber': lista });
+    let el = { innerHTML: '' };
+    await ctx.modulo_recebimentos(el);
+    expect(el.innerHTML).not.toContain('pedirPerdaConta');
+    ctx = carregar({ '/caixa': { aberta: true }, '/caixa/por-receber': lista, '/caixa/perdas': { contas: 2, total: 1800 } });
+    ctx.NUK = { utilizador: { nivel_acesso: 'GERENTE' }, moduloActual: 'recebimentos' };
+    ctx.modalConfirmar = (t, texto, fn, arg) => { ctx._modal = texto; ctx._conf = [fn, arg]; };
+    el = { innerHTML: '' };
+    await ctx.modulo_recebimentos(el);
+    expect(el.innerHTML).toContain('pedirPerdaConta(0)');
+    ctx.pedirPerdaConta(0);
+    expect(ctx._modal).toContain('Mesa M04'); expect(ctx._modal).toContain('Não pode ser desfeito');
+    expect(ctx._conf).toEqual(['registarPerdaConfirmada', 'p1,p2']);
+    ctx._els['perda-motivo'] = { value: 'curto' };
+    await ctx.registarPerdaConfirmada('p1,p2');
+    expect(ctx._chamadas.some(c => c[1] === '/caixa/perdas')).toBe(false);
+    ctx._els['perda-motivo'].value = 'Cliente da mesa 4 saiu sem pagar';
+    await ctx.registarPerdaConfirmada('p1,p2');
+    expect(ctx._chamadas).toContainEqual(['POST', '/caixa/perdas', { pedido_ids: ['p1', 'p2'], motivo: 'Cliente da mesa 4 saiu sem pagar' }]);
+  });
+
   test('Nuk-Coin e cartões: com caixa fechado mostram o aviso em vez do formulário', async () => {
     for (const m of ['modulo_nukcoin', 'modulo_cartoes', 'modulo_recebimentos']) {
       const ctx = carregar({ '/caixa': { aberta: false } });

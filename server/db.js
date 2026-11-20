@@ -733,6 +733,10 @@ async function initDB() {
     for (const sql of require('./migrations-data/caixa-auditoria')) await client.query(sql);
     // Balcão e contas de mesa/quarto separadas (migração 1752600000000)
     for (const sql of require('./migrations-data/balcao-mesa-quarto')) await client.query(sql);
+    // Contas não pagas registadas pela chefia (migração 1752700000000)
+    for (const sql of require('./migrations-data/contas-perda')) await client.query(sql);
+    // Bloqueio do PIN do portal por cliente (migração 1752800000000)
+    for (const sql of require('./migrations-data/pin-bloqueio')) await client.query(sql);
 
     // Avaliacoes de staff
     await client.query(`
