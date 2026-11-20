@@ -416,6 +416,7 @@ async function salvarStatusMesa(id) {
 // QUARTOS
 // ════════════════════════════════════════════════════════════
 async function modulo_quartos(el) {
+  window._quartosVoltar = null; // aberto pelo menu: as acções voltam aos Quartos
   try {
     const quartos = await api('GET', '/quartos') || [];
     window._quartos = quartos;
@@ -476,6 +477,8 @@ function htmlBotaoQuarto(q) {
     </div>`;
 }
 
+/** Depois de uma acção num quarto: volta ao ecrã de onde se abriu (Quartos ou Balcão → «Vender quarto»). */
+function recarregarQuartos() { carregarModulo(window._quartosVoltar || 'quartos'); }
 const FRACOES_QUARTO = { DUAS_HORAS: ['Hora', '2 h', 'preco_2h'], PERNOITE: ['Noite', '12 h', 'preco_pernoite'], DIARIA: ['Diária', '24 h', 'preco_diaria'] };
 const quartoPorId = id => (window._quartos || []).find(q => q.id === id);
 
@@ -574,8 +577,8 @@ async function confirmarPassoQuarto(acao) {
     await api('POST', `/quartos/${sel.id}/${acao === 'VENDER' ? 'vender' : 'reservar'}`, corpo);
     toast(acao === 'VENDER' ? 'Venda registada' : 'Reserva registada', 'sucesso');
     fecharModal();
-    carregarModulo('quartos');
-  } catch (e) { toast(e.message, 'erro'); carregarModulo('quartos'); }
+    recarregarQuartos();
+  } catch (e) { toast(e.message, 'erro'); recarregarQuartos(); }
 }
 
 async function confirmarAbrirQuarto() {
@@ -584,7 +587,7 @@ async function confirmarAbrirQuarto() {
     await api('POST', `/quartos/${sel.id}/abrir`);
     toast('Quarto aberto — equipa de arrumação avisada', 'sucesso');
     fecharModal();
-    carregarModulo('quartos');
+    recarregarQuartos();
   } catch (e) { toast(e.message, 'erro'); }
 }
 
@@ -598,13 +601,13 @@ async function confirmarQuartoLimpo(id) {
     const r = await api('POST', `/quartos/${id}/limpo`);
     toast(r && r.atraso_min ? `Quarto disponível (atraso de ${r.atraso_min} min registado)` : 'Quarto limpo e disponível', 'sucesso');
   } catch (e) { toast(e.message, 'erro'); }
-  carregarModulo('quartos');
+  recarregarQuartos();
 }
 
 async function entradaReservaQuarto(id) {
   try { await api('POST', `/quartos/reservas/${id}/entrada`); toast('Entrada registada', 'sucesso'); fecharModal(); }
   catch (e) { toast(e.message, 'erro'); }
-  carregarModulo('quartos');
+  recarregarQuartos();
 }
 function pedirCancelarReservaQuarto(id) {
   modalConfirmar('Cancelar reserva', 'Tem a certeza que quer <b>cancelar esta reserva</b>?', 'cancelarReservaQuarto', id);
@@ -613,7 +616,7 @@ async function cancelarReservaQuarto(id) {
   fecharModal();
   try { await api('POST', `/quartos/reservas/${id}/cancelar`); toast('Reserva cancelada', 'sucesso'); }
   catch (e) { toast(e.message, 'erro'); }
-  carregarModulo('quartos');
+  recarregarQuartos();
 }
 
 // ── Listas configuráveis (tipos de quarto, categorias, unidades): opções activas + a actual mesmo se desactivada ──
@@ -692,7 +695,7 @@ async function salvarStatusQuarto(id) {
     toast(e.message || 'Erro ao actualizar estado', 'erro');
   }
   fecharModal();
-  carregarModulo('quartos');
+  recarregarQuartos();
 }
 
 // ════════════════════════════════════════════════════════════
@@ -1698,6 +1701,27 @@ async function guardarResumoDiario() {
 // ─── Configurações → Contas correntes (crédito a clientes; só ADMIN) ───
 // Cartões de consumo: cada valor é um botão no Caixa → Cartões (como os quartos). Não se apagam: desactivam-se.
 const euAdmin = () => typeof NUK !== 'undefined' && NUK.utilizador && NUK.utilizador.nivel_acesso === 'ADMIN';
+// Balcão (regra do dono, 20/11/2026): só vende as categorias escolhidas aqui (bebidas, piscina…) e a estadia dos quartos
+const rotuloCategoria = c => String(c).charAt(0) + String(c).slice(1).toLowerCase().replace(/_/g, ' ');
+function cartaoBalcao(escolhidas, todas) {
+  const lista = [...new Set([...todas, ...escolhidas])];
+  return `
+      <div class="card mt-2" style="max-width:700px">
+        <div class="card-titulo mb-2">🧾 BALCÃO — O QUE SE VENDE</div>
+        <div class="muted" style="font-size:.82rem;margin-bottom:.6rem">O Balcão só vende os produtos destas categorias, e a estadia dos quartos (botão «Vender quarto», para quem pode vender quartos). Comidas pedem-se na mesa. Se faltar a categoria da piscina, crie-a em Listas → Categorias de produto.</div>
+        <div class="acessos-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(10rem,1fr));gap:.35rem .8rem;margin-bottom:.75rem">
+          ${lista.map(c => `<label style="display:flex;gap:.45rem;align-items:center;font-size:.88rem;cursor:pointer"><input type="checkbox" class="balcao-cat" value="${esc(c)}" style="width:auto;margin:0"${escolhidas.includes(c) ? ' checked' : ''}${todas.includes(c) ? '' : ' disabled'}> ${esc(rotuloCategoria(c))}</label>`).join('')}
+        </div>
+        <button class="btn-primario" data-on-click="guardarCategoriasBalcao()">Guardar</button>
+      </div>`;
+}
+async function guardarCategoriasBalcao() {
+  const categorias = Array.from(document.querySelectorAll('.balcao-cat')).filter(x => x.checked && !x.disabled).map(x => x.value);
+  if (!categorias.length) { toast('Escolha pelo menos uma categoria para o Balcão', 'erro'); return; }
+  try { await api('PUT', '/configuracoes/balcao', { categorias }); toast('Balcão actualizado', 'sucesso'); }
+  catch (e) { toast(e.message, 'erro'); }
+}
+
 function cartaoTiposCartao(tipos, lotes = []) {
   const activos = tipos.filter(t => t.ativo);
   return `
@@ -1846,6 +1870,7 @@ async function modulo_configuracoes(el) {
     const contasCC = Array.isArray(rCC) ? rCC : [];
     const resCli = lic('caixa') ? await api('GET', '/clientes?limit=500') : [];
     const clientesCC = (Array.isArray(resCli) ? resCli : (resCli && resCli.data) || []).filter(c => !contasCC.some(x => x.id === c.id && x.conta_corrente_ativa));
+    const catsBalcao = lic('restauracao') ? ((await api('GET', '/pedidos/balcao/categorias')) || {}).categorias || [] : [];
     const dsh = await api('GET', '/dashboard/itens') || { itens: [], servicos: {} };
     window._cfgDash = { produtos, categorias: (listas.CATEGORIA_PRODUTO?.opcoes || []).filter(o => o.ativo).map(o => o.valor), servicos: dsh.servicos };
 
@@ -1887,6 +1912,7 @@ async function modulo_configuracoes(el) {
       ${lic('restauracao') ? `<div class="card mt-2" style="max-width:700px"><div class="card-titulo mb-2">👨‍🍳 COZINHA E BAR</div>
         <div class="muted" style="font-size:.82rem;margin-bottom:.6rem">Escolha em que ecrã aparece cada categoria (Cozinha, Bar ou nenhum).</div>
         <button class="btn-secundario" data-on-click="modalPostosPreparacao()">Definir postos por categoria</button></div>` : ''}
+      ${lic('restauracao') ? cartaoBalcao(catsBalcao, (listas.CATEGORIA_PRODUTO?.opcoes || []).filter(o => o.ativo).map(o => o.valor)) : ''}
       ${lic('caixa') ? cartaoTiposCartao(tiposCartao, lotesCartao) : ''}
       ${lic('caixa') ? cartaoContasCorrentes(contasCC, clientesCC) : ''}
       ${lic('financas') ? cartaoResumoDiario(cfg) : ''}

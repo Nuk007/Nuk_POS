@@ -5,6 +5,7 @@
  * Arrancado pelo `webServer` de playwright.config.js; pára e apaga a base ao terminar.
  */
 process.env.NODE_ENV = 'test';
+process.env.RATE_LIMIT_GLOBAL_MAX = process.env.RATE_LIMIT_GLOBAL_MAX || '5000'; // os testes todos vêm do mesmo IP
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'e2e-segredo-jwt-nukpos';
 process.env.SUPERADMIN_KEY = process.env.SUPERADMIN_KEY || 'e2e-superadmin';
 
@@ -14,7 +15,7 @@ const globalTeardown = require('../integration/globalTeardown');
 
 const E2E = {
   slug: 'e2e-casa', email: 'dono@e2e.ao', palavraPasse: '246810',
-  produtos: [['Picanha', 4500, 'CHURRASCO'], ['Cuca', 800, 'BEBIDA'], ['Mufete', 6000, 'PEIXE']],
+  produtos: [['Picanha', 4500, 'CHURRASCO'], ['Cuca', 800, 'BEBIDA'], ['Mufete', 6000, 'PEIXE'], ['Entrada piscina', 3000, 'PISCINA']],
 };
 
 async function semear() {

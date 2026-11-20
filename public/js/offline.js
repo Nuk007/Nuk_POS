@@ -12,7 +12,7 @@
  * - Indicador na barra de topo (#offline-estado): «📴 Sem ligação», «⏳ N por enviar», «⚠ N recusados».
  * O pagamento continua a precisar de ligação (dinheiro, Nuk-Coin e documentos fiscais nunca se decidem offline).
  */
-const OFF_CACHE = ['/produtos?disponivel=true', '/precos/actuais', '/mesas', '/quartos', '/configuracoes'];
+const OFF_CACHE = ['/produtos?disponivel=true', '/precos/actuais', '/mesas', '/quartos', '/configuracoes', '/pedidos/balcao/categorias'];
 const OFF_ORIGENS = ['MESA', 'BALCAO', 'LAZER', 'LOJA', 'QUARTO', 'TAKEAWAY'];
 let _offTimer = null;
 let _offEnviando = false;

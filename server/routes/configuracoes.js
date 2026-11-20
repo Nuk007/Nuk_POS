@@ -71,4 +71,19 @@ router.put('/', authMiddleware, requerNivel(['ADMIN']), exigirModulo('configurac
   }
 });
 
+/**
+ * @openapi
+ * /api/configuracoes/balcao:
+ *   put:
+ *     summary: Define as categorias de produto que o Balcão vende (só ADMIN; regra do dono de 20/11/2026)
+ *     tags: [Configurações]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody: { content: { application/json: { schema: { type: object, required: [categorias], properties: { categorias: { type: array, items: { type: string } } } } } } }
+ *     responses: { 200: { description: "{ categorias }" }, 400: { description: "Lista vazia ou categoria inexistente" } }
+ */
+router.put('/balcao', authMiddleware, requerNivel(['ADMIN']), exigirModulo('configuracoes'), async (req, res, next) => {
+  try { res.json(await require('../services/balcao.service').definir({ categorias: req.body.categorias, tenantId: req.tenantId })); }
+  catch (e) { if (e.statusCode) return res.status(e.statusCode).json({ erro: e.message }); next(e); }
+});
+
 module.exports = router;

@@ -13,7 +13,7 @@ test('venda ao balcão sem internet é guardada e enviada quando a ligação vol
 
   // abrir o balcão com rede (fica a cópia dos produtos e preços neste dispositivo)
   await page.click('.nav-item[data-modulo="balcao"]');
-  await expect(page.locator('.venda-produto', { hasText: 'Mufete' })).toBeVisible();
+  await expect(page.locator('.venda-produto', { hasText: 'Entrada piscina' })).toBeVisible();
   const antes = await page.evaluate(async () => (await (await fetch('/api/pedidos?limit=100', { headers: { Authorization: `Bearer ${NUK.token}` } })).json()));
   const nAntes = (antes.data || antes).length;
 
@@ -21,10 +21,11 @@ test('venda ao balcão sem internet é guardada e enviada quando a ligação vol
   // o painel volta a abrir sem rede, a partir da cópia guardada
   await page.click('.nav-item[data-modulo="dashboard"]');
   await page.click('.nav-item[data-modulo="balcao"]');
-  await page.locator('.venda-produto', { hasText: 'Mufete' }).click();
+  await page.locator('.venda-produto', { hasText: 'Entrada piscina' }).click();
   await page.click('button:has-text("Enviar pedido")');
   await expect(page.locator('.toast', { hasText: 'Sem internet' })).toBeVisible();
   await expect(page.locator('#offline-estado')).toContainText('1 por enviar');
+  await expect(page.locator('.venda-produto', { hasText: 'Picanha' })).toHaveCount(0); // sem rede, o Balcão continua só com as suas categorias
 
   await context.setOffline(false);
   await expect(page.locator('.toast', { hasText: 'enviados' })).toBeVisible({ timeout: 15000 });

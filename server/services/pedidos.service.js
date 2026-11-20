@@ -9,6 +9,7 @@ const { broadcast } = require('../middleware/broadcast');
 const { buildWhere, withTx, validarChaveIdempotencia } = require('./shared');
 const stock = require('./stock.service');
 const precos = require('./precos.service');
+const balcao = require('./balcao.service');
 const ocupacao = require('./ocupacao.service');
 
 /**
@@ -90,7 +91,7 @@ async function listarPedidosHoje({ tenantId }) {
 }
 
 // Take Away: só comidas e bebidas. Categorias de loja, tabaco, serviços de quarto, shisha e «outro» ficam de fora.
-const NAO_TAKEAWAY = /^(SHISHA|OUTRO)$|LOJA|CIGARR|TABAC|SERVIC|QUARTO/;
+const NAO_TAKEAWAY = /^(SHISHA|OUTRO|LAZER)$|LOJA|CIGARR|TABAC|SERVIC|QUARTO|PISCINA/; // só comidas e bebidas (piscina e lazer não, 20/11/2026)
 const categoriaTakeAway = (cat) => !NAO_TAKEAWAY.test(String(cat || '').toUpperCase());
 
 /** «Já fez uso do espaço»: tem um pedido fechado ou uma reserva/estadia de quarto que não foi cancelada. */
@@ -191,6 +192,7 @@ async function criarPedido({ tenantId, userId, mesa_id, quarto_id, cliente_id, i
     // Nível de preço em vigor (hora de Luanda, fluxo de venda): sem tabela ou sem preço nela = preço base
     // pedido sem internet: os preços da hora em que foi feito (campanha/happy hour já acabada não muda o valor)
     const nivel = await precos.precosAplicaveis(client, { tenantId, origem, ...(offlineEm ? { agora: precos.agoraLuanda(offlineEm) } : {}) });
+    const catsBalcao = origem === 'BALCAO' ? await balcao.categorias(client, tenantId) : [];
     for (const item of itens) {
       const pr = await client.query(
         `SELECT preco, categoria FROM produtos
@@ -204,6 +206,15 @@ async function criarPedido({ tenantId, userId, mesa_id, quarto_id, cliente_id, i
       }
       if (origem === 'TAKEAWAY' && !categoriaTakeAway(pr.rows[0].categoria)) {
         const err = new Error('O Take Away é só para comidas e bebidas'); err.statusCode = 400; throw err;
+      }
+      const cat = String(pr.rows[0].categoria || '').toUpperCase();
+      // Regra do dono (20/11/2026): o Balcão só vende as categorias escolhidas em Configurações (bebidas, piscina…)
+      if (origem === 'BALCAO' && !catsBalcao.includes(cat)) {
+        const err = new Error(`O Balcão só vende: ${catsBalcao.map(c => c.charAt(0) + c.slice(1).toLowerCase().replace(/_/g, ' ')).join(', ')}. A estadia vende-se pelos quartos.`); err.statusCode = 400; err.codigo = 'BALCAO_CATEGORIA'; throw err;
+      }
+      // Regra do dono (20/11/2026): a conta da mesa não inclui nada do quarto
+      if (origem === 'MESA' && cat === 'SERVICO_QUARTO') {
+        const err = new Error('A conta da mesa não pode incluir serviços de quarto'); err.statusCode = 400; err.codigo = 'MESA_SEM_QUARTO'; throw err;
       }
       if (CATEGORIAS_ORIGEM[origem] && !CATEGORIAS_ORIGEM[origem].includes(String(pr.rows[0].categoria || '').toUpperCase())) {
         const err = new Error(`${origem === 'LAZER' ? 'O Lazer' : 'A Loja'} só vende ${origem === 'LAZER' ? 'produtos de lazer' : 'produtos da loja e cigarros'}`); err.statusCode = 400; throw err;

@@ -49,10 +49,11 @@ test('venda ao balcão e recebimento no Caixa com factura-recibo', async ({ page
     await expect(page.locator('button:has-text("Fechar caixa")')).toBeVisible();
   }
 
-  // vender ao balcão: 2 Picanhas + 1 Cuca
+  // vender ao balcão: 2 entradas na piscina + 1 Cuca (o Balcão só vende bebidas, piscina e quartos; regra do dono, 20/11/2026)
   await menu(page, 'balcao');
-  const picanha = page.locator('.venda-produto', { hasText: 'Picanha' });
-  await picanha.click(); await picanha.click();
+  await expect(page.locator('.venda-produto', { hasText: 'Picanha' })).toHaveCount(0);
+  const piscina = page.locator('.venda-produto', { hasText: 'Entrada piscina' });
+  await piscina.click(); await piscina.click();
   await page.locator('.venda-produto', { hasText: 'Cuca' }).click();
   await page.click('button:has-text("Enviar pedido")');
   await expect(page.locator('.toast').last()).toBeVisible();

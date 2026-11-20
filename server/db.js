@@ -731,6 +731,8 @@ async function initDB() {
     for (const sql of require('./migrations-data/cartoes-so-lotes')) await client.query(sql);
     // Livro do caixa numerado, encadeado e imutável (migração 1752200000000) — depois de todas as colunas de caixa_movimentos
     for (const sql of require('./migrations-data/caixa-auditoria')) await client.query(sql);
+    // Balcão e contas de mesa/quarto separadas (migração 1752600000000)
+    for (const sql of require('./migrations-data/balcao-mesa-quarto')) await client.query(sql);
 
     // Avaliacoes de staff
     await client.query(`

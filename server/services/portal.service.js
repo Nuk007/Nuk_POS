@@ -175,8 +175,10 @@ async function criarPedidoRestaurante({ tenantId, itens, mesa_ref, observacoes, 
     const precosSvc = require('./precos.service');
     const nivel = await precosSvc.precosAplicaveis(db, { tenantId: T(tenantId), origem: 'REMOTA' }); // nível de preço / campanha em vigor
     for (const it of itens) {
-      const p = await db.query(`SELECT id, nome, preco FROM produtos WHERE id = $1 AND disponivel = true AND ativo = true AND ($2::uuid IS NULL OR tenant_id = $2)`, [it.produto_id, T(tenantId)]);
+      const p = await db.query(`SELECT id, nome, preco, categoria FROM produtos WHERE id = $1 AND disponivel = true AND ativo = true AND ($2::uuid IS NULL OR tenant_id = $2)`, [it.produto_id, T(tenantId)]);
       if (!p.rows[0]) throw erro(400, 'Um dos produtos não existe ou não está disponível');
+      // Regra do dono (20/11/2026): a conta da mesa não inclui nada do quarto
+      if (mesa_ref && String(p.rows[0].categoria || '').toUpperCase() === 'SERVICO_QUARTO') throw erro(400, 'Serviços de quarto não se pedem para uma mesa', { codigo: 'MESA_SEM_QUARTO' });
       const preco = precosSvc.precoFinal(nivel, p.rows[0].id, p.rows[0].preco);
       total = arred(total + preco * it.quantidade);
       linhas.push({ produto_id: p.rows[0].id, nome: p.rows[0].nome, quantidade: it.quantidade, preco_unitario: preco });

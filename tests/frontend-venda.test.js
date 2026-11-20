@@ -7,19 +7,20 @@ const vm = require('vm');
 const ler = f => fs.readFileSync(path.join(__dirname, '../public/js', f), 'utf8');
 const prod = (id, nome, categoria) => ({ id, nome, preco: 600, categoria, disponivel: true });
 const dados = {
-  '/produtos?disponivel=true': [prod('p1', "Cuca d'água", 'BEBIDA'), prod('p2', 'Picanha', 'CHURRASCO'), prod('p3', 'Shisha', 'SHISHA'), prod('p4', 'Maço', 'CIGARROS')],
+  '/produtos?disponivel=true': [prod('p1', "Cuca d'água", 'BEBIDA'), prod('p2', 'Picanha', 'CHURRASCO'), prod('p3', 'Shisha', 'SHISHA'), prod('p4', 'Maço', 'CIGARROS'), prod('p5', 'Entrada piscina', 'PISCINA'), prod('p6', 'Toalha extra', 'SERVICO_QUARTO')],
+  '/pedidos/balcao/categorias': { categorias: ['BEBIDA', 'COCKTAIL', 'PISCINA'] },
   '/mesas': [{ id: 'm1', numero: 'M01', capacidade: 4, zona: 'Salão', status: 'LIVRE', pedidos_ativos: '1' }],
   '/pedidos/por-validar': [{ id: 'r1', origem: 'REMOTA', total: 1200, nukcoin_pago: 0, mesa_numero: 'M01', cliente_nome: null, itens: [{ produto_nome: 'Cuca', quantidade: 2, preco_unitario: 600 }] }],
   '/pedidos/takeaway/elegivel?cliente_id=c1': { elegivel: true },
-  '/mesas/quantidade': { quantidade: 3 }, '/quartos': [], '/produtos': [], '/dashboard/itens': { itens: [], servicos: {} },
+  '/mesas/quantidade': { quantidade: 3 }, '/quartos': [{ id: 'q1', numero: '101', tipo: 'SUITE', status: 'DISPONIVEL', preco_2h: 5000, preco_pernoite: 15000, preco_diaria: 25000 }], '/produtos': [], '/dashboard/itens': { itens: [], servicos: {} },
   '/listas': {}, '/clientes?q=ana&limit=10': { data: [{ id: 'c1', nome: 'Ana', telefone: '923000000' }] },
 };
 const chamadas = [];
-function carregar() {
+function carregar(utilizador = { nivel_acesso: 'ADMIN' }) {
   const els = {};
   const el = id => els[id] || (els[id] = { innerHTML: '', value: '', textContent: '', style: {} });
   const ctx = {
-    NUK: { utilizador: { nivel_acesso: 'ADMIN' }, token: 't' }, console, window: {}, setTimeout, Promise,
+    NUK: { utilizador, token: 't' }, console, window: {}, setTimeout, Promise,
     document: { getElementById: el, querySelectorAll: () => [] },
     api: async (m, url, corpo) => { chamadas.push([m, url, corpo]); return url in dados ? dados[url] : {}; },
     formatarMoeda: v => String(v), toast() {}, abrirModal: (t, h) => { ctx._modal = h; }, fecharModal() {}, carregarModulo() {}, badgeStatus: s => s,
@@ -32,17 +33,39 @@ function carregar() {
 }
 
 describe('Fluxos de venda', () => {
-  test('Balcão: painel com um botão por produto e carrinho a somar', async () => {
+  test('Balcão: só as categorias configuradas (bebida, piscina…) e carrinho a somar', async () => {
     const ctx = carregar(); const el = { innerHTML: '' };
     await ctx.modulo_balcao(el);
     expect(el.innerHTML).toContain('venda-grelha');
-    expect(ctx._els['venda-grelha'].innerHTML.match(/vendaAdd\(/g)).toHaveLength(4);
+    const grelha = ctx._els['venda-grelha'].innerHTML;
+    expect(grelha.match(/vendaAdd\(/g)).toHaveLength(2); // Cuca e piscina; sem comida, shisha, cigarros nem serviços de quarto
+    expect(grelha).not.toContain('Picanha');
     ctx.vendaAdd(0); ctx.vendaAdd(0); ctx.vendaAdd(1);
     expect(ctx._els['venda-total'].textContent).toContain('1800');
     await ctx.vendaConfirmar();
     const post = chamadas.filter(c => c[0] === 'POST').pop();
     expect(post[1]).toBe('/pedidos');
-    expect(post[2]).toMatchObject({ origem: 'BALCAO', mesa_id: null, itens: [{ produto_id: 'p1', quantidade: 2 }, { produto_id: 'p2', quantidade: 1 }] });
+    expect(post[2]).toMatchObject({ origem: 'BALCAO', mesa_id: null, itens: [{ produto_id: 'p1', quantidade: 2 }, { produto_id: 'p5', quantidade: 1 }] });
+  });
+  test('Balcão: «Vender quarto» só para quem pode vender quartos; abre os botões dos quartos e volta ao Balcão', async () => {
+    let ctx = carregar(); let el = { innerHTML: '' };
+    await ctx.modulo_balcao(el);
+    expect(el.innerHTML).not.toContain('balcaoVenderQuarto()');
+    ctx = carregar({ nivel_acesso: 'OPERADOR', pode_vender_quartos: true }); el = { innerHTML: '' };
+    await ctx.modulo_balcao(el);
+    expect(el.innerHTML).toContain('balcaoVenderQuarto()');
+    await ctx.balcaoVenderQuarto();
+    expect(ctx._modal).toContain("modalQuarto('q1')");
+    expect(ctx._modal).toContain('1 quarto disponível');
+    let foi = null; ctx.carregarModulo = m => { foi = m; };
+    ctx.recarregarQuartos();
+    expect(foi).toBe('balcao');
+  });
+  test('Mesa: sem serviços de quarto nos botões', async () => {
+    const ctx = carregar();
+    await ctx.modulo_mesas({ innerHTML: '' });
+    await ctx.abrirVendaMesa('m1');
+    expect(ctx._els['venda-grelha'].innerHTML).not.toContain('Toalha');
   });
   test('Mesa: clicar na mesa abre o painel e envia mesa_id', async () => {
     const ctx = carregar(); const el = { innerHTML: '' };

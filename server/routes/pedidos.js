@@ -102,6 +102,20 @@ router.get('/por-validar', authMiddleware, async (req, res, next) => {
   try { res.json(await svc.listarPorValidar({ tenantId: req.tenantId })); } catch (e) { next(e); }
 });
 
+// ── GET /api/pedidos/balcao/categorias ───────────────────────────────────────
+/**
+ * @openapi
+ * /api/pedidos/balcao/categorias:
+ *   get:
+ *     summary: Categorias de produto que o Balcão vende (configuradas pelo Administrador; por omissão Bebida, Cocktail e Piscina)
+ *     tags: [Pedidos]
+ *     security: [{ bearerAuth: [] }]
+ *     responses: { 200: { description: "{ categorias }" } }
+ */
+router.get('/balcao/categorias', authMiddleware, async (req, res, next) => {
+  try { res.json({ categorias: await require('../services/balcao.service').categorias(null, req.tenantId) }); } catch (e) { next(e); }
+});
+
 // ── GET /api/pedidos/takeaway/elegivel ───────────────────────────────────────
 /**
  * @openapi

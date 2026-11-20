@@ -387,6 +387,10 @@ async function receber({ tenantId, userId, pedido_ids, ...dados }) {
     const s = await exigirSessao(db, tenantId);
     const r = await db.query(`SELECT * FROM pedidos WHERE id = ANY($1::uuid[]) AND tenant_id = $2 ORDER BY id FOR UPDATE`, [ids, tenantId]);
     if (r.rows.length !== ids.length) throw erro(404, 'Algum dos pedidos não foi encontrado');
+    // Regra do dono (20/11/2026): a conta das mesas não inclui os quartos — nunca se recebem juntas
+    if (r.rows.some(p => p.mesa_id) && r.rows.some(p => p.quarto_id || p.origem === 'QUARTO')) {
+      throw erro(409, 'A conta da mesa não pode incluir contas de quartos. Receba-as em separado.', { codigo: 'MESA_E_QUARTO' });
+    }
     for (const p of r.rows) {
       if (p.status !== 'FECHADO') throw erro(409, 'Só se recebe depois de a mesa ou o pedido estar fechado');
       if (p.pago_em) throw erro(409, 'Algum dos pedidos já foi recebido');

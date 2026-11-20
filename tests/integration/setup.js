@@ -32,7 +32,7 @@ const TABELAS_OPERACIONAIS = [
  * Cria tenant ACTIVA + licença ACTIVA + admin, devolvendo ids e token JWT válido.
  * Reutilizado por todos os ficheiros de integração.
  */
-async function criarTenantFixture({ slug = 'teste', nivel = 'ADMIN', adesao = true } = {}) {
+async function criarTenantFixture({ slug = 'teste', nivel = 'ADMIN', adesao = true, balcaoTudo = true } = {}) {
   const plano = await pool.query(`SELECT id FROM planos_assinatura ORDER BY preco_mensal LIMIT 1`);
   const planoId = plano.rows[0]?.id || null;
 
@@ -64,6 +64,14 @@ async function criarTenantFixture({ slug = 'teste', nivel = 'ADMIN', adesao = tr
       `INSERT INTO adesoes_plataforma (tenant_id, versao, texto, texto_hash, assinado_por, nome_escrito, hash)
        VALUES ($1, $2, 'texto de teste', repeat('0', 64), $3, $4, repeat('0', 64))`,
       [tenantId, ADESAO_VERSAO, user.id, `Admin ${slug}`]);
+  }
+
+  // Balcão (regra do dono, 20/11/2026): em produção só vende Bebida/Cocktail/Piscina por omissão. Os testes antigos usam
+  // o Balcão como venda genérica (comida incluída), por isso o estabelecimento de teste deixa-o vender tudo; os testes
+  // da regra (balcao-mesa-quarto.int.test.js) usam balcaoTudo: false.
+  if (balcaoTudo) {
+    const { DEFAULTS } = require('../../server/services/listas.service');
+    await pool.query(`INSERT INTO configuracoes (tenant_id, chave, valor) VALUES ($1, 'balcao_categorias', $2)`, [tenantId, JSON.stringify(DEFAULTS.CATEGORIA_PRODUTO)]);
   }
 
   const token = gerarToken({ id: user.id, email: user.email, nivel_acesso: user.nivel_acesso, tenantId });

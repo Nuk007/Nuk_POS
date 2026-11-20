@@ -7,7 +7,7 @@
  *  - Take Away: escolhe-se um cliente cadastrado que já usou o espaço; só comidas e bebidas.
  * Sem handlers inline (CSP): data-on-click com argumentos literais.
  */
-const NAO_TAKEAWAY_UI = /^(SHISHA|OUTRO)$|LOJA|CIGARR|TABAC|SERVIC|QUARTO/; // espelha pedidos.service (o servidor é que decide)
+const NAO_TAKEAWAY_UI = /^(SHISHA|OUTRO|LAZER)$|LOJA|CIGARR|TABAC|SERVIC|QUARTO|PISCINA/; // espelha pedidos.service (o servidor é que decide)
 const ROTULO_ORIGEM = { MESA: 'Mesa', BALCAO: 'Balcão', TAKEAWAY: 'Take Away', REMOTA: 'Remota', LAZER: 'Lazer', LOJA: 'Loja', QUARTO: 'Quarto' };
 const CATEGORIAS_ORIGEM_UI = { LAZER: ['LAZER'], LOJA: ['LOJA', 'CIGARROS'] }; // espelha pedidos.service (o servidor é que decide)
 
@@ -18,6 +18,13 @@ async function abrirPainelVenda(el, { origem, mesa = null, cliente = null, quart
     let produtos = await api('GET', '/produtos?disponivel=true') || [];
     if (origem === 'TAKEAWAY') produtos = produtos.filter(p => !NAO_TAKEAWAY_UI.test(String(p.categoria || '').toUpperCase()));
     if (CATEGORIAS_ORIGEM_UI[origem]) produtos = produtos.filter(p => CATEGORIAS_ORIGEM_UI[origem].includes(String(p.categoria || '').toUpperCase()));
+    // Regras do dono (20/11/2026): o Balcão só vende as categorias das Configurações; a mesa não pede serviços de quarto
+    let catsBalcao = null;
+    if (origem === 'BALCAO') {
+      try { catsBalcao = ((await api('GET', '/pedidos/balcao/categorias')) || {}).categorias || null; } catch { /* sem rede: o servidor decide ao sincronizar */ }
+      if (catsBalcao) produtos = produtos.filter(p => catsBalcao.includes(String(p.categoria || '').toUpperCase()));
+    }
+    if (origem === 'MESA') produtos = produtos.filter(p => String(p.categoria || '').toUpperCase() !== 'SERVICO_QUARTO');
     // Nível de preço em vigor (o servidor volta a decidir ao gravar o pedido) e prato do dia em primeiro lugar
     let nivel = { tabela: null, precos: {} };
     try { nivel = await api('GET', `/precos/actuais?origem=${origem}`) || nivel; } catch { /* sem tabelas: preços base */ }
@@ -26,7 +33,7 @@ async function abrirPainelVenda(el, { origem, mesa = null, cliente = null, quart
     produtos = produtos.map(p => (precosNivel[p.id] !== undefined ? { ...p, preco_base: p.preco, preco: precosNivel[p.id] }
       : descNivel ? { ...p, preco_base: p.preco, preco: Math.round(Number(p.preco) * (100 - descNivel)) / 100 } : p))
       .sort((a, b) => (b.prato_do_dia ? 1 : 0) - (a.prato_do_dia ? 1 : 0));
-    window._venda = { origem, mesa, cliente, quarto, produtos, categoria: '', carrinho: [], tabela: nivel && nivel.tabela };
+    window._venda = { origem, mesa, cliente, quarto, produtos, categoria: '', carrinho: [], tabela: nivel && nivel.tabela, catsBalcao };
     el.innerHTML = htmlPainelVenda();
     vendaRender();
   } catch (e) {
@@ -39,7 +46,8 @@ function htmlPainelVenda() {
   const titulo = v.origem === 'MESA' ? `🪑 Mesa ${esc(v.mesa.numero)}` : v.origem === 'TAKEAWAY' ? `🥡 Take Away · ${esc(v.cliente.nome)}` : v.origem === 'LAZER' ? '🎯 Lazer' : v.origem === 'LOJA' ? '🛍️ Loja' : v.origem === 'QUARTO' ? `🛏️ Consumo · Quarto ${esc(v.quarto.numero)}` : '🧾 Balcão';
   const voltar = v.origem === 'QUARTO' ? '<button class="btn-secundario" data-on-click="vendaVoltar()">← Quartos</button>' : v.origem === 'MESA' ? '<button class="btn-secundario" data-on-click="vendaVoltar()">← Mesas</button>'
     : v.origem === 'TAKEAWAY' ? '<button class="btn-secundario" data-on-click="vendaVoltar()">← Outro cliente</button>' : '';
-  const estado = v.origem === 'MESA' ? `<button class="btn-secundario" data-on-click="modalMesa('${esc(v.mesa.id)}','${esc(v.mesa.numero)}','${esc(v.mesa.status)}')">Estado da mesa</button>` : '';
+  const estado = v.origem === 'MESA' ? `<button class="btn-secundario" data-on-click="modalMesa('${esc(v.mesa.id)}','${esc(v.mesa.numero)}','${esc(v.mesa.status)}')">Estado da mesa</button>`
+    : v.origem === 'BALCAO' && balcaoVendeQuartos() ? '<button class="btn-primario" data-on-click="balcaoVenderQuarto()">🛏️ Vender quarto</button>' : '';
   return `
     <div class="toolbar">
       <span class="secao-titulo">${titulo}${v.tabela ? ` <span class="status-badge status-EM_PREPARO" title="Tabela de preços em vigor">💲 ${esc(v.tabela.nome)}</span>` : ''}</span>
@@ -77,7 +85,7 @@ function vendaRender() {
           ${n ? `<span class="venda-produto-qtd">${n}</span>` : ''}
         </button>`;
       }).join('')
-    : `<div class="muted">${CATEGORIAS_ORIGEM_UI[v.origem] && !v.produtos.length ? `Ainda não há produtos para ${ROTULO_ORIGEM[v.origem]}. Crie-os em Configurações → Ementa com a categoria ${CATEGORIAS_ORIGEM_UI[v.origem].join(' ou ')}.` : 'Sem produtos nesta categoria.'}</div>`;
+    : `<div class="muted">${v.origem === 'BALCAO' && !v.produtos.length && v.catsBalcao ? `O Balcão só vende ${esc(v.catsBalcao.map(c => c.charAt(0) + c.slice(1).toLowerCase().replace(/_/g, ' ')).join(', '))}${balcaoVendeQuartos() ? ' e a estadia dos quartos' : ''}. Ainda não há produtos destas categorias: crie-os em Configurações → Ementa, ou mude as categorias em Configurações → Balcão.` : CATEGORIAS_ORIGEM_UI[v.origem] && !v.produtos.length ? `Ainda não há produtos para ${ROTULO_ORIGEM[v.origem]}. Crie-os em Configurações → Ementa com a categoria ${CATEGORIAS_ORIGEM_UI[v.origem].join(' ou ')}.` : 'Sem produtos nesta categoria.'}</div>`;
   vendaRenderCarrinho();
 }
 
@@ -162,6 +170,24 @@ async function abrirVendaMesa(id) {
   await abrirPainelVenda(document.getElementById('main-content'), { origem: 'MESA', mesa: { id: m.id, numero: m.numero, status: m.status } });
 }
 async function modulo_balcao(el) { await abrirPainelVenda(el, { origem: 'BALCAO' }); }
+// Balcão → estadia (regra do dono, 20/11/2026): os mesmos botões e regras dos Quartos (Hora/Noite/Diária, ★, perfil
+// «pode vender quartos»); depois de vender ou reservar volta ao Balcão (recarregarQuartos em modulos.js).
+function balcaoVendeQuartos() {
+  const u = (typeof NUK !== 'undefined' && NUK.utilizador) || {};
+  return !!u.pode_vender_quartos && (typeof licenciadoModulo !== 'function' || licenciadoModulo('hospedagem'));
+}
+async function balcaoVenderQuarto() {
+  try {
+    const quartos = await api('GET', '/quartos') || [];
+    window._quartos = quartos;
+    window._quartosVoltar = 'balcao';
+    const livres = quartos.filter(q => q.status === 'DISPONIVEL').length;
+    abrirModal('🛏️ Vender quarto', quartos.length
+      ? `<p class="muted texto-pequeno" style="margin-bottom:.6rem">${livres === 1 ? '1 quarto disponível' : `${livres} quartos disponíveis`}. Toque no quarto para escolher Hora, Noite ou Diária.</p>
+         <div class="grid-cards">${quartos.map(htmlBotaoQuarto).join('')}</div>`
+      : '<p class="muted">Ainda não há quartos. Um Administrador pode criá-los em Configurações → Quartos e preços.</p>');
+  } catch (e) { toast(e.message, 'erro'); }
+}
 async function modulo_lazer(el) { await abrirPainelVenda(el, { origem: 'LAZER' }); }
 async function modulo_loja(el) { await abrirPainelVenda(el, { origem: 'LOJA' }); }
 

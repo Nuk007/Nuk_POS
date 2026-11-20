@@ -15,7 +15,8 @@ const rateLimit = require('express-rate-limit');
 
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 200,
+  // RATE_LIMIT_GLOBAL_MAX: só para o servidor dos testes de navegador (todos os testes vêm do mesmo IP)
+  max: Number(process.env.RATE_LIMIT_GLOBAL_MAX) || 200,
   standardHeaders: true,
   legacyHeaders: false,
   message: { erro: 'Demasiados pedidos. Tente novamente mais tarde.' },
