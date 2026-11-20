@@ -33,7 +33,6 @@ test('Administrador gera o lote em Configurações; o Caixa vende 2 pela grelha,
   const descarga = page.waitForEvent('download');
   await page.click('button:has-text("Gerar lote")');
   expect((await descarga).suggestedFilename()).toMatch(/^cartoes-lote-\d+\.pdf$/);
-  await expect(page.locator('#main-content tr', { hasText: /N\.º \d+/ }).first()).toBeVisible(); // Configurações recarregadas com o lote
   await page.click('.nav-item[data-modulo="cartoes"]');
   await expect(page.locator('#topbar-titulo')).toHaveText(/Cartões de consumo/);
 

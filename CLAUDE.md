@@ -104,7 +104,10 @@ Stack: Node.js + Express + PostgreSQL + Socket.io. Deploy: Render (Docker), auto
 - Rate limiters em memória → Redis se houver multi-instância.
 - Certificação AGT: base feita (ver «Módulo fiscal»); faltam assinatura RSA, SAF-T (AO), envio em tempo real e QR. Os PDFs actuais não têm validade fiscal.
 - Frontend (public/, ~4.800 linhas vanilla JS) sem testes.
-- `carregarModulo` não descarta uma renderização antiga: navegar depressa entre módulos pode deixar no ecrã o módulo anterior se este acabar de carregar depois (apanhado no e2e dos cartões, contornado no teste).
+
+
+## Navegação entre módulos (20/11/2026)
+- `carregarModulo` (nukpos.js) cria um **contentor próprio por carregamento** (`div.modulo-contentor` com `data-modulo`, posto em `#main-content` com `replaceChildren`) e passa-o ao `modulo_x(el)`. Ao mudar de módulo o contentor anterior sai da página: um módulo lento que acabe depois escreve num contentor desligado e não tapa o escolhido; os erros de um carregamento antigo são ignorados (`moduloEmVigor(geracao)`). Os módulos continuam a escrever em `el` e a usar `document.getElementById` para o que acabaram de desenhar. Teste: `tests/e2e/navegacao.spec.js` (Configurações atrasadas 1,5 s de propósito).
 
 ## Quartos (configuração)
 - `server/services/quartos.service.js` + `POST /api/quartos`, `PUT/DELETE /api/quartos/:id` (só ADMIN, por estabelecimento; número único por tenant → 409). Não se apaga quarto ocupado ou com histórico de reservas (409) — marcar BLOQUEADO. UI: cartão «Quartos e preços» em Configurações (`modulo_configuracoes`); o módulo Quartos é só operacional (estado, reservas).

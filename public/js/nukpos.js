@@ -260,6 +260,11 @@ function setWsBadge(conectado) {
 }
 
 // ── Navegação ─────────────────────────────────────────────────
+// Cada carregamento desenha num contentor próprio dentro de #main-content. Ao mudar de módulo o contentor anterior
+// sai da página: um módulo que acabe de carregar depois (rede lenta, toques rápidos no menu) escreve num contentor
+// desligado e já não tapa o módulo escolhido. Os erros de um carregamento antigo também são ignorados.
+let _geracaoModulo = 0;
+function moduloEmVigor(geracao) { return geracao === _geracaoModulo; }
 function carregarModulo(modulo) {
   NUK.moduloActual = modulo;
 
@@ -279,13 +284,18 @@ function carregarModulo(modulo) {
   };
   document.getElementById('topbar-titulo').textContent = titulos[modulo] || modulo;
 
-  const el = document.getElementById('main-content');
+  const geracao = ++_geracaoModulo;
+  const el = document.createElement('div');
+  el.className = 'modulo-contentor';
+  el.dataset.modulo = modulo;
   el.innerHTML = '<div class="loading-spinner">A carregar...</div>';
+  document.getElementById('main-content').replaceChildren(el);
 
   const fn = window['modulo_' + modulo];
   if (fn) {
     Promise.resolve().then(() => fn(el)).catch(err => {
-      el.innerHTML = `<div class="erro-msg" style="margin:2rem">Erro ao carregar módulo: ${err.message}</div>`;
+      if (!moduloEmVigor(geracao)) return; // já se mudou de módulo: o erro antigo não interessa
+      el.innerHTML = `<div class="erro-msg" style="margin:2rem">Erro ao carregar módulo: ${esc(err.message)}</div>`;
     });
   } else {
     el.innerHTML = `<div style="padding:2rem;color:var(--c-muted)">Módulo "${modulo}" em construção.</div>`;
