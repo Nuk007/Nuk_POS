@@ -182,6 +182,7 @@ async function talaoFechoCaixa({ tenantId, sessaoId }) {
   linha('Fundo inicial', kz(z.fundo_inicial));
   linha('Dinheiro esperado', kz(z.dinheiro_esperado), true);
   if (z.contado !== null) { linha('Dinheiro contado', kz(z.contado)); linha('Diferença', kz(z.diferenca), true); }
+  if (s.justificacao) { doc.moveDown(0.3).font('Helvetica-Bold').fontSize(7.5).fillColor(CINZA).text(`Justificação da diferença: ${s.justificacao}`, M, doc.y, { width: util }); }
   if (s.observacoes) { doc.moveDown(0.3).font('Helvetica').fontSize(7.5).fillColor(CINZA).text(`Obs.: ${s.observacoes}`, M, doc.y, { width: util }); }
   doc.moveDown(0.6).font('Helvetica').fontSize(6.5).fillColor(CINZA).text(`Documento interno · ${EMPRESA}`, M, doc.y, { width: util, align: 'center' });
   return renderizar(doc);

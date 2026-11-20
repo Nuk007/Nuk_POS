@@ -82,20 +82,56 @@ async function estado({ tenantId }) {
        LEFT JOIN pedidos p ON p.id = m.pedido_id LEFT JOIN mesas ms ON ms.id = p.mesa_id
        WHERE m.sessao_id = $1 ORDER BY m.numero DESC LIMIT 100`, [sessao.id]),
   ]);
-  return { aberta: true, sessao, resumo, movimentos: mov.rows };
+  return { aberta: true, sessao, resumo, movimentos: mov.rows, pendencias: await contasPorPagar(pool, tenantId) };
 }
 
-async function fechar({ tenantId, userId, contado, observacoes }) {
+/**
+ * Contas por pagar do estabelecimento (regra do dono, 20/11/2026: o caixa nunca fecha enquanto existirem).
+ * Conta por pagar = pedido não cancelado sem `pago_em` — a mesma definição que mantém a mesa/quarto em uso
+ * (ocupacao.service), excepto contas de 0 Kz (não há nada a cobrar e o Caixa não as recebe: bloqueariam o fecho para sempre).
+ * Entram os que ainda estão na cozinha e os remotos por validar: todos têm de ser recebidos, terminados ou recusados antes do fecho.
+ */
+async function contasPorPagar(db, tenantId) {
+  const r = await db.query(
+    `SELECT p.id, p.origem, p.status, p.total, p.criado_em, (p.origem = 'REMOTA' AND p.validado_em IS NULL) AS por_validar,
+            ms.numero AS mesa_numero, qt.numero AS quarto_numero, c.nome AS cliente_nome
+       FROM pedidos p
+       LEFT JOIN mesas ms ON ms.id = p.mesa_id LEFT JOIN quartos qt ON qt.id = p.quarto_id LEFT JOIN clientes c ON c.id = p.cliente_id
+      WHERE p.tenant_id = $1 AND p.status <> 'CANCELADO' AND p.pago_em IS NULL AND p.total > 0
+      ORDER BY p.criado_em ASC LIMIT 200`, [tenantId]);
+  const contas = r.rows;
+  return { n: contas.length, total: arred(contas.reduce((a, x) => a + parseFloat(x.total || 0), 0)), contas };
+}
+
+/**
+ * Fechar o caixa (regras do dono, 20/11/2026):
+ *  1. nunca com contas por pagar (409 CONTAS_POR_PAGAR, com a lista);
+ *  2. se o dinheiro contado não bater certo com o esperado (ao cêntimo), só com justificação escrita
+ *     (409 DIFERENCA_POR_JUSTIFICAR, com esperado/contado/diferença). A justificação fica selada com o fecho.
+ */
+const JUSTIFICACAO_MIN = 10, JUSTIFICACAO_MAX = 500;
+async function fechar({ tenantId, userId, contado, observacoes, justificacao }) {
   const c = Number(contado);
   if (contado === undefined || contado === '' || !Number.isFinite(c) || c < 0) throw erro(400, 'Indique o dinheiro contado na gaveta');
+  const just = String(justificacao || '').trim();
   const out = await withTx(async db => {
     const s = await sessaoAberta(db, tenantId, true);
     if (!s) throw erro(409, 'O caixa já está fechado.');
+    const pend = await contasPorPagar(db, tenantId);
+    if (pend.n) {
+      throw erro(409, `Não pode fechar o caixa: ${pend.n === 1 ? 'existe 1 conta' : `existem ${pend.n} contas`} por pagar (${pend.total.toLocaleString('pt-PT')} Kz). ${pend.n === 1 ? 'Receba-a ou termine-a' : 'Receba-as ou termine-as'} primeiro.`,
+        { codigo: 'CONTAS_POR_PAGAR', dados: { pendencias: pend } });
+    }
     const resumo = await resumoDe(db, s);
     const diferenca = arred(c - resumo.dinheiro_esperado);
+    if (diferenca !== 0 && just.length < JUSTIFICACAO_MIN) {
+      throw erro(409, `A contagem não bate certo: ${diferenca > 0 ? 'sobram' : 'faltam'} ${Math.abs(diferenca).toLocaleString('pt-PT')} Kz. Escreva a justificação da diferença (pelo menos ${JUSTIFICACAO_MIN} caracteres) para fechar.`,
+        { codigo: 'DIFERENCA_POR_JUSTIFICAR', dados: { esperado: resumo.dinheiro_esperado, contado: arred(c), diferenca } });
+    }
     const r = await db.query(
-      `UPDATE caixa_sessoes SET fechada_por = $1, fechada_em = NOW(), esperado = $2, contado = $3, diferenca = $4, observacoes = $5 WHERE id = $6 RETURNING *`,
-      [userId || null, resumo.dinheiro_esperado, arred(c), diferenca, observacoes ? String(observacoes).slice(0, 500) : null, s.id]);
+      `UPDATE caixa_sessoes SET fechada_por = $1, fechada_em = NOW(), esperado = $2, contado = $3, diferenca = $4, observacoes = $5, justificacao = $6 WHERE id = $7 RETURNING *`,
+      [userId || null, resumo.dinheiro_esperado, arred(c), diferenca, observacoes ? String(observacoes).slice(0, 500) : null,
+        diferenca !== 0 ? just.slice(0, JUSTIFICACAO_MAX) : null, s.id]);
     return { sessao: r.rows[0], resumo };
   });
   broadcast('caixa_atualizada', { aberta: false }, tenantId);
@@ -491,4 +527,4 @@ async function faturar({ tenantId, userId, pedido_ids, nif_cliente, nome_cliente
   return require('./fiscal/faturas.service').emitir({ tenantId, userId, tipo: 'FR', pedido_ids, nif_cliente, nome_cliente });
 }
 
-module.exports = { faturar, abrir, estado, fechar, sessoes, carregarNukcoin, consultarCartao, listarCartoes, criarLote, listarLotes, loteParaImprimir, venderCartaoImpresso, venderCartoesImpressos, listarTiposCartao, criarTipoCartao, actualizarTipoCartao, porReceber, receber, dividirConta, sessaoAberta, METODOS_BALCAO, METODOS_RECEBIMENTO };
+module.exports = { faturar, abrir, estado, fechar, contasPorPagar, sessoes, carregarNukcoin, consultarCartao, listarCartoes, criarLote, listarLotes, loteParaImprimir, venderCartaoImpresso, venderCartoesImpressos, listarTiposCartao, criarTipoCartao, actualizarTipoCartao, porReceber, receber, dividirConta, sessaoAberta, METODOS_BALCAO, METODOS_RECEBIMENTO };

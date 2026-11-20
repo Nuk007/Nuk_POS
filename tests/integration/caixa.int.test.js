@@ -160,9 +160,16 @@ describe('Abrir, receber e fechar', () => {
   });
 
   test('fechar: calcula esperado e diferença; depois tudo recusa até novo turno; histórico guarda', async () => {
+    // regra do dono (20/11/2026): não fecha com contas por pagar — o pedido do 1.º teste (caixa fechado) ficou por receber
+    const pend = (await a('get', '/api/caixa')).body.pendencias;
+    expect(pend.n).toBeGreaterThan(0);
+    expect((await a('post', '/api/caixa/fechar', { contado: 0 })).body.codigo).toBe('CONTAS_POR_PAGAR');
+    for (const c of pend.contas.filter(c => c.status !== 'FECHADO')) expect((await a('patch', `/api/pedidos/${c.id}/status`, { status: 'FECHADO' })).status).toBe(200);
+    expect(pend.contas.every(c => Number(c.total) > 0)).toBe(true); // a conta de 0 Kz deste ficheiro não conta
+    expect((await a('post', '/api/caixa/receber', { pedido_ids: pend.contas.map(c => c.id), metodo: 'TPA' })).status).toBe(200);
     const antes = (await a('get', '/api/caixa')).body.resumo.dinheiro_esperado;
     expect((await a('post', '/api/caixa/fechar', {})).status).toBe(400);
-    const r = await a('post', '/api/caixa/fechar', { contado: antes - 500, observacoes: 'faltam 500' });
+    const r = await a('post', '/api/caixa/fechar', { contado: antes - 500, observacoes: 'faltam 500', justificacao: 'Troco dado a mais à mesa 4' });
     expect(r.status).toBe(200);
     expect(Number(r.body.sessao.esperado)).toBe(antes); expect(Number(r.body.sessao.diferenca)).toBe(-500);
     expect((await a('get', '/api/caixa')).body.aberta).toBe(false);

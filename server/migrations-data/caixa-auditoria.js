@@ -82,6 +82,10 @@ module.exports = [
   `DROP TRIGGER IF EXISTS trg_caixa_mov_imutavel ON caixa_movimentos`,
   `CREATE TRIGGER trg_caixa_mov_imutavel BEFORE UPDATE OR DELETE ON caixa_movimentos FOR EACH ROW EXECUTE FUNCTION nukpos_caixa_mov_imutavel()`,
 
+  // Fecho do caixa (20/11/2026, regra do dono): a justificação de uma diferença na contagem fica selada com o fecho.
+  `ALTER TABLE caixa_sessoes ADD COLUMN IF NOT EXISTS justificacao TEXT`,
+  // Contas por pagar (pedido não cancelado sem pago_em): consultadas no estado do caixa e em cada fecho.
+  `CREATE INDEX IF NOT EXISTS idx_pedidos_por_pagar ON pedidos (tenant_id, criado_em) WHERE status <> 'CANCELADO' AND pago_em IS NULL`,
   `CREATE OR REPLACE FUNCTION nukpos_caixa_sessao_protegida() RETURNS trigger AS $$
    BEGIN
      IF TG_OP = 'DELETE' THEN
@@ -91,8 +95,8 @@ module.exports = [
      IF (NEW.tenant_id, NEW.aberta_em, NEW.fundo_inicial) IS DISTINCT FROM (OLD.tenant_id, OLD.aberta_em, OLD.fundo_inicial)
         OR NOT (NEW.aberta_por IS NOT DISTINCT FROM OLD.aberta_por OR NEW.aberta_por IS NULL)
         OR (OLD.fechada_em IS NOT NULL AND (
-              (NEW.fechada_em, NEW.esperado, NEW.contado, NEW.diferenca, NEW.observacoes)
-                IS DISTINCT FROM (OLD.fechada_em, OLD.esperado, OLD.contado, OLD.diferenca, OLD.observacoes)
+              (NEW.fechada_em, NEW.esperado, NEW.contado, NEW.diferenca, NEW.observacoes, NEW.justificacao)
+                IS DISTINCT FROM (OLD.fechada_em, OLD.esperado, OLD.contado, OLD.diferenca, OLD.observacoes, OLD.justificacao)
               OR NOT (NEW.fechada_por IS NOT DISTINCT FROM OLD.fechada_por OR NEW.fechada_por IS NULL))) THEN
        RAISE EXCEPTION 'Sessão de caixa: abertura e fecho não podem ser alterados' USING ERRCODE = 'P0001', HINT = 'CAIXA_SESSAO_PROTEGIDA';
      END IF;

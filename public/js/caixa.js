@@ -61,32 +61,77 @@ function htmlHistoricoCaixa(hist) {
     <thead><tr><th>Abertura</th><th>Fecho</th><th style="text-align:right">Esperado</th><th style="text-align:right">Contado</th><th style="text-align:right">Diferença</th></tr></thead>
     <tbody>${hist.filter(h => h.fechada_em).map(h => `<tr><td>${new Date(h.aberta_em).toLocaleString('pt-PT', { timeZone: 'Africa/Luanda' })}</td><td>${new Date(h.fechada_em).toLocaleString('pt-PT', { timeZone: 'Africa/Luanda' })}</td>
       <td style="text-align:right">${formatarMoeda(h.esperado)}</td><td style="text-align:right">${formatarMoeda(h.contado)}</td>
-      <td style="text-align:right;color:${parseFloat(h.diferenca) === 0 ? 'inherit' : 'var(--c-danger)'}">${formatarMoeda(h.diferenca)}</td></tr>`).join('')}</tbody></table></div>`;
+      <td style="text-align:right;color:${parseFloat(h.diferenca) === 0 ? 'inherit' : 'var(--c-danger)'}">${formatarMoeda(h.diferenca)}</td></tr>${h.justificacao ? `<tr><td colspan="5" class="texto-pequeno muted" style="padding-top:0">Justificação: ${esc(h.justificacao)}</td></tr>` : ''}`).join('')}</tbody></table></div>`;
 }
 async function abrirCaixa() {
   try { await api('POST', '/caixa/abrir', { fundo_inicial: parseFloat(document.getElementById('cx-fundo').value) || 0 }); toast('Caixa aberto', 'sucesso'); carregarModulo('caixa'); }
   catch (e) { toast(e.message, 'erro'); }
 }
+// Fecho do caixa (regras do dono, 20/11/2026): nunca com contas por pagar; se a contagem não bater certo com o
+// esperado, só com justificação escrita. O servidor decide sempre; o ecrã mostra antes para não haver surpresas.
+const ESTADO_PEDIDO_CX = { ABERTO: 'na cozinha', EM_PREPARO: 'em preparação', PRONTO: 'pronto, por fechar', FECHADO: 'por receber' };
+function htmlContasPorPagar(p) {
+  const ref = c => c.mesa_numero ? `Mesa ${esc(c.mesa_numero)}` : c.quarto_numero ? `Quarto ${esc(c.quarto_numero)}` : esc(c.cliente_nome || (c.origem === 'REMOTA' ? 'Pedido remoto' : 'Balcão'));
+  return `<div class="erro-msg" style="margin-bottom:.6rem"><b>Não pode fechar o caixa:</b> ${p.n === 1 ? 'existe 1 conta' : `existem ${p.n} contas`} por pagar (${formatarMoeda(p.total)}). ${p.n === 1 ? 'Receba-a ou termine-a' : 'Receba-as ou termine-as'} primeiro.</div>
+    <div class="tabela-wrapper" style="max-height:40vh;overflow:auto;margin-bottom:.8rem"><table>
+      <thead><tr><th>Conta</th><th>Situação</th><th style="text-align:right">Valor</th></tr></thead>
+      <tbody>${p.contas.map(c => `<tr><td>${ref(c)}</td><td class="texto-pequeno">${c.por_validar ? 'remoto por validar' : esc(ESTADO_PEDIDO_CX[c.status] || c.status)}</td><td style="text-align:right">${formatarMoeda(c.total)}</td></tr>`).join('')}</tbody></table></div>
+    <div style="display:flex;gap:.5rem"><button class="btn-primario" style="flex:1" data-on-click="fecharModal();carregarModulo('recebimentos')">Ir para Receber mesas</button>
+    <button class="btn-secundario" style="flex:1" data-on-click="fecharModal()">Voltar</button></div>`;
+}
 function modalFecharCaixa() {
-  const r = (window._caixaEstado || {}).resumo || {};
+  const e = window._caixaEstado || {};
+  const r = e.resumo || {};
+  if (e.pendencias && e.pendencias.n) { abrirModal('Fechar caixa', htmlContasPorPagar(e.pendencias)); return; }
   abrirModal('Fechar caixa', `
     <p style="margin-bottom:.6rem">Conte o dinheiro que está na gaveta. Esperado: <b>${formatarMoeda(r.dinheiro_esperado || 0)}</b>.</p>
-    <div class="campo"><label>Dinheiro contado (Kz)</label><input id="cx-contado" type="number" min="0"></div>
+    <div class="campo"><label>Dinheiro contado (Kz)</label><input id="cx-contado" type="number" min="0" data-on-input="actualizarDiferencaCaixa()"></div>
+    <p id="cx-dif" class="texto-pequeno" style="margin:-.3rem 0 .6rem" hidden></p>
+    <div class="campo" id="cx-just-campo" hidden><label>Justificação da diferença (obrigatória)</label><textarea id="cx-just" rows="2" maxlength="500" placeholder="Ex.: troco dado a mais à mesa 4; nota de 1000 Kz rasgada"></textarea></div>
     <div class="campo"><label>Observações</label><textarea id="cx-obs" rows="2" placeholder="Opcional"></textarea></div>
     <p class="muted texto-pequeno" style="margin-bottom:.8rem">Depois de fechar, só se volta a receber valores abrindo um novo caixa.</p>
     <div style="display:flex;gap:.5rem"><button class="btn-perigo" style="flex:1" data-on-click="fecharCaixa()">Fechar caixa</button>
     <button class="btn-secundario" style="flex:1" data-on-click="fecharModal()">Voltar</button></div>`);
 }
+/** Diferença entre o contado e o esperado (ao cêntimo); null enquanto não há contagem. */
+function diferencaCaixa() {
+  const v = document.getElementById('cx-contado').value;
+  if (v === '') return null;
+  const esperado = Number(((window._caixaEstado || {}).resumo || {}).dinheiro_esperado || 0);
+  return Math.round((parseFloat(v) - esperado) * 100) / 100;
+}
+function actualizarDiferencaCaixa() {
+  const d = diferencaCaixa();
+  const p = document.getElementById('cx-dif'), campo = document.getElementById('cx-just-campo');
+  p.hidden = d === null;
+  campo.hidden = d === null || d === 0;
+  if (d === null) return;
+  p.textContent = d === 0 ? 'Contas certas.' : `${d > 0 ? 'Sobram' : 'Faltam'} ${formatarMoeda(Math.abs(d))}: escreva a justificação para poder fechar.`;
+  p.style.color = d === 0 ? 'var(--c-success)' : 'var(--c-danger)';
+}
 async function fecharCaixa() {
   const contado = document.getElementById('cx-contado').value;
-  if (contado === '') { toast('Indique o dinheiro contado', 'erro'); return; }
+  if (contado === '' || !(parseFloat(contado) >= 0)) { toast('Indique o dinheiro contado (0 ou mais)', 'erro'); return; }
+  const d = diferencaCaixa();
+  const justificacao = (document.getElementById('cx-just').value || '').trim();
+  if (d !== 0 && justificacao.length < 10) {
+    actualizarDiferencaCaixa();
+    toast('A contagem não bate certo: escreva a justificação da diferença (pelo menos 10 caracteres)', 'erro', 6000);
+    return;
+  }
   try {
-    const r = await api('POST', '/caixa/fechar', { contado: parseFloat(contado), observacoes: document.getElementById('cx-obs').value });
+    const corpo = { contado: parseFloat(contado), observacoes: document.getElementById('cx-obs').value };
+    if (d !== 0) corpo.justificacao = justificacao;
+    const r = await api('POST', '/caixa/fechar', corpo);
     fecharModal();
-    const d = parseFloat(r.sessao.diferenca);
-    toast(d === 0 ? 'Caixa fechado: contas certas' : `Caixa fechado com diferença de ${formatarMoeda(d)}`, d === 0 ? 'sucesso' : 'aviso', 7000);
+    const dif = parseFloat(r.sessao.diferenca);
+    toast(dif === 0 ? 'Caixa fechado: contas certas' : `Caixa fechado com diferença justificada de ${formatarMoeda(dif)}`, dif === 0 ? 'sucesso' : 'aviso', 7000);
     carregarModulo('caixa');
-  } catch (e) { toast(e.message, 'erro'); }
+  } catch (e) {
+    // entretanto apareceu uma conta por pagar (outro posto): mostra a lista em vez de um erro solto
+    if (e.codigo === 'CONTAS_POR_PAGAR' && e.dados && e.dados.pendencias) { abrirModal('Fechar caixa', htmlContasPorPagar(e.dados.pendencias)); return; }
+    toast(e.message, 'erro', 7000);
+  }
 }
 
 // ── Nuk-Coin ────────────────────────────────────────────────

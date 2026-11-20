@@ -52,6 +52,48 @@ describe('Caixa do dia (frontend)', () => {
     expect(ctx._chamadas).toContainEqual(['POST', '/caixa/fechar', { contado: 1500, observacoes: '' }]);
   });
 
+  test('fecho com contas por pagar: mostra a lista e leva a Receber mesas, sem formulário de fecho', async () => {
+    const pendencias = { n: 2, total: 4200, contas: [
+      { id: 'p1', origem: 'MESA', status: 'FECHADO', total: 1200, mesa_numero: 'M04' },
+      { id: 'p2', origem: 'REMOTA', status: 'ABERTO', total: 3000, por_validar: true }] };
+    const ctx = carregar({ '/caixa': { aberta: true, sessao, resumo, movimentos: [], pendencias } });
+    await ctx.modulo_caixa({ innerHTML: '' });
+    ctx.modalFecharCaixa();
+    expect(ctx._modal).toContain('existem 2 contas');
+    expect(ctx._modal).toContain('Mesa M04');
+    expect(ctx._modal).toContain('remoto por validar');
+    expect(ctx._modal).toContain("carregarModulo('recebimentos')");
+    expect(ctx._modal).not.toContain('fecharCaixa()');
+  });
+
+  test('contagem que não bate certo: pede justificação e só envia com ela', async () => {
+    const ctx = carregar({ '/caixa': { aberta: true, sessao, resumo, movimentos: [], pendencias: { n: 0, total: 0, contas: [] } } });
+    await ctx.modulo_caixa({ innerHTML: '' });
+    ctx.modalFecharCaixa();
+    expect(ctx._modal).toContain('cx-just');
+    Object.assign(ctx._els, { 'cx-contado': { value: '1200' }, 'cx-obs': { value: '' }, 'cx-just': { value: 'curta' }, 'cx-dif': { style: {} }, 'cx-just-campo': { style: {} } });
+    ctx.actualizarDiferencaCaixa();
+    expect(ctx._els['cx-just-campo'].hidden).toBe(false);
+    expect(ctx._els['cx-dif'].textContent).toContain('Faltam 300 Kz');
+    await ctx.fecharCaixa();
+    expect(ctx._chamadas.some(c => c[1] === '/caixa/fechar')).toBe(false);
+    expect(ctx._toast[0]).toMatch(/justificação/);
+    ctx._els['cx-just'].value = 'Troco dado a mais à mesa 4';
+    await ctx.fecharCaixa();
+    expect(ctx._chamadas).toContainEqual(['POST', '/caixa/fechar', { contado: 1200, observacoes: '', justificacao: 'Troco dado a mais à mesa 4' }]);
+  });
+
+  test('servidor recusa por conta nova entretanto: mostra a lista em vez do erro solto', async () => {
+    const ctx = carregar({ '/caixa': { aberta: true, sessao, resumo, movimentos: [], pendencias: { n: 0, total: 0, contas: [] } } });
+    await ctx.modulo_caixa({ innerHTML: '' });
+    ctx.api = async () => { throw Object.assign(new Error('x'), { codigo: 'CONTAS_POR_PAGAR', dados: { pendencias: { n: 1, total: 600, contas: [{ id: 'p', status: 'FECHADO', total: 600, quarto_numero: '7' }] } } }); };
+    vm.runInContext('void 0', ctx);
+    Object.assign(ctx._els, { 'cx-contado': { value: '1500' }, 'cx-obs': { value: '' }, 'cx-just': { value: '' } });
+    await ctx.fecharCaixa();
+    expect(ctx._modal).toContain('Quarto 7');
+    expect(ctx._modal).toContain('existe 1 conta');
+  });
+
   test('Nuk-Coin e cartões: com caixa fechado mostram o aviso em vez do formulário', async () => {
     for (const m of ['modulo_nukcoin', 'modulo_cartoes', 'modulo_recebimentos']) {
       const ctx = carregar({ '/caixa': { aberta: false } });

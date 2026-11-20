@@ -13,7 +13,7 @@ const { exigirModulo } = require('../middleware/modulos');
 const h = fn => async (req, res, next) => {
   try { await fn(req, res); }
   catch (e) {
-    if (e.statusCode) return res.status(e.statusCode).json({ erro: e.message, ...(e.codigo ? { codigo: e.codigo } : {}), ...(e.disponivel !== undefined ? { disponivel: e.disponivel } : {}), ...(e.codigos ? { codigos: e.codigos } : {}), ...(e.divida !== undefined ? { divida: e.divida } : {}), ...(e.saldo_atual !== undefined ? { saldo_atual: e.saldo_atual, total_necessario: e.total_necessario } : {}) });
+    if (e.statusCode) return res.status(e.statusCode).json({ erro: e.message, ...(e.dados || {}), ...(e.codigo ? { codigo: e.codigo } : {}), ...(e.disponivel !== undefined ? { disponivel: e.disponivel } : {}), ...(e.codigos ? { codigos: e.codigos } : {}), ...(e.divida !== undefined ? { divida: e.divida } : {}), ...(e.saldo_atual !== undefined ? { saldo_atual: e.saldo_atual, total_necessario: e.total_necessario } : {}) });
     next(e);
   }
 };
@@ -46,13 +46,13 @@ router.post('/abrir', authMiddleware, h(async (req, res) => res.status(201).json
  * @openapi
  * /api/caixa/fechar:
  *   post:
- *     summary: Fecha o caixa com a contagem do dinheiro (calcula a diferença para o esperado)
+ *     summary: Fecha o caixa com a contagem do dinheiro (nunca com contas por pagar; diferença só com justificação)
  *     tags: [Caixa]
  *     security: [{ bearerAuth: [] }]
- *     requestBody: { content: { application/json: { schema: { type: object, required: [contado] } } } }
- *     responses: { 200: { description: Sessão fechada com esperado, contado e diferença }, 409: { description: Já está fechado } }
+ *     requestBody: { content: { application/json: { schema: { type: object, required: [contado], properties: { contado: { type: number }, observacoes: { type: string }, justificacao: { type: string, description: "Obrigatória (10 ou mais caracteres) quando a contagem não bate certo" } } } } } }
+ *     responses: { 200: { description: "Sessão fechada com esperado, contado e diferença" }, 409: { description: "Já está fechado; CONTAS_POR_PAGAR (com pendencias); DIFERENCA_POR_JUSTIFICAR (com esperado, contado, diferenca)" } }
  */
-router.post('/fechar', authMiddleware, h(async (req, res) => res.json(await svc.fechar({ contado: req.body.contado, observacoes: req.body.observacoes, ...base(req) }))));
+router.post('/fechar', authMiddleware, h(async (req, res) => res.json(await svc.fechar({ contado: req.body.contado, observacoes: req.body.observacoes, justificacao: req.body.justificacao, ...base(req) }))));
 
 /**
  * @openapi

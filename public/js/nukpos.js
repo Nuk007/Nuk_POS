@@ -52,7 +52,8 @@ async function api(metodo, path, dados) {
     if (r.status === 428 && json.codigo === 'ADESAO_PENDENTE' && typeof mostrarAdesao === 'function') { mostrarAdesao(); }
     // Licença expirada / conta suspensa (14/11/2026): ecrã próprio em vez do erro solto em cada módulo.
     if (r.status === 403 && ['LICENCA_EXPIRADA', 'TENANT_SUSPENSA'].includes(json.codigo) && typeof mostrarLicencaBloqueada === 'function') { mostrarLicencaBloqueada(json); }
-    throw new Error(json.erro || `Erro ${r.status}`);
+    // o erro leva o código e os dados da resposta (ex.: fecho do caixa recusado com a lista de contas por pagar)
+    throw Object.assign(new Error(json.erro || `Erro ${r.status}`), { status: r.status, codigo: json.codigo, dados: json });
   }
   if (metodo === 'GET' && typeof offlineGuardarLeitura === 'function') offlineGuardarLeitura(path, json);
   return json;
