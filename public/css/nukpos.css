@@ -589,14 +589,34 @@ tr:hover td { background: rgba(255,255,255,.02); }
 .nav-grupo > .nav-titulo:hover { color: #ffa05a; }
 .nav-grupo > .nav-titulo:focus-visible { outline: 2px solid var(--c-primary-light); outline-offset: 2px; border-radius: 6px; }
 .nav-seta { font-size: 1.15rem; line-height: 1; transition: transform .18s ease; }
-.nav-grupo.aberto .nav-seta { transform: rotate(90deg); }
+.nav-grupo.aberto > .nav-titulo .nav-seta { transform: rotate(90deg); }
 .nav-grupo:not(.aberto) { padding-top: .25rem; padding-bottom: .25rem; }
 .nav-grupo:not(.aberto) > :not(.nav-titulo) { display: none !important; }
 .nav-grupo.aberto > :not(.nav-titulo) { animation: navDesce .2s ease-out; }
+/* Subcategorias (ex.: Vendas → Fluxo de venda, Restauração…) também em acordeão (22/11/2026) */
+.nav-sub > .nav-subtitulo {
+  display: flex; align-items: center; justify-content: space-between; gap: .5rem;
+  width: 100%; margin: 0; padding: .25rem .3rem;
+  background: none; border: none; cursor: pointer;
+  font: inherit; font-size: 12px; font-weight: 600; color: var(--c-muted); text-align: left;
+}
+.nav-sub > .nav-subtitulo:hover, .nav-sub.aberto > .nav-subtitulo { color: var(--c-text); }
+.nav-sub > .nav-subtitulo:focus-visible { outline: 2px solid var(--c-primary-light); outline-offset: 2px; border-radius: 6px; }
+.nav-sub > .nav-subtitulo .nav-seta { font-size: 1rem; }
+.nav-sub.aberto > .nav-subtitulo .nav-seta { transform: rotate(90deg); }
+.nav-sub:not(.aberto) { padding-top: .2rem; padding-bottom: .2rem; }
+.nav-sub:not(.aberto) > :not(.nav-subtitulo) { display: none !important; }
+.nav-sub.aberto > :not(.nav-subtitulo) { animation: navDesce .2s ease-out; }
+/* Categoria ou subcategoria fechada com um aviso lá dentro (pedidos remotos, solicitações, stock): ponto laranja no título */
+.nav-grupo:not(.aberto):has(.badge[style*="inline-block"]) > .nav-titulo > span:first-child::after,
+.nav-sub:not(.aberto):has(.badge[style*="inline-block"]) > .nav-subtitulo > span:first-child::after {
+  content: ''; display: inline-block; width: 7px; height: 7px; margin-left: .45rem; vertical-align: middle;
+  border-radius: 50%; background: var(--c-primary-light); box-shadow: 0 0 6px var(--c-primary-light);
+}
 @keyframes navDesce { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) {
   .nav-seta { transition: none; }
-  .nav-grupo.aberto > :not(.nav-titulo) { animation: none; }
+  .nav-grupo.aberto > :not(.nav-titulo), .nav-sub.aberto > :not(.nav-subtitulo) { animation: none; }
 }
 
 /* ── Botões suaves (tema único do sistema): saem da superfície e «entram» nela ao carregar ──

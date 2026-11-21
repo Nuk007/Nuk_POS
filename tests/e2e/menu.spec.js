@@ -27,11 +27,23 @@ test('menu: categorias fechadas ao entrar, abrir uma fecha a outra, o módulo em
   await expect(caixa.locator('.nav-titulo')).toHaveAttribute('aria-expanded', 'true');
 
   await vendas.locator('.nav-titulo').click();
-  await expect(page.locator('.nav-item[data-modulo="mesas"]')).toBeVisible();
   await expect(page.locator('.nav-item[data-modulo="caixa"]')).toBeHidden();
+  // Vendas: só as subcategorias à vista; os módulos de cada uma descem ao tocar
+  const fluxo = page.locator('.nav-sub', { has: page.locator('[data-modulo="mesas"]') });
+  const restauracao = page.locator('.nav-sub', { has: page.locator('[data-modulo="pedidos"]') });
+  await expect(fluxo.locator('.nav-subtitulo')).toBeVisible();
+  await expect(page.locator('.nav-item[data-modulo="mesas"]')).toBeHidden();
+  await fluxo.locator('.nav-subtitulo').click();
+  await expect(page.locator('.nav-item[data-modulo="mesas"]')).toBeVisible();
+  await restauracao.locator('.nav-subtitulo').click();
+  await expect(page.locator('.nav-item[data-modulo="pedidos"]')).toBeVisible();
+  await expect(page.locator('.nav-item[data-modulo="mesas"]')).toBeHidden();
 
   await vendas.locator('.nav-titulo').click(); // fecha
-  await expect(page.locator('.nav-item[data-modulo="mesas"]')).toBeHidden();
+  await expect(page.locator('.nav-item[data-modulo="pedidos"]')).toBeHidden();
+
+  await page.evaluate(() => carregarModulo('takeaway')); // abre Vendas e Fluxo de venda
+  await expect(page.locator('.nav-item[data-modulo="takeaway"]')).toBeVisible();
 
   await page.evaluate(() => carregarModulo('caixa'));
   await expect(page.locator('.nav-item[data-modulo="caixa"]')).toBeVisible();

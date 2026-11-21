@@ -16,6 +16,17 @@ describe('Menu lateral em acordeão', () => {
     expect(html).not.toMatch(/<div class="nav-titulo">/);
   });
 
+  test('subcategorias também são botões de abrir/fechar, e fechadas escondem os módulos', () => {
+    const subs = html.match(/<div class="nav-sub">/g) || [];
+    const t = html.match(/<button type="button" class="nav-subtitulo sem-relevo" data-action="nav-sub" aria-expanded="false">/g) || [];
+    expect(subs.length).toBeGreaterThan(2);
+    expect(t.length).toBe(subs.length);
+    expect(css).toMatch(/\.nav-sub:not\(\.aberto\) > :not\(\.nav-subtitulo\) \{ display: none !important; \}/);
+    expect(ui).toMatch(/action === 'nav-sub'/);
+    expect(ui).toMatch(/abrirSubNav\(activo\.closest\('\.nav-sub'\), true, false\)/);
+    expect(css).toMatch(/:has\(\.badge\[style\*="inline-block"\]\)/);
+  });
+
   test('categoria fechada esconde os módulos; a barra de rolagem não aparece', () => {
     expect(css).toMatch(/\.nav-grupo:not\(\.aberto\) > :not\(\.nav-titulo\) \{ display: none !important; \}/);
     expect(css).toMatch(/\.sidebar-nav \{ scrollbar-width: none;/);
