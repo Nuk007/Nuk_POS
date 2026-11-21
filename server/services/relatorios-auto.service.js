@@ -6,6 +6,8 @@
  * pode ter estado parado), semanais (semana anterior, segunda a domingo) e mensais (mês anterior), guarda-os em
  * `relatorios_gerados` e avisa o ecrã (`relatorios_gerados`). Sem movimento no período fica VAZIO (não aparece).
  * Configuração na chave `relatorios_auto` (JSON) de `configuracoes`; sem chave vale `PADRAO` (ligado).
+ * O Administrador activa ou suspende cada relatório (`suspensos`, 21/11/2026): suspenso não se gera sozinho, mas
+ * guarda as frequências escolhidas para quando voltar a ser activado; à mão continua a poder gerar-se.
  */
 const { pool } = require('../db');
 const { erro } = require('./shared');
@@ -14,7 +16,7 @@ const ger = require('./relatorios-geradores.service');
 
 const CHAVE = 'relatorios_auto';
 const PADRAO = {
-  ativo: true, hora: '06:00',
+  ativo: true, hora: '06:00', suspensos: [],
   DIA: ['FOLHA_CAIXA', 'VENDAS', 'CAIXA_DIFERENCAS', 'QUEBRAS'],
   SEMANA: ['VENDAS', 'COMPRAS', 'STOCK', 'MARGEM', 'QUARTOS', 'DIVIDAS'],
   MES: ['VENDAS', 'COMPRAS', 'STOCK', 'MARGEM', 'QUARTOS', 'DIVIDAS', 'RESULTADO', 'CAIXA_DIFERENCAS'],
@@ -33,6 +35,7 @@ function normalizarConfig(g) {
     if (typeof g.ativo === 'boolean') c.ativo = g.ativo;
     if (HORA_RE.test(g.hora || '')) c.hora = g.hora;
     for (const f of FREQS) if (Array.isArray(g[f])) c[f] = g[f].filter(t => ger.CATALOGO[t] && ger.CATALOGO[t].frequencias.includes(f));
+    if (Array.isArray(g.suspensos)) c.suspensos = [...new Set(g.suspensos.filter(t => ger.CATALOGO[t]))];
   }
   return c;
 }
@@ -44,7 +47,7 @@ async function lerConfig(tenantId) {
   return { ...normalizarConfig(g), configurado: !!r.rows[0] };
 }
 
-async function gravarConfig({ tenantId, ativo, hora, DIA, SEMANA, MES, repor }) {
+async function gravarConfig({ tenantId, ativo, hora, DIA, SEMANA, MES, suspensos, repor }) {
   if (repor === true) {
     await pool.query(`DELETE FROM configuracoes WHERE tenant_id = $1 AND chave = $2`, [tenantId, CHAVE]);
     return lerConfig(tenantId);
@@ -61,11 +64,15 @@ async function gravarConfig({ tenantId, ativo, hora, DIA, SEMANA, MES, repor }) 
       if (!ger.CATALOGO[t].frequencias.includes(f)) throw erro(400, `${ger.CATALOGO[t].nome} não se gera por ${f === 'DIA' ? 'dia' : f === 'SEMANA' ? 'semana' : 'mês'}`);
     }
   }
+  if (suspensos !== undefined) {
+    if (!Array.isArray(suspensos)) throw erro(400, 'Indique a lista de relatórios suspensos');
+    for (const t of suspensos) if (!ger.CATALOGO[t]) throw erro(400, `Relatório desconhecido: ${t}`);
+  }
   const actual = await lerConfig(tenantId);
-  const novo = normalizarConfig({ ...actual, ...(ativo !== undefined ? { ativo } : {}), ...(hora ? { hora } : {}), ...Object.fromEntries(FREQS.filter(f => listas[f]).map(f => [f, [...new Set(listas[f])]])) });
+  const novo = normalizarConfig({ ...actual, ...(ativo !== undefined ? { ativo } : {}), ...(hora ? { hora } : {}), ...Object.fromEntries(FREQS.filter(f => listas[f]).map(f => [f, [...new Set(listas[f])]])), ...(suspensos !== undefined ? { suspensos } : {}) });
   await pool.query(
     `INSERT INTO configuracoes (tenant_id, chave, valor) VALUES ($1,$2,$3)
-     ON CONFLICT (tenant_id, chave) DO UPDATE SET valor = $3, atualizado_em = NOW()`, [tenantId, CHAVE, JSON.stringify({ ativo: novo.ativo, hora: novo.hora, DIA: novo.DIA, SEMANA: novo.SEMANA, MES: novo.MES })]);
+     ON CONFLICT (tenant_id, chave) DO UPDATE SET valor = $3, atualizado_em = NOW()`, [tenantId, CHAVE, JSON.stringify({ ativo: novo.ativo, hora: novo.hora, DIA: novo.DIA, SEMANA: novo.SEMANA, MES: novo.MES, suspensos: novo.suspensos })]);
   return { ...novo, configurado: true };
 }
 
@@ -134,6 +141,7 @@ async function processarTick(agora = new Date()) {
     const novos = [];
     for (const f of FREQS) {
       for (const tipo of cfg[f]) {
+        if (cfg.suspensos.includes(tipo)) continue; // suspenso pelo Administrador
         const exige = ger.CATALOGO[tipo].licenca;
         if (exige && lic && !lic.has(exige)) continue;
         for (const p of per[f]) {

@@ -162,5 +162,23 @@ describe('Relatórios gerados automaticamente (frontend, 21/11/2026)', () => {
     expect(enviados[0][2]).toMatchObject({ ativo: true, hora: '07:00', DIA: ['VENDAS'] });
     ctx.pedirReporRelatoriosAuto();
     expect(ctx._confirmar).toBe('reporRelatoriosAutoConfirmado');
+    // activar / suspender cada relatório: suspender pede confirmação e grava a lista de suspensos
+    expect(h).toContain("pedirSuspenderRelatorioAuto('VENDAS')");
+    expect(h).toContain('Activo');
+    ctx.pedirSuspenderRelatorioAuto('VENDAS');
+    expect(ctx._confirmar).toBe('suspenderRelatorioAutoConfirmado');
+    await ctx.suspenderRelatorioAutoConfirmado('VENDAS');
+    expect(enviados[enviados.length - 1][2]).toMatchObject({ suspensos: ['VENDAS'], DIA: ['VENDAS'] });
+  });
+
+  test('relatório suspenso aparece como «Suspenso» com o botão «Activar»', async () => {
+    const enviados = [];
+    const ctx = carregarG({ '/relatorios/auto/config': { ativo: true, hora: '06:00', DIA: ['VENDAS'], SEMANA: [], MES: [], suspensos: ['VENDAS'], configurado: true }, '/relatorios/catalogo': catalogo }, enviados);
+    await ctx.carregarConfigRelatoriosAuto();
+    const h = ctx._caixas['cfg-relatorios-auto'].innerHTML;
+    expect(h).toContain('Suspenso');
+    expect(h).toContain("activarRelatorioAuto('VENDAS')");
+    await ctx.activarRelatorioAuto('VENDAS');
+    expect(enviados[0][2].suspensos).toEqual([]);
   });
 });

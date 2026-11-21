@@ -141,7 +141,7 @@ router.put('/resumo-diario/config', authMiddleware, requerNivel(['ADMIN']), exig
  *     security: [{ bearerAuth: [] }]
  *     responses: { 200: { description: Configuração } }
  *   put:
- *     summary: Grava a configuração da geração automática (só ADMIN; repor true volta ao padrão)
+ *     summary: Grava a configuração da geração automática (só ADMIN; suspensos = relatórios suspensos; repor true volta ao padrão)
  *     tags: [Relatórios]
  *     security: [{ bearerAuth: [] }]
  *     responses: { 200: { description: Configuração gravada }, 400: { description: Valores inválidos } }
@@ -166,8 +166,8 @@ router.post('/gerar', authMiddleware, chefia, h(async (req, res) => {
 }));
 router.get('/auto/config', authMiddleware, chefia, h(async (req, res) => res.json({ ...(await auto.lerConfig(req.tenantId)), padrao: auto.PADRAO })));
 router.put('/auto/config', authMiddleware, requerNivel(['ADMIN']), exigirModulo('configuracoes'), h(async (req, res) => {
-  const { ativo, hora, DIA, SEMANA, MES, repor } = req.body || {};
-  res.json(await auto.gravarConfig({ ativo, hora, DIA, SEMANA, MES, repor, tenantId: req.tenantId }));
+  const { ativo, hora, DIA, SEMANA, MES, suspensos, repor } = req.body || {};
+  res.json(await auto.gravarConfig({ ativo, hora, DIA, SEMANA, MES, suspensos, repor, tenantId: req.tenantId }));
 }));
 
 module.exports = router;

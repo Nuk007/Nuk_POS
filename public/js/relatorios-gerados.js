@@ -96,44 +96,83 @@ function htmlRelatorioGerado(r) {
 }
 
 // ── Configurações → Configuração de relatórios → Geração automática (só ADMIN) ──
+// Uma linha por relatório: estado (Activo / Suspenso) e quando se gera (diário, semanal, mensal).
+// Suspender pede confirmação (regra do dono) e vale logo; activar também. As frequências gravam-se com «Guardar».
+let _relAutoCfg = null;
+
 async function carregarConfigRelatoriosAuto() {
   const box = document.getElementById('cfg-relatorios-auto');
   if (!box) return;
   try {
     const [cfg, cat] = await Promise.all([api('GET', '/relatorios/auto/config'), api('GET', '/relatorios/catalogo')]);
+    _relAutoCfg = cfg;
     const lic = c => !c.licenca || typeof licenciadoModulo !== 'function' || licenciadoModulo(c.licenca);
-    const coluna = (f, titulo, quando) => `
-      <div><div style="font-weight:600;margin-bottom:.25rem">${titulo}</div><div class="muted texto-pequeno" style="margin-bottom:.35rem">${quando}</div>
-        ${cat.filter(c => c.frequencias.includes(f) && lic(c)).map(c => `<label class="texto-pequeno" style="display:flex;gap:.4rem;align-items:center;margin-bottom:.2rem"><input type="checkbox" class="rauto-${f}" value="${esc(c.tipo)}" style="width:auto;margin:0"${cfg[f].includes(c.tipo) ? ' checked' : ''}> ${esc(c.nome)}</label>`).join('')}
-      </div>`;
+    const suspensos = cfg.suspensos || [];
+    const caixa = (c, f) => (c.frequencias.includes(f)
+      ? `<input type="checkbox" class="rauto-${f}" value="${esc(c.tipo)}" style="width:auto;margin:0"${cfg[f].includes(c.tipo) ? ' checked' : ''}>`
+      : '<span class="muted">—</span>');
+    const linhas = cat.filter(lic).map(c => {
+      const susp = suspensos.includes(c.tipo);
+      return `<tr${susp ? ' style="opacity:.55"' : ''}>
+        <td><b>${esc(c.nome)}</b></td>
+        <td>${susp ? '<span style="color:var(--c-danger,#e05555)">Suspenso</span>' : '<span style="color:var(--c-success,#3fb950)">Activo</span>'}</td>
+        <td style="text-align:center">${caixa(c, 'DIA')}</td><td style="text-align:center">${caixa(c, 'SEMANA')}</td><td style="text-align:center">${caixa(c, 'MES')}</td>
+        <td>${susp ? `<button class="btn-secundario" style="padding:.2rem .55rem;font-size:.75rem" data-on-click="activarRelatorioAuto('${esc(c.tipo)}')">Activar</button>`
+          : `<button class="btn-secundario" style="padding:.2rem .55rem;font-size:.75rem" data-on-click="pedirSuspenderRelatorioAuto('${esc(c.tipo)}')">Suspender</button>`}</td>
+      </tr>`;
+    }).join('');
     box.innerHTML = `
-      <b>⏱️ Geração automática</b>
-      <div class="muted texto-pequeno" style="margin:.3rem 0 .6rem">O sistema gera sozinho os relatórios escolhidos e guarda-os em Relatórios → «Relatórios gerados». Períodos sem movimento não geram relatório.</div>
+      <div class="muted texto-pequeno" style="margin-bottom:.6rem">O sistema gera sozinho os relatórios activos e guarda-os em Relatórios → «Relatórios gerados». Diários: o dia anterior · Semanais: à segunda, a semana anterior · Mensais: no dia 1, o mês anterior. Um relatório suspenso deixa de se gerar sozinho (continua a poder gerar-se à mão) e guarda as escolhas para quando for activado.</div>
       <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap;margin-bottom:.6rem">
-        <label class="texto-pequeno" style="display:flex;gap:.4rem;align-items:center"><input type="checkbox" id="rauto-ativo" style="width:auto;margin:0"${cfg.ativo ? ' checked' : ''}> Ligada</label>
+        <label class="texto-pequeno" style="display:flex;gap:.4rem;align-items:center"><input type="checkbox" id="rauto-ativo" style="width:auto;margin:0"${cfg.ativo ? ' checked' : ''}> Geração automática ligada</label>
         <label class="texto-pequeno">A partir das <input id="rauto-hora" type="time" value="${esc(cfg.hora)}" style="width:7rem;display:inline-block"></label>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(13rem,1fr));gap:.6rem 1rem;margin-bottom:.6rem">
-        ${coluna('DIA', 'Diários', 'O dia anterior')}${coluna('SEMANA', 'Semanais', 'À segunda: semana anterior')}${coluna('MES', 'Mensais', 'No dia 1: mês anterior')}
-      </div>
-      <div class="row-acoes">
+      <div class="tabela-wrapper"><table class="texto-pequeno">
+        <thead><tr><th>Relatório</th><th>Estado</th><th style="text-align:center">Diário</th><th style="text-align:center">Semanal</th><th style="text-align:center">Mensal</th><th></th></tr></thead>
+        <tbody>${linhas}</tbody>
+      </table></div>
+      <div class="row-acoes mt-2">
         <button class="btn-primario" data-on-click="guardarConfigRelatoriosAuto()">Guardar a geração automática</button>
         ${cfg.configurado ? '<button class="btn-secundario" data-on-click="pedirReporRelatoriosAuto()">Repor o padrão</button>' : ''}
       </div>`;
   } catch (e) { box.innerHTML = `<div class="erro-msg">Geração automática: ${esc(e.message)}</div>`; }
 }
 
-async function guardarConfigRelatoriosAuto() {
+const escolhasRelatoriosAuto = () => {
   const marcados = f => [...document.querySelectorAll('.rauto-' + f)].filter(c => c.checked).map(c => c.value);
+  return { ativo: document.getElementById('rauto-ativo').checked, hora: document.getElementById('rauto-hora').value, DIA: marcados('DIA'), SEMANA: marcados('SEMANA'), MES: marcados('MES') };
+};
+
+async function guardarConfigRelatoriosAuto() {
   try {
-    await api('PUT', '/relatorios/auto/config', { ativo: document.getElementById('rauto-ativo').checked, hora: document.getElementById('rauto-hora').value, DIA: marcados('DIA'), SEMANA: marcados('SEMANA'), MES: marcados('MES') });
+    await api('PUT', '/relatorios/auto/config', escolhasRelatoriosAuto());
     toast('Geração automática guardada', 'sucesso');
     carregarConfigRelatoriosAuto();
   } catch (e) { toast(e.message, 'erro'); }
 }
 
+async function mudarSuspensoRelatorioAuto(tipo, suspender) {
+  const actuais = (_relAutoCfg && _relAutoCfg.suspensos) || [];
+  const suspensos = suspender ? [...new Set([...actuais, tipo])] : actuais.filter(t => t !== tipo);
+  // grava também o que estiver marcado no ecrã, para não se perder ao redesenhar
+  await api('PUT', '/relatorios/auto/config', { ...escolhasRelatoriosAuto(), suspensos });
+}
+
+function pedirSuspenderRelatorioAuto(tipo) {
+  modalConfirmar('Suspender relatório', 'Este relatório deixa de ser gerado automaticamente até o voltar a activar. Os relatórios já gerados mantêm-se. Continuar?', 'suspenderRelatorioAutoConfirmado', tipo);
+}
+async function suspenderRelatorioAutoConfirmado(tipo) {
+  fecharModal();
+  try { await mudarSuspensoRelatorioAuto(tipo, true); toast('Relatório suspenso', 'sucesso'); carregarConfigRelatoriosAuto(); }
+  catch (e) { toast(e.message, 'erro'); }
+}
+async function activarRelatorioAuto(tipo) {
+  try { await mudarSuspensoRelatorioAuto(tipo, false); toast('Relatório activado', 'sucesso'); carregarConfigRelatoriosAuto(); }
+  catch (e) { toast(e.message, 'erro'); }
+}
+
 function pedirReporRelatoriosAuto() {
-  modalConfirmar('Repor o padrão', 'A escolha do estabelecimento é apagada e a geração automática volta ao padrão do sistema (ligada às 06:00). Continuar?', 'reporRelatoriosAutoConfirmado');
+  modalConfirmar('Repor o padrão', 'A escolha do estabelecimento é apagada e a geração automática volta ao padrão do sistema (ligada às 06:00, todos os relatórios activos). Continuar?', 'reporRelatoriosAutoConfirmado');
 }
 async function reporRelatoriosAutoConfirmado() {
   fecharModal();

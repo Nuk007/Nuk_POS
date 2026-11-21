@@ -24,6 +24,12 @@ test('Configuração de relatórios e «Relatórios gerados» funcionam sem erro
   await page.locator('#cfg-relatorios .fm-inome[data-g="0"]').last().fill('Cuca garrafa');
   await page.locator('#cfg-relatorios button', { hasText: 'Guardar o modelo' }).click();
   await expect(page.locator('#cfg-relatorios button', { hasText: 'Repor o padrão' })).toBeVisible();
+  // o Administrador suspende um relatório (com confirmação) e volta a activá-lo
+  await page.locator('#cfg-relatorios-auto tr', { hasText: 'Quebras e desperdício' }).locator('button', { hasText: 'Suspender' }).click();
+  await page.locator('button', { hasText: 'Sim, confirmar' }).click();
+  await expect(page.locator('#cfg-relatorios-auto tr', { hasText: 'Quebras e desperdício' })).toContainText('Suspenso');
+  await page.locator('#cfg-relatorios-auto tr', { hasText: 'Quebras e desperdício' }).locator('button', { hasText: 'Activar' }).click();
+  await expect(page.locator('#cfg-relatorios-auto tr', { hasText: 'Quebras e desperdício' })).toContainText('Activo');
   await page.locator('#cfg-relatorios-auto button', { hasText: 'Guardar a geração automática' }).click();
   await expect(page.locator('#cfg-relatorios-auto button', { hasText: 'Repor o padrão' })).toBeVisible();
 

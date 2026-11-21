@@ -63,6 +63,9 @@ test('configuração: padrão ligado às 06:00; só ADMIN grava; validações', 
   const g = await call(A, 'put', '/api/relatorios/auto/config', { hora: '06:30' });
   expect(g.status).toBe(200);
   expect(g.body).toMatchObject({ hora: '06:30', ativo: true, configurado: true });
+  expect((await call(A, 'put', '/api/relatorios/auto/config', { suspensos: 'VENDAS' })).status).toBe(400);
+  expect((await call(A, 'put', '/api/relatorios/auto/config', { suspensos: ['NADA'] })).status).toBe(400);
+  expect((await call(GER, 'put', '/api/relatorios/auto/config', { suspensos: ['VENDAS'] })).status).toBe(403);
   const cat = (await call(GER, 'get', '/api/relatorios/catalogo')).body;
   expect(cat.map(x => x.tipo)).toEqual(expect.arrayContaining(['FOLHA_CAIXA', 'VENDAS', 'COMPRAS', 'STOCK', 'QUEBRAS', 'MARGEM', 'DIVIDAS', 'QUARTOS', 'CAIXA_DIFERENCAS', 'RESULTADO']));
 });
@@ -74,15 +77,22 @@ test('agendador: nada antes da hora; depois gera os diários de ontem uma só ve
   const prontos = await linhas(A.tenantId, `AND estado = 'PRONTO'`);
   expect(prontos.map(r => r.tipo).sort()).toEqual(['CAIXA_DIFERENCAS', 'FOLHA_CAIXA', 'QUEBRAS', 'VENDAS']);
   expect(prontos.every(r => r.de === hoje() && r.ate === hoje() && r.frequencia === 'DIA' && r.origem === 'AUTO')).toBe(true);
+  // o estabelecimento B suspende as Vendas: o Administrador escolhe; o resto continua a gerar-se
+  const sB = await call(B, 'put', '/api/relatorios/auto/config', { suspensos: ['VENDAS'] });
+  expect(sB.status).toBe(200);
+  expect(sB.body).toMatchObject({ suspensos: ['VENDAS'], DIA: expect.arrayContaining(['VENDAS']) }); // a escolha da frequência fica guardada
   const vazios = await linhas(A.tenantId, `AND estado = 'VAZIO'`);
   expect(vazios.length).toBeGreaterThan(0); // dias anteriores, semana e mês sem movimento
   const total = (await linhas(A.tenantId)).length;
   await auto.processarTick(amanha('08:00'));
   expect((await linhas(A.tenantId)).length).toBe(total); // não repete
   // licenças: sem hospedagem, o estabelecimento B não recebe o relatório de quartos
+  await pool.query(`DELETE FROM relatorios_gerados WHERE tenant_id = $1`, [B.tenantId]); // o 1.º tick já tinha passado por B
+  await auto.processarTick(amanha('07:00'));
   const tiposB = new Set((await linhas(B.tenantId)).map(r => r.tipo));
-  expect(tiposB.has('VENDAS')).toBe(true);
-  expect(tiposB.has('QUARTOS')).toBe(false);
+  expect(tiposB.has('VENDAS')).toBe(false);          // suspenso
+  expect(tiposB.has('CAIXA_DIFERENCAS')).toBe(true); // activo
+  expect(tiposB.has('QUARTOS')).toBe(false);         // sem a licença de hospedagem
 }, 60000);
 
 test('os relatórios gerados trazem os números do dia', async () => {
