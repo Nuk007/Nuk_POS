@@ -72,4 +72,10 @@ function validarChaveIdempotencia(chave) {
   return c;
 }
 
-module.exports = { PALAVRA_PASSE_RE, validarPalavraPasse, buildWhere, withTx, erro, validarChaveIdempotencia };
+/** Quantidade para talões e documentos: «2x» nas unidades, «0,355 kg» nos produtos vendidos ao peso (21/11/2026). */
+function textoQtd(q) {
+  const n = Number(q);
+  return Number.isInteger(n) ? `${n}x` : `${n.toLocaleString('pt-PT', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg`;
+}
+
+module.exports = { PALAVRA_PASSE_RE, validarPalavraPasse, buildWhere, withTx, erro, validarChaveIdempotencia, textoQtd };

@@ -368,6 +368,12 @@ function actualizarHora() {
 }
 
 // ── Formatadores ──────────────────────────────────────────────
+/** Quantidade de uma linha: «2×» nas unidades, «0,355 kg» nos produtos vendidos ao peso. */
+function fmtQtd(q) {
+  const n = Number(q);
+  return Number.isInteger(n) ? `${n}×` : `${n.toLocaleString('pt-PT', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg`;
+}
+
 function formatarMoeda(val) {
   const n = parseFloat(val) || 0;
   return n.toLocaleString('pt-AO') + ' Kz';

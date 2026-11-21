@@ -43,7 +43,7 @@ function cartaoKds(p) {
     <div class="toolbar" style="margin:0 0 .4rem"><b style="font-size:1.1rem">${onde}</b><span class="negrito" style="color:${p.minutos >= 15 ? cor : 'inherit'}">${p.minutos} min</span></div>
     <div class="muted texto-pequeno" style="margin-bottom:.4rem">${p.cliente ? esc(p.cliente) + ' · ' : ''}${p.funcionario ? esc(p.funcionario) : ''}</div>
     ${p.itens.map(i => `<button class="btn-secundario" style="display:flex;justify-content:space-between;width:100%;margin:.2rem 0;text-align:left;${i.status === 'PRONTO' ? 'opacity:.6;text-decoration:line-through' : ''}" data-on-click="avancarItemKds('${esc(p.id)}','${esc(i.id)}')">
-        <span><b>${i.quantidade}×</b> ${esc(i.produto)}${i.observacoes ? `<span class="texto-pequeno" style="display:block;color:#f59e0b">${esc(i.observacoes)}</span>` : ''}</span>
+        <span><b>${typeof fmtQtd === 'function' ? fmtQtd(i.quantidade) : i.quantidade + '×'}</b> ${esc(i.produto)}${i.observacoes ? `<span class="texto-pequeno" style="display:block;color:#f59e0b">${esc(i.observacoes)}</span>` : ''}</span>
         <span class="texto-pequeno">${ESTADOS_KDS[i.status]}</span></button>`).join('')}
     ${p.observacoes ? `<div class="texto-pequeno" style="margin:.3rem 0;color:#f59e0b">📝 ${esc(p.observacoes)}</div>` : ''}
     <div style="display:flex;gap:.4rem;margin-top:.4rem">

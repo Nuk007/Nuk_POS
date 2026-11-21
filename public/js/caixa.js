@@ -335,8 +335,8 @@ async function modulo_recebimentos(el) {
           ${c.pedidos.length > 1 ? c.pedidos.map((p, j) => `<div style="border-top:1px dashed var(--c-border);padding:.35rem 0">
               <div class="toolbar" style="margin:0"><span class="texto-pequeno negrito">Conta ${j + 1}</span><span style="display:flex;gap:.4rem;align-items:center"><b>${formatarMoeda(p.total)}</b>
                 <button class="btn-secundario" style="padding:.2rem .55rem;font-size:.75rem" data-on-click="modalReceber(${i},${j})">Receber esta</button></span></div>
-              ${(p.itens || []).map(it => `<div class="texto-pequeno">${it.quantidade}× ${esc(it.produto_nome)}</div>`).join('')}</div>`).join('')
-            : c.pedidos.flatMap(p => p.itens || []).map(it => `<div class="texto-pequeno">${it.quantidade}× ${esc(it.produto_nome)}</div>`).join('')}
+              ${(p.itens || []).map(it => `<div class="texto-pequeno">${fmtQtd(it.quantidade)} ${esc(it.produto_nome)}</div>`).join('')}</div>`).join('')
+            : c.pedidos.flatMap(p => p.itens || []).map(it => `<div class="texto-pequeno">${fmtQtd(it.quantidade)} ${esc(it.produto_nome)}</div>`).join('')}
           <div style="display:flex;gap:.5rem;margin-top:.6rem">
             ${podeDividir(c) ? `<button class="btn-secundario" style="flex:1" data-on-click="modalDividir(${i})">Dividir conta</button>` : ''}
             <button class="btn-primario" style="flex:2" data-on-click="modalReceber(${i})">Receber ${c.pedidos.length > 1 ? 'tudo · ' : ''}${formatarMoeda(total)}</button>

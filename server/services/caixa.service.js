@@ -530,7 +530,7 @@ async function dividirConta({ tenantId, userId, pedido_id, itens }) {
       const linha = porId.get(x && x.item_id);
       if (!linha) throw erro(404, 'Algum dos itens não pertence a esta conta');
       const q = Number(x.quantidade);
-      if (!Number.isFinite(q) || q <= 0 || q > Number(linha.quantidade) || Math.round(q * 100) !== q * 100) throw erro(400, 'Quantidade inválida');
+      if (!Number.isFinite(q) || q <= 0 || q > Number(linha.quantidade) || Math.abs(Math.round(q * 1000) - q * 1000) > 1e-6) throw erro(400, 'Quantidade inválida'); // até ao grama (venda ao peso)
       mover.set(linha.id, (mover.get(linha.id) || 0) + q);
       if (mover.get(linha.id) > Number(linha.quantidade)) throw erro(400, 'Quantidade inválida');
     }

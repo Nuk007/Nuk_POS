@@ -86,7 +86,7 @@ async function exigirPin(db, tenantId, clienteId, pin) {
 async function cardapio({ tenantId }) {
   const r = await pool.query(
     `SELECT id, nome, descricao, preco, categoria, disponivel FROM produtos
-     WHERE disponivel = true AND ativo = true AND ($1::uuid IS NULL OR tenant_id = $1) ORDER BY categoria, nome`, [T(tenantId)]);
+     WHERE disponivel = true AND ativo = true AND vendido_ao_peso = false AND ($1::uuid IS NULL OR tenant_id = $1) ORDER BY categoria, nome`, [T(tenantId)]); // ao peso: só ao balcão
   return { produtos: r.rows };
 }
 
@@ -223,8 +223,10 @@ async function criarPedidoRestaurante({ tenantId, itens, mesa_ref, observacoes, 
     const precosSvc = require('./precos.service');
     const nivel = await precosSvc.precosAplicaveis(db, { tenantId: T(tenantId), origem: 'REMOTA' }); // nível de preço / campanha em vigor
     for (const it of itens) {
-      const p = await db.query(`SELECT id, nome, preco, categoria FROM produtos WHERE id = $1 AND disponivel = true AND ativo = true AND ($2::uuid IS NULL OR tenant_id = $2)`, [it.produto_id, T(tenantId)]);
+      const p = await db.query(`SELECT id, nome, preco, categoria, vendido_ao_peso FROM produtos WHERE id = $1 AND disponivel = true AND ativo = true AND ($2::uuid IS NULL OR tenant_id = $2)`, [it.produto_id, T(tenantId)]);
       if (!p.rows[0]) throw erro(400, 'Um dos produtos não existe ou não está disponível');
+      // Produto vendido ao peso: só ao balcão, depois de pesado (21/11/2026)
+      if (p.rows[0].vendido_ao_peso) throw erro(400, `${p.rows[0].nome} vende-se ao peso: peça-o ao balcão`, { codigo: 'PRODUTO_AO_PESO' });
       // Regra do dono (20/11/2026): a conta da mesa não inclui nada do quarto
       if (mesa_ref && String(p.rows[0].categoria || '').toUpperCase() === 'SERVICO_QUARTO') throw erro(400, 'Serviços de quarto não se pedem para uma mesa', { codigo: 'MESA_SEM_QUARTO' });
       const preco = precosSvc.precoFinal(nivel, p.rows[0].id, p.rows[0].preco);

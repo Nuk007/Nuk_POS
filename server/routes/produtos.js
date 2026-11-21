@@ -1,88 +1,89 @@
 'use strict';
 const express = require('express');
 const { exigirModulo } = require('../middleware/modulos');
-const { v4: uuidv4 } = require('uuid');
-const listas = require('../services/listas.service');
 const router = express.Router();
-const { pool } = require('../db');
-const { authMiddleware, requerNivel, isUUID } = require('../middleware/auth');
+const { authMiddleware, requerNivel, validarUUID, isUUID } = require('../middleware/auth');
 
-// GET /api/produtos
-router.get('/', authMiddleware, async (req, res) => {
-  const tenantId = req.tenantId;
-  try {
-    const r = await pool.query(
-      `SELECT * FROM produtos WHERE ($1::uuid IS NULL OR tenant_id = $1) ORDER BY categoria, nome`,
-      [tenantId || null]
-    );
-    res.json(r.rows);
-  } catch (e) {
-    res.status(500).json({ erro: 'Erro interno do servidor' });
-  }
+const svc = require('../services/produtos.service');
+const erroHttp = (res, next) => e => (e.statusCode ? res.status(e.statusCode).json({ erro: e.message }) : next(e));
+// Campos aceites do corpo (o tenant vem sempre do token)
+const CAMPOS = ['nome', 'descricao', 'preco', 'categoria', 'disponivel', 'ativo', 'vendido_ao_peso', 'codigo_barras'];
+const corpo = b => Object.fromEntries(CAMPOS.filter(k => b && b[k] !== undefined).map(k => [k, b[k]]));
+
+/**
+ * @openapi
+ * /api/produtos:
+ *   get:
+ *     summary: Ementa do estabelecimento (inclui vendido_ao_peso e codigo_barras)
+ *     tags: [Produtos]
+ *     security: [{ bearerAuth: [] }]
+ *     responses: { 200: { description: Lista de produtos } }
+ *   post:
+ *     summary: Cria um produto (só ADMIN, no painel de Configurações). vendido_ao_peso = preço por kg
+ *     tags: [Produtos]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody: { content: { application/json: { schema: { type: object, required: [nome, preco, categoria], properties: { nome: { type: string }, preco: { type: number }, categoria: { type: string }, vendido_ao_peso: { type: boolean }, codigo_barras: { type: string, nullable: true } } } } } }
+ *     responses: { 201: { description: Produto criado }, 400: { description: Dados inválidos }, 409: { description: Código de barras já usado } }
+ */
+router.get('/', authMiddleware, async (req, res, next) => {
+  try { res.json(await svc.listar({ tenantId: req.tenantId })); } catch (e) { erroHttp(res, next)(e); }
 });
 
-// POST /api/produtos
-router.post('/', authMiddleware, requerNivel(['ADMIN']), exigirModulo('configuracoes'), async (req, res) => {
-  const { nome, descricao, preco, categoria, disponivel } = req.body;
-  if (!nome || preco === undefined) {
-    return res.status(400).json({ erro: 'nome e preco são obrigatórios' });
-  }
-  const precoNum = parseFloat(preco);
-  if (isNaN(precoNum) || precoNum < 0) {
-    return res.status(400).json({ erro: 'preco inválido' });
-  }
-  const tenantId = req.tenantId;
-  try {
-    await listas.exigirValor(tenantId, 'CATEGORIA_PRODUTO', categoria, 'Categoria');
-    const r = await pool.query(
-      `INSERT INTO produtos (id, tenant_id, nome, descricao, preco, categoria, disponivel, ativo, criado_em)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, true, NOW())
-       RETURNING *`,
-      [uuidv4(), tenantId || null, nome.trim(), descricao || null,
-       precoNum, categoria || null, disponivel !== false]
-    );
-    res.status(201).json(r.rows[0]);
-  } catch (e) {
-    if (e.statusCode) return res.status(e.statusCode).json({ erro: e.message });
-    res.status(500).json({ erro: 'Erro interno do servidor' });
-  }
+router.post('/', authMiddleware, requerNivel(['ADMIN']), exigirModulo('configuracoes'), async (req, res, next) => {
+  try { res.status(201).json(await svc.criar({ ...corpo(req.body), tenantId: req.tenantId })); } catch (e) { erroHttp(res, next)(e); }
 });
 
-// PUT /api/produtos/:id
-router.put('/:id', authMiddleware, requerNivel(['ADMIN']), exigirModulo('configuracoes'), async (req, res) => {
-  const { id } = req.params;
-  if (!isUUID(id)) return res.status(400).json({ erro: 'id inválido' });
-  const { nome, descricao, preco, categoria, disponivel, ativo } = req.body;
-  const tenantId = req.tenantId;
+/**
+ * @openapi
+ * /api/produtos/etiquetas.pdf:
+ *   get:
+ *     summary: Folha A4 de etiquetas (24 por folha, 70 × 37 mm) com nome, preço e código de barras (só ADMIN). Produtos sem código recebem um EAN-13 interno
+ *     tags: [Produtos]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ in: query, name: itens, required: true, schema: { type: string }, description: "id:copias separados por vírgulas (até 200 produtos, 100 cópias cada, 1000 etiquetas)" }]
+ *     responses: { 200: { description: PDF }, 400: { description: Lista inválida }, 404: { description: Produto de outro estabelecimento } }
+ */
+router.get('/etiquetas.pdf', authMiddleware, requerNivel(['ADMIN']), exigirModulo('configuracoes'), async (req, res, next) => {
   try {
-    if (categoria) {
-      const at = await pool.query(`SELECT categoria FROM produtos WHERE id=$1 AND ($2::uuid IS NULL OR tenant_id=$2)`, [id, tenantId || null]);
-      if (!at.rows[0] || at.rows[0].categoria !== categoria) await listas.exigirValor(tenantId, 'CATEGORIA_PRODUTO', categoria, 'Categoria');
-    }
-    const r = await pool.query(
-      `UPDATE produtos SET
-         nome = COALESCE($1, nome),
-         descricao = COALESCE($2, descricao),
-         preco = COALESCE($3, preco),
-         categoria = COALESCE($4, categoria),
-         disponivel = COALESCE($5, disponivel),
-         ativo = COALESCE($6, ativo),
-         atualizado_em = NOW()
-       WHERE id = $7 AND ($8::uuid IS NULL OR tenant_id = $8)
-       RETURNING *`,
-      [nome || null, descricao || null,
-       preco !== undefined ? parseFloat(preco) : null,
-       categoria || null,
-       disponivel !== undefined ? disponivel : null,
-       ativo !== undefined ? ativo : null,
-       id, tenantId || null]
-    );
-    if (!r.rows[0]) return res.status(404).json({ erro: 'Produto não encontrado' });
-    res.json(r.rows[0]);
-  } catch (e) {
-    if (e.statusCode) return res.status(e.statusCode).json({ erro: e.message });
-    res.status(500).json({ erro: 'Erro interno do servidor' });
-  }
+    const pdf = await require('../services/etiquetas.service').folhaEtiquetas({ tenantId: req.tenantId, itens: req.query.itens });
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': 'attachment; filename="etiquetas.pdf"' }).send(pdf);
+  } catch (e) { erroHttp(res, next)(e); }
+});
+
+/**
+ * @openapi
+ * /api/produtos/codigo/{codigo}:
+ *   get:
+ *     summary: Produto disponível pelo código de barras (leitor no painel de venda)
+ *     tags: [Produtos]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ in: path, name: codigo, required: true, schema: { type: string } }]
+ *     responses: { 200: { description: Produto }, 404: { description: Nenhum produto com esse código }, 409: { description: Produto indisponível } }
+ */
+router.get('/codigo/:codigo', authMiddleware, async (req, res, next) => {
+  try { res.json(await svc.porCodigo({ tenantId: req.tenantId, codigo: req.params.codigo })); } catch (e) { erroHttp(res, next)(e); }
+});
+
+/**
+ * @openapi
+ * /api/produtos/{id}:
+ *   put:
+ *     summary: Edita um produto (só ADMIN). codigo_barras null ou vazio tira o código
+ *     tags: [Produtos]
+ *     security: [{ bearerAuth: [] }]
+ *     responses: { 200: { description: Produto actualizado }, 404: { description: Não encontrado }, 409: { description: Código de barras já usado } }
+ * /api/produtos/{id}/codigo-barras/gerar:
+ *   post:
+ *     summary: Gera um EAN-13 interno (começa por 2) para um produto sem código (só ADMIN)
+ *     tags: [Produtos]
+ *     security: [{ bearerAuth: [] }]
+ *     responses: { 200: { description: Produto com o código }, 409: { description: O produto já tem código } }
+ */
+router.put('/:id', authMiddleware, requerNivel(['ADMIN']), exigirModulo('configuracoes'), validarUUID('id'), async (req, res, next) => {
+  try { res.json(await svc.actualizar({ ...corpo(req.body), id: req.params.id, tenantId: req.tenantId })); } catch (e) { erroHttp(res, next)(e); }
+});
+router.post('/:id/codigo-barras/gerar', authMiddleware, requerNivel(['ADMIN']), exigirModulo('configuracoes'), validarUUID('id'), async (req, res, next) => {
+  try { res.json(await svc.gerarCodigo({ id: req.params.id, tenantId: req.tenantId })); } catch (e) { erroHttp(res, next)(e); }
 });
 
 /**

@@ -172,7 +172,7 @@ async function modulo_pedidos(el) {
 }
 
 function renderPedidoCard(p) {
-  const itensTexto = (p.itens || []).slice(0, 3).map(i => `${i.quantidade}x ${i.produto_nome}`).join(', ');
+  const itensTexto = (p.itens || []).slice(0, 3).map(i => `${fmtQtd(i.quantidade)} ${i.produto_nome}`).join(', ');
   const acoes = p.status === 'ABERTO' ? `
     <button class="btn-secundario" style="padding:.35rem .7rem;font-size:.8rem" data-on-click="mudarStatusPedido('${p.id}','EM_PREPARO')">Em Preparo</button>
     <button class="btn-perigo" style="padding:.35rem .7rem;font-size:.8rem" data-on-click="pedirCancelarPedido('${p.id}')">Cancelar</button>` :

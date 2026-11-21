@@ -8,7 +8,7 @@
  * Linha do documento: { t: texto, n?: negrito, g?: tamanho duplo, a?: 'c'|'d' (centro/direita), sep?: true }.
  */
 const { pool } = require('../db');
-const { withTx, erro } = require('./shared');
+const { withTx, erro, textoQtd } = require('./shared');
 const cozinha = require('./cozinha.service');
 const { tenantInfo } = require('./documentos.service');
 
@@ -47,7 +47,7 @@ function documentoPreparacao(p, posto, w, reimpressao = false) {
   if (p.funcionario || p.cliente) L.push({ t: [p.funcionario, p.cliente].filter(Boolean).join(' · ').slice(0, w) });
   L.push({ sep: true });
   for (const i of p.itens) {
-    partir(`${i.quantidade}x ${i.produto}`, Math.floor(w / 2)).forEach(t => L.push({ t, g: true }));
+    partir(`${textoQtd(i.quantidade)} ${i.produto}`, Math.floor(w / 2)).forEach(t => L.push({ t, g: true }));
     if (i.observacoes) partir(`> ${i.observacoes}`, w).forEach(t => L.push({ t, n: true }));
   }
   if (p.observacoes) { L.push({ sep: true }); partir(`Obs.: ${p.observacoes}`, w).forEach(t => L.push({ t, n: true })); }

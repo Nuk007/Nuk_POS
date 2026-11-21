@@ -10,6 +10,7 @@ const { buildWhere, withTx, validarChaveIdempotencia } = require('./shared');
 const stock = require('./stock.service');
 const precos = require('./precos.service');
 const fluxos = require('./fluxos-venda.service');
+const produtosSvc = require('./produtos.service');
 const ocupacao = require('./ocupacao.service');
 
 /**
@@ -186,7 +187,7 @@ async function criarPedido({ tenantId, userId, mesa_id, quarto_id, cliente_id, i
       if (q.rows[0].status !== 'OCUPADO') { const err = new Error('Só se regista consumo num quarto ocupado'); err.statusCode = 409; throw err; }
     }
 
-    let total = 0;
+    let totalCent = 0;
     const itensDetalhes = [];
     // Nível de preço em vigor (hora de Luanda, fluxo de venda): sem tabela ou sem preço nela = preço base
     // pedido sem internet: os preços da hora em que foi feito (campanha/happy hour já acabada não muda o valor)
@@ -195,7 +196,7 @@ async function criarPedido({ tenantId, userId, mesa_id, quarto_id, cliente_id, i
     const regraFluxo = fluxos.FLUXOS[origem] ? await fluxos.regra(client, tenantId, origem) : null;
     for (const item of itens) {
       const pr = await client.query(
-        `SELECT preco, categoria FROM produtos
+        `SELECT nome, preco, categoria, vendido_ao_peso FROM produtos
          WHERE id = $1 AND disponivel = true AND ativo = true
            AND ($2::uuid IS NULL OR tenant_id = $2)`,
         [item.produto_id, tenantId || null]
@@ -214,16 +215,18 @@ async function criarPedido({ tenantId, userId, mesa_id, quarto_id, cliente_id, i
       if (origem === 'MESA' && cat === 'SERVICO_QUARTO') {
         const err = new Error('A conta da mesa não pode incluir serviços de quarto'); err.statusCode = 400; err.codigo = 'MESA_SEM_QUARTO'; throw err;
       }
+      // Quantidade: inteira (1–1000) ou, nos produtos vendidos ao peso, kg ao grama (21/11/2026)
+      const quantidade = produtosSvc.validarQuantidade(item.quantidade, pr.rows[0].vendido_ao_peso, pr.rows[0].nome);
       const preco = precos.precoFinal(nivel, item.produto_id, pr.rows[0].preco);
-      total += preco * item.quantidade;
-      itensDetalhes.push({ ...item, preco_unitario: preco });
+      totalCent += Math.round(preco * quantidade * 100); // cada linha arredondada ao cêntimo, como no documento
+      itensDetalhes.push({ ...item, quantidade, preco_unitario: preco });
     }
 
     const pedidoR = await client.query(
       // Lazer e Loja não passam pela cozinha: a venda nasce FECHADA e fica a aguardar recebimento no caixa
       `INSERT INTO pedidos (tenant_id, mesa_id, quarto_id, cliente_id, funcionario_id, total, observacoes, origem, validado_em, validado_por, status, tabela_preco_id, chave_idempotencia, registado_offline_em)
        VALUES ($1, $2, $9, $3, $4, $5, $6, $7, NOW(), $4, $8::text, $10, $11, $12) RETURNING *`,
-      [tenantId || null, mesa_id || null, cliente_id || null, userId, Math.round(total * 100) / 100, observacoes || null, origem, NASCE_FECHADO.has(origem) ? 'FECHADO' : 'ABERTO', quarto_id || null, nivel.tabela ? nivel.tabela.id : null, chave, offlineEm]
+      [tenantId || null, mesa_id || null, cliente_id || null, userId, totalCent / 100, observacoes || null, origem, NASCE_FECHADO.has(origem) ? 'FECHADO' : 'ABERTO', quarto_id || null, nivel.tabela ? nivel.tabela.id : null, chave, offlineEm]
     );
     const pedido = pedidoR.rows[0];
 

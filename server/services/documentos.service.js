@@ -9,7 +9,7 @@
 const path = require('path');
 const PDFDocument = require('pdfkit');
 const { pool } = require('../db');
-const { erro } = require('./shared');
+const { erro, textoQtd } = require('./shared');
 
 const LOGO = path.join(__dirname, '..', '..', 'public', 'img', 'logo-nukpos.png');
 const LOGO_RATIO = 405 / 597;
@@ -84,7 +84,7 @@ async function talaoPedido({ tenantId, pedidoId }) {
     doc.y = Math.max(doc.y, y + 11);
   };
   doc.moveTo(M, doc.y).lineTo(W - M, doc.y).dash(2, { space: 2 }).stroke('#999').undash(); doc.moveDown(0.4);
-  for (const i of itens) linha(`${Number(i.quantidade)}x ${i.nome}`, kz(Number(i.quantidade) * Number(i.preco_unitario)));
+  for (const i of itens) linha(`${textoQtd(i.quantidade)} ${i.nome}`, kz(Number(i.quantidade) * Number(i.preco_unitario)));
   doc.moveDown(0.2); doc.moveTo(M, doc.y).lineTo(W - M, doc.y).dash(2, { space: 2 }).stroke('#999').undash(); doc.moveDown(0.4);
   const desc = Number(pedido.desconto) || 0, total = Number(pedido.total) || 0;
   if (desc > 0) { linha('Subtotal', kz(total + desc)); linha('Desconto', `- ${kz(desc)}`); }

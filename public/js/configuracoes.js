@@ -187,6 +187,7 @@ async function modulo_configuracoes(el) {
         <div class="toolbar" style="margin-bottom:.5rem">
           <div class="card-titulo">EMENTA (PRODUTOS, PREÇOS E RECEITAS)</div>
           <button class="btn-primario" data-on-click="modalNovoProduto()">+ Novo Produto</button>
+          <button class="btn-secundario" data-on-click="modalEtiquetas()" title="Etiquetas com preço e código de barras">🏷️ Etiquetas</button>
           <input type="text" class="input-pesquisa" placeholder="Pesquisar produto..." data-on-input="filtrarProdutosTabela(this.value)">
         </div>
         ${htmlEmentaProdutos(produtos, true)}

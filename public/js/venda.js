@@ -68,6 +68,7 @@ function htmlPainelVenda() {
     </div>
     <div class="venda-layout">
       <div class="venda-produtos">
+        <div class="campo" style="margin-bottom:.5rem"><input type="text" id="venda-codigo" inputmode="numeric" autocomplete="off" maxlength="32" placeholder="▮▯▮ Ler código de barras (leitor ou escrever + Enter)" data-on-change="vendaCodigo(this.value)"></div>
         <div id="venda-categorias" class="venda-categorias"></div>
         <div id="venda-grelha" class="venda-grelha"></div>
       </div>
@@ -94,8 +95,8 @@ function vendaRender() {
         const n = (v.carrinho.find(c => c.produto_id === p.id) || {}).quantidade || 0;
         return `<button class="venda-produto ${n ? 'no-carrinho' : ''}" data-on-click="vendaAdd(${i})"${p.prato_do_dia ? ' style="border-color:var(--c-primary,#E8650A)"' : ''}>
           <span class="venda-produto-nome">${p.prato_do_dia ? '⭐ ' : ''}${esc(p.nome)}${p.prato_do_dia ? '<span class="muted texto-pequeno" style="display:block">Prato do dia</span>' : ''}</span>
-          <span class="venda-produto-preco">${p.preco_base !== undefined && Number(p.preco_base) !== Number(p.preco) ? `<s class="muted texto-pequeno">${formatarMoeda(p.preco_base)}</s> ` : ''}${formatarMoeda(p.preco)}</span>
-          ${n ? `<span class="venda-produto-qtd">${n}</span>` : ''}
+          <span class="venda-produto-preco">${p.preco_base !== undefined && Number(p.preco_base) !== Number(p.preco) ? `<s class="muted texto-pequeno">${formatarMoeda(p.preco_base)}</s> ` : ''}${formatarMoeda(p.preco)}${p.vendido_ao_peso ? '<span class="muted texto-pequeno"> /kg ⚖️</span>' : ''}</span>
+          ${n ? `<span class="venda-produto-qtd">${p.vendido_ao_peso ? '⚖️' : n}</span>` : ''}
         </button>`;
       }).join('')
     : `<div class="muted">${v.origem === 'BALCAO' && !v.produtos.length && v.catsBalcao ? `O Balcão só vende ${esc(v.catsBalcao.map(rotuloCat).join(', '))}${balcaoVendeQuartos() ? ' e a estadia dos quartos' : ''}. Ainda não há produtos destas categorias: crie-os em Configurações → Ementa, ou mude as categorias em Configurações → «O que cada fluxo vende».` : v.catsFluxo && !v.produtos.length ? `Ainda não há produtos para ${ROTULO_ORIGEM[v.origem]}. Crie-os em Configurações → Ementa com a categoria ${esc(v.catsFluxo.map(rotuloCat).join(' ou '))}, ou mude o que se vende em Configurações → «O que cada fluxo vende».` : 'Sem produtos nesta categoria.'}</div>`;
@@ -108,25 +109,38 @@ function vendaCategoria(i) {
 }
 function vendaAdd(i) {
   const v = window._venda; const p = v.produtos[i]; if (!p) return;
+  if (p.vendido_ao_peso) { pesoPedir(i); return; } // preço por kg: pede o peso (balanca.js)
   const ex = v.carrinho.find(c => c.produto_id === p.id);
   if (ex) ex.quantidade++; else v.carrinho.push({ produto_id: p.id, nome: p.nome, preco: parseFloat(p.preco), quantidade: 1 });
   vendaRender();
 }
 function vendaMenos(i) { const c = window._venda.carrinho[i]; if (c) { c.quantidade--; if (c.quantidade < 1) window._venda.carrinho.splice(i, 1); vendaRender(); } }
 function vendaMais(i) { const c = window._venda.carrinho[i]; if (c) { c.quantidade++; vendaRender(); } }
+function vendaRemover(i) { window._venda.carrinho.splice(i, 1); vendaRender(); }
+/** Volta a pesar uma linha ao peso do carrinho. */
+function vendaRepesar(i) {
+  const v = window._venda, c = v.carrinho[i]; if (!c) return;
+  const pi = v.produtos.findIndex(p => p.id === c.produto_id);
+  if (pi >= 0) pesoPedir(pi, i);
+}
+const valorLinha = c => Math.round(c.preco * c.quantidade * 100) / 100; // cada linha ao cêntimo, como o servidor
 
 function vendaRenderCarrinho() {
   const v = window._venda; const itens = document.getElementById('venda-itens'); const tot = document.getElementById('venda-total');
   if (!v.carrinho.length) { itens.innerHTML = '<span class="muted texto-pequeno">Toque nos botões para adicionar</span>'; tot.textContent = ''; return; }
   let total = 0;
   itens.innerHTML = v.carrinho.map((c, i) => {
-    total += c.preco * c.quantidade;
+    total += Math.round(valorLinha(c) * 100);
+    const qtd = c.ao_peso
+      ? `<button class="btn-secundario venda-qtd" data-on-click="vendaRepesar(${i})" title="Pesar outra vez">⚖️</button><b>${fmtQtd(c.quantidade)}</b>
+      <button class="btn-secundario venda-qtd" data-on-click="vendaRemover(${i})" title="Tirar">✕</button>`
+      : `<button class="btn-secundario venda-qtd" data-on-click="vendaMenos(${i})">−</button><b>${c.quantidade}</b>
+      <button class="btn-secundario venda-qtd" data-on-click="vendaMais(${i})">+</button>`;
     return `<div class="venda-linha"><span class="venda-linha-nome">${esc(c.nome)}</span>
-      <button class="btn-secundario venda-qtd" data-on-click="vendaMenos(${i})">−</button><b>${c.quantidade}</b>
-      <button class="btn-secundario venda-qtd" data-on-click="vendaMais(${i})">+</button>
-      <span class="texto-primario venda-linha-valor">${formatarMoeda(c.preco * c.quantidade)}</span></div>`;
+      ${qtd}
+      <span class="texto-primario venda-linha-valor">${formatarMoeda(valorLinha(c))}</span></div>`;
   }).join('');
-  tot.textContent = 'Total: ' + formatarMoeda(total);
+  tot.textContent = 'Total: ' + formatarMoeda(total / 100);
 }
 
 function chaveEnvio() {
@@ -249,7 +263,7 @@ function htmlPedidoRemoto(p) {
   const pago = parseFloat(p.nukcoin_pago) > 0 ? `<span class="status-badge status-LIVRE">Pago com Nuk-Coin</span>` : '';
   return `<div class="card mb-2" style="max-width:640px">
     <div class="toolbar" style="margin-bottom:.4rem"><b>${quem}</b>${p.mesa_numero ? `<span>Mesa ${esc(p.mesa_numero)}</span>` : ''}${pago}</div>
-    ${(p.itens || []).map(i => `<div class="texto-pequeno">${i.quantidade}× ${esc(i.produto_nome)}</div>`).join('')}
+    ${(p.itens || []).map(i => `<div class="texto-pequeno">${fmtQtd(i.quantidade)} ${esc(i.produto_nome)}</div>`).join('')}
     ${p.observacoes ? `<div class="muted texto-pequeno" style="margin-top:.3rem">Obs.: ${esc(p.observacoes)}</div>` : ''}
     <div style="text-align:right;font-weight:700;margin:.4rem 0">${formatarMoeda(p.total)}</div>
     <div style="display:flex;gap:.5rem">

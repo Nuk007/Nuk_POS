@@ -23,7 +23,7 @@ function carregar(utilizador = { nivel_acesso: 'ADMIN' }) {
     NUK: { utilizador, token: 't' }, console, window: {}, setTimeout, Promise,
     document: { getElementById: el, querySelectorAll: () => [] },
     api: async (m, url, corpo) => { chamadas.push([m, url, corpo]); return url in dados ? dados[url] : {}; },
-    formatarMoeda: v => String(v), toast() {}, abrirModal: (t, h) => { ctx._modal = h; }, fecharModal() {}, carregarModulo() {}, badgeStatus: s => s,
+    fmtQtd: q => (Number.isInteger(Number(q)) ? `${Number(q)}×` : `${q} kg`), formatarMoeda: v => String(v), toast() {}, abrirModal: (t, h) => { ctx._modal = h; }, fecharModal() {}, carregarModulo() {}, badgeStatus: s => s,
     esc: v => String(v ?? '').replace(/'/g, '&#39;'),
   };
   ctx._els = els;

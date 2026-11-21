@@ -31,7 +31,7 @@ function carregar(utilizador) {
   const ctx = {
     NUK: { utilizador, token: 't' }, console, window: {}, document: { getElementById: () => ({ value: '' }), querySelectorAll: () => [] },
     api: async (m, url) => (url in dados ? dados[url] : []),
-    formatarMoeda: v => String(v), badgeStatus: s => s, toast() {}, abrirModal() {}, fecharModal() {}, carregarModulo() {},
+    fmtQtd: q => `${q}×`, formatarMoeda: v => String(v), badgeStatus: s => s, toast() {}, abrirModal() {}, fecharModal() {}, carregarModulo() {},
     esc: v => String(v ?? ''), setTimeout, Promise,
   };
   vm.createContext(ctx);

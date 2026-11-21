@@ -19,11 +19,11 @@ function htmlEmentaProdutos(produtos, gerir) {
             <tbody>
               ${prods.map(p => `
                 <tr>
-                  <td>${p.prato_do_dia ? '⭐ ' : ''}${esc(p.nome)}${p.descricao ? `<div class="muted texto-pequeno">${esc(p.descricao)}</div>` : ''}${p.prato_do_dia ? '<div class="texto-pequeno" style="color:var(--c-primary,#E8650A)">Prato do dia</div>' : ''}</td>
-                  <td class="produto-preco">${formatarMoeda(p.preco)}</td>
+                  <td>${p.prato_do_dia ? '⭐ ' : ''}${esc(p.nome)}${p.vendido_ao_peso ? ' <span class="status-badge status-EM_PREPARO" title="Vendido ao peso">⚖️ kg</span>' : ''}${p.descricao ? `<div class="muted texto-pequeno">${esc(p.descricao)}</div>` : ''}${gerir && p.codigo_barras ? `<div class="muted texto-pequeno">▮▯▮ ${esc(p.codigo_barras)}</div>` : ''}${p.prato_do_dia ? '<div class="texto-pequeno" style="color:var(--c-primary,#E8650A)">Prato do dia</div>' : ''}</td>
+                  <td class="produto-preco">${formatarMoeda(p.preco)}${p.vendido_ao_peso ? '<span class="muted texto-pequeno"> / kg</span>' : ''}</td>
                   <td>${p.disponivel ? '<span class="status-badge status-LIVRE">Disponível</span>' : '<span class="status-badge status-FECHADO">Indisponível</span>'}</td>
                   ${gerir ? `<td><div class="row-acoes">
-                    <button class="btn-secundario" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="modalEditarProduto('${p.id}','${p.nome.replace(/'/g,"\\'")}',${p.preco},'${p.categoria}',${p.disponivel})">Editar</button>
+                    <button class="btn-secundario" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="modalEditarProduto('${esc(p.id)}')">Editar</button>
                     <button class="btn-secundario" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="modalIngredientes('${p.id}')">Stock</button>
                     <button class="btn-secundario" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="alternarPratoDoDia('${p.id}',${!!p.prato_do_dia})">${p.prato_do_dia ? 'Tirar do dia' : '⭐ Prato do dia'}</button>
                     <button class="btn-${p.disponivel ? 'perigo' : 'sucesso'}" style="padding:.3rem .6rem;font-size:.78rem" data-on-click="toggleDisponibilidade('${p.id}',${p.disponivel})">${p.disponivel ? 'Ocultar' : 'Mostrar'}</button>
@@ -103,6 +103,31 @@ async function guardarIngredientes(produtoId) {
   } catch (e) { toast(e.message, 'erro'); }
 }
 
+// Venda ao peso e código de barras (21/11/2026): o preço passa a ser por kg; o código serve o leitor e as etiquetas
+function htmlCamposPesoCodigo(px, p) {
+  return `
+    <div class="campo"><label style="display:flex;gap:.5rem;align-items:center;cursor:pointer"><input type="checkbox" id="${px}-peso" style="width:auto;margin:0"${p.vendido_ao_peso ? ' checked' : ''}> ⚖️ Vendido ao peso (o preço é por kg; pesa-se ao vender)</label></div>
+    <div class="campo"><label>Código de barras</label>
+      <div style="display:flex;gap:.4rem"><input type="text" id="${px}-codigo" maxlength="32" value="${esc(p.codigo_barras || '')}" placeholder="Leia com o leitor ou escreva (opcional)">
+      ${p.id && !p.codigo_barras ? `<button type="button" class="btn-secundario" data-on-click="gerarCodigoProduto('${esc(p.id)}')" title="Gera um código interno para imprimir em etiqueta">Gerar</button>` : ''}</div>
+    </div>`;
+}
+function lerCamposPesoCodigo(px) {
+  const peso = document.getElementById(`${px}-peso`), cod = document.getElementById(`${px}-codigo`);
+  const out = {};
+  if (peso) out.vendido_ao_peso = !!peso.checked;
+  if (cod) out.codigo_barras = String(cod.value || '').trim() || null;
+  return out;
+}
+async function gerarCodigoProduto(id) {
+  try {
+    const p = await api('POST', `/produtos/${id}/codigo-barras/gerar`);
+    const cod = document.getElementById('ep-codigo'); if (cod) cod.value = p.codigo_barras;
+    const lista = window._produtosCfg || []; const i = lista.findIndex(x => x.id === id); if (i >= 0) lista[i] = p;
+    toast(`Código ${p.codigo_barras} criado`, 'sucesso');
+  } catch (e) { toast(e.message, 'erro'); }
+}
+
 async function modalNovoProduto() {
   const cats = await opcoesLista('CATEGORIA_PRODUTO');
   abrirModal('Novo Produto', `
@@ -113,6 +138,7 @@ async function modalNovoProduto() {
       </select>
     </div>
     <div class="campo"><label>Preço (Kz)</label><input type="number" id="np-preco" placeholder="0" min="0"></div>
+    ${htmlCamposPesoCodigo('np', {})}
     <div class="campo"><label>Descrição</label><textarea id="np-desc" rows="2" placeholder="Opcional"></textarea></div>
     <button class="btn-primario btn-bloco" data-on-click="guardarNovoProduto()">Guardar</button>
   `);
@@ -125,23 +151,27 @@ async function guardarNovoProduto() {
   const descricao = document.getElementById('np-desc').value;
   if (!nome || !preco) { toast('Preencha nome e preço', 'erro'); return; }
   try {
-    await api('POST', '/produtos', { nome, categoria, preco: parseFloat(preco), descricao });
+    await api('POST', '/produtos', { nome, categoria, preco: parseFloat(preco), descricao, ...lerCamposPesoCodigo('np') });
     toast('Produto criado!', 'sucesso');
     fecharModal();
     carregarModulo('configuracoes');
   } catch (e) { toast(e.message, 'erro'); }
 }
 
-async function modalEditarProduto(id, nome, preco, categoria, disponivel) {
+async function modalEditarProduto(id) {
+  const p = (window._produtosCfg || []).find(x => x.id === id);
+  if (!p) { toast('Produto não encontrado: actualize o ecrã', 'erro'); return; }
+  const { nome, preco, categoria, disponivel } = p;
   const cats = await opcoesLista('CATEGORIA_PRODUTO', categoria);
   abrirModal('Editar Produto', `
-    <div class="campo"><label>Nome</label><input type="text" id="ep-nome" value="${nome}"></div>
+    <div class="campo"><label>Nome</label><input type="text" id="ep-nome" value="${esc(nome)}"></div>
     <div class="campo"><label>Categoria</label>
       <select id="ep-cat">
         ${htmlOpcoes(cats, categoria)}
       </select>
     </div>
-    <div class="campo"><label>Preço (Kz)</label><input type="number" id="ep-preco" value="${preco}" min="0"></div>
+    <div class="campo"><label>Preço (Kz)</label><input type="number" id="ep-preco" value="${esc(preco)}" min="0"></div>
+    ${htmlCamposPesoCodigo('ep', p)}
     <div class="campo"><label>Disponível</label>
       <select id="ep-disp"><option value="true" ${disponivel ? 'selected' : ''}>Sim</option><option value="false" ${!disponivel ? 'selected' : ''}>Não</option></select>
     </div>
@@ -155,7 +185,7 @@ async function salvarEdicaoProduto(id) {
   const preco = parseFloat(document.getElementById('ep-preco').value);
   const disponivel = document.getElementById('ep-disp').value === 'true';
   try {
-    await api('PUT', `/produtos/${id}`, { nome, categoria, preco, disponivel });
+    await api('PUT', `/produtos/${id}`, { nome, categoria, preco, disponivel, ...lerCamposPesoCodigo('ep') });
     toast('Produto actualizado!', 'sucesso');
     fecharModal();
     carregarModulo('configuracoes');

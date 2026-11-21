@@ -12,7 +12,7 @@ function carregar(dados) {
     console, window: {}, setTimeout, Promise, Intl, Date,
     document: { getElementById: el, querySelectorAll: () => [] },
     api: async (m, url, corpo) => { chamadas.push([m, url, corpo]); return url in dados ? dados[url] : {}; },
-    formatarMoeda: v => `${v} Kz`, toast: (...a) => { ctx._toast = a; }, abrirModal: (t, h) => { ctx._modal = h; }, fecharModal() {},
+    fmtQtd: q => (Number.isInteger(Number(q)) ? `${Number(q)}×` : `${q} kg`), formatarMoeda: v => `${v} Kz`, toast: (...a) => { ctx._toast = a; }, abrirModal: (t, h) => { ctx._modal = h; }, fecharModal() {},
     carregarModulo: m => { ctx._modulo = m; }, esc: v => String(v ?? '').replace(/'/g, '&#39;'),
     NUKCOIN_VALORES: [5000, 10000],
   };
