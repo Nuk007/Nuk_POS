@@ -29,6 +29,8 @@ async function categoriasDoFluxo(origem) {
 
 // ── Painel de botões ────────────────────────────────────────
 async function abrirPainelVenda(el, { origem, mesa = null, cliente = null, quarto = null }) {
+  // Mesa, quarto e Take Away abrem o painel por cima da lista do módulo: «voltar» regressa à lista (navegacao.js)
+  if (['MESA', 'QUARTO', 'TAKEAWAY'].includes(origem) && typeof navSubEcra === 'function') navSubEcra('painel');
   el.innerHTML = '<div class="loading-spinner">A carregar...</div>';
   try {
     let produtos = await api('GET', '/produtos?disponivel=true') || [];

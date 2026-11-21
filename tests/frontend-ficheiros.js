@@ -12,7 +12,7 @@ const MODULOS = ['modulos.js', 'mesas-quartos.js', 'produtos-stock.js', 'finance
 /** Ficheiros que foram divididos a 21/11/2026, pela ordem em que as páginas os carregam. */
 const GRUPOS = {
   modulos: MODULOS,
-  nukpos: ['nukpos.js', 'nukpos-ui.js'],
+  nukpos: ['nukpos.js', 'nukpos-ui.js', 'navegacao.js'],
   caixa: ['caixa.js', 'caixa-receber.js', 'caixa-contas.js'],
   cliente: ['cliente.js', 'cliente-pedidos.js'],
   superadmin: ['superadmin.js', 'superadmin-tenants.js'],

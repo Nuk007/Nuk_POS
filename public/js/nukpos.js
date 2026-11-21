@@ -87,6 +87,7 @@ document.getElementById('form-login').addEventListener('submit', async (e) => {
 });
 
 function logout() {
+  if (typeof navParar === 'function') navParar();
   NUK.token = null;
   NUK.utilizador = null;
   localStorage.removeItem('nukpos_token');
@@ -141,6 +142,13 @@ function arrancarOperacao() {
 
   // Módulo inicial
   carregarModulo(moduloPermitido('dashboard'));
+  if (typeof navIniciar === 'function') navIniciar(); // botão «voltar» não fecha a app (navegacao.js)
+}
+
+// Os Quartos refrescam-se sozinhos (eventos e a cada minuto), mas nunca por cima do painel de consumo de um quarto
+// (ecrã interno, navegacao.js): perdia-se o carrinho que o operador estava a fazer.
+function podeRefrescarQuartos() {
+  return NUK.moduloActual === 'quartos' && !(typeof navEmSubEcra === 'function' && navEmSubEcra());
 }
 
 // ── WebSocket ─────────────────────────────────────────────────
@@ -215,14 +223,14 @@ function iniciarWebSocket() {
   });
 
   NUK.socket.on('quarto_atualizado', () => {
-    if (NUK.moduloActual === 'quartos') carregarModulo('quartos');
+    if (podeRefrescarQuartos()) carregarModulo('quartos');
   });
 
   // A hora «livre às», a ★ vermelha e o prazo de arrumação mudam com o tempo: refresca a cada minuto (sem interromper um modal aberto)
   if (!NUK._timerQuartos) {
     NUK._timerQuartos = setInterval(() => {
       const ov = document.getElementById('modal-overlay');
-      if (NUK.moduloActual === 'quartos' && !(ov && ov.style.display === 'flex')) carregarModulo('quartos');
+      if (podeRefrescarQuartos() && !(ov && ov.style.display === 'flex')) carregarModulo('quartos');
     }, 60000);
   }
 
@@ -231,12 +239,12 @@ function iniciarWebSocket() {
     if (!NUK.utilizador || !NUK.utilizador.arruma_quartos) return;
     const hora = new Date(d.prazo_em).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
     toast(`🧹 Quarto ${d.numero}: arrumar até às ${hora}`, 'aviso', 10000);
-    if (NUK.moduloActual === 'quartos') carregarModulo('quartos');
+    if (podeRefrescarQuartos()) carregarModulo('quartos');
   });
   NUK.socket.on('quarto_escalado', (d) => {
     if (!NUK.utilizador || !['ADMIN', 'GERENTE'].includes(NUK.utilizador.nivel_acesso)) return;
     toast(`⚠️ Quarto ${d.numero}: o prazo de arrumação terminou — só a chefia o pode abrir`, 'erro', 12000);
-    if (NUK.moduloActual === 'quartos') carregarModulo('quartos');
+    if (podeRefrescarQuartos()) carregarModulo('quartos');
   });
 
   NUK.socket.on('alerta_stock', (dados) => {

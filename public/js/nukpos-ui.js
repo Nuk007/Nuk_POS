@@ -8,16 +8,17 @@
 // desligado e já não tapa o módulo escolhido. Os erros de um carregamento antigo também são ignorados.
 let _geracaoModulo = 0;
 function moduloEmVigor(geracao) { return geracao === _geracaoModulo; }
-function carregarModulo(modulo) {
+function carregarModulo(modulo, { deHistorico = false } = {}) {
+  // Fechar o menu lateral no telemóvel ANTES de mexer no histórico: fechá-lo recua a entrada do menu, e a do
+  // módulo novo tem de entrar depois desse recuo (navegacao.js põe-na em espera)
+  if (window.innerWidth <= 768) fecharSidebar();
+  if (typeof navAoMudarModulo === 'function') navAoMudarModulo(modulo, deHistorico); // botão «voltar» (navegacao.js)
   NUK.moduloActual = modulo;
 
   // Actualizar nav
   document.querySelectorAll('.nav-item').forEach(el => {
     el.classList.toggle('active', el.dataset.modulo === modulo);
   });
-
-  // Fechar sidebar mobile
-  if (window.innerWidth <= 768) fecharSidebar();
 
   const titulos = {
     dashboard: '📊 Dashboard', pedidos: '🍽️ Pedidos', mesas: '🪑 Mesa', balcao: '🧾 Balcão', remota: '📱 Remota', takeaway: '🥡 Take Away', cozinha: '👨‍🍳 Cozinha e bar',
@@ -68,13 +69,20 @@ async function actualizarBadgeSolicitacoes() {
 
 // ── Modal ─────────────────────────────────────────────────────
 function abrirModal(titulo, htmlCorpo) {
+  const ov = document.getElementById('modal-overlay');
+  const jaAberta = ov.style.display === 'flex';
   document.getElementById('modal-titulo').textContent = titulo;
   document.getElementById('modal-corpo').innerHTML = htmlCorpo;
-  document.getElementById('modal-overlay').style.display = 'flex';
+  ov.style.display = 'flex';
+  if (typeof navAoAbrirModal === 'function') navAoAbrirModal(jaAberta);
 }
 
-function fecharModal() {
-  document.getElementById('modal-overlay').style.display = 'none';
+/** `peloVoltar` = fechada pelo botão «voltar» (o histórico já recuou). */
+function fecharModal(peloVoltar) {
+  const ov = document.getElementById('modal-overlay');
+  const estavaAberta = ov.style.display === 'flex';
+  ov.style.display = 'none';
+  if (estavaAberta && typeof navAoFecharModal === 'function') navAoFecharModal(peloVoltar === true);
 }
 
 // Escapa texto vindo de utilizadores (nomes, observações…) antes de o inserir em HTML
@@ -94,13 +102,18 @@ function toast(msg, tipo = 'sucesso', duracao = 4000) {
 // ── Sidebar mobile ────────────────────────────────────────────
 function toggleSidebar() {
   const s = document.getElementById('sidebar');
-  const o = document.getElementById('sidebar-overlay');
-  s.classList.toggle('aberta');
-  o.classList.toggle('visivel');
+  if (s.classList.contains('aberta')) { fecharSidebar(); return; }
+  s.classList.add('aberta');
+  document.getElementById('sidebar-overlay').classList.add('visivel');
+  if (typeof navAoAbrirSidebar === 'function') navAoAbrirSidebar();
 }
-function fecharSidebar() {
-  document.getElementById('sidebar').classList.remove('aberta');
+/** `peloVoltar` = fechado pelo botão «voltar» (o histórico já recuou). */
+function fecharSidebar(peloVoltar) {
+  const s = document.getElementById('sidebar');
+  const estavaAberta = s.classList.contains('aberta');
+  s.classList.remove('aberta');
   document.getElementById('sidebar-overlay').classList.remove('visivel');
+  if (estavaAberta && typeof navAoFecharSidebar === 'function') navAoFecharSidebar(peloVoltar === true);
 }
 
 // ── Relógio ───────────────────────────────────────────────────
