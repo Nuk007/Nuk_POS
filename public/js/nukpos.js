@@ -193,6 +193,12 @@ function iniciarWebSocket() {
     if (NUK.moduloActual === 'solicitacoes') carregarModulo('solicitacoes');
   });
 
+  // Relatórios gerados automaticamente pelo agendador (21/11/2026)
+  NUK.socket.on('relatorios_gerados', (r) => {
+    toast(`🗂️ ${(r && r.n) || ''} relatório(s) novo(s) em Relatórios`, 'info', 6000);
+    if (NUK.moduloActual === 'relatorios') carregarModulo('relatorios');
+  });
+
   // Clientes novos e saldos Nuk-Coin alterados refrescam a lista de clientes
   ['cliente_novo', 'nukcoin_carregado'].forEach(ev => NUK.socket.on(ev, () => {
     if (NUK.moduloActual === 'clientes') carregarModulo('clientes');

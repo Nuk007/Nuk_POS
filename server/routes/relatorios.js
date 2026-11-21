@@ -6,6 +6,8 @@ const express = require('express');
 const router = express.Router();
 const { authMiddleware, requerNivel, isUUID } = require('../middleware/auth');
 const svc = require('../services/relatorios.service');
+const auto = require('../services/relatorios-auto.service');
+const { relatorioPdf } = require('../services/relatorio-pdf.service');
 
 const h = fn => async (req, res, next) => {
   try { await fn(req, res); }
@@ -93,6 +95,79 @@ router.post('/resumo-diario/enviar', authMiddleware, chefia, async (req, res, ne
 router.put('/resumo-diario/config', authMiddleware, requerNivel(['ADMIN']), exigirModulo('configuracoes'), h(async (req, res) => {
   const { ativo, telefone, hora } = req.body;
   res.json(await resumo.gravarConfig({ tenantId: req.tenantId, ativo, telefone, hora }));
+}));
+
+// ── Relatórios gerados automaticamente (21/11/2026) ─────────
+/**
+ * @openapi
+ * /api/relatorios/catalogo:
+ *   get:
+ *     summary: Relatórios que o sistema gera (tipo, nome, frequências possíveis)
+ *     tags: [Relatórios]
+ *     security: [{ bearerAuth: [] }]
+ *     responses: { 200: { description: Lista } }
+ * /api/relatorios/gerados:
+ *   get:
+ *     summary: Relatórios já gerados (automáticos e manuais), mais recentes primeiro
+ *     tags: [Relatórios]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { in: query, name: tipo, schema: { type: string } }
+ *       - { in: query, name: page, schema: { type: integer } }
+ *     responses: { 200: { description: "{ data, page, limit, total }" } }
+ * /api/relatorios/gerados/{id}:
+ *   get:
+ *     summary: Um relatório gerado (resumo, secções e alertas)
+ *     tags: [Relatórios]
+ *     security: [{ bearerAuth: [] }]
+ *     responses: { 200: { description: Relatório }, 404: { description: Não encontrado } }
+ * /api/relatorios/gerados/{id}/pdf:
+ *   get:
+ *     summary: Relatório gerado em PDF A4
+ *     tags: [Relatórios]
+ *     security: [{ bearerAuth: [] }]
+ *     responses: { 200: { description: PDF }, 404: { description: Não encontrado } }
+ * /api/relatorios/gerar:
+ *   post:
+ *     summary: Gera já um relatório para um período (substitui o do mesmo período)
+ *     tags: [Relatórios]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody: { content: { application/json: { schema: { type: object, properties: { tipo: { type: string }, de: { type: string }, ate: { type: string } } } } } }
+ *     responses: { 201: { description: Relatório gerado }, 400: { description: Tipo ou datas inválidos } }
+ * /api/relatorios/auto/config:
+ *   get:
+ *     summary: Configuração da geração automática (ligada, hora, relatórios por dia, semana e mês)
+ *     tags: [Relatórios]
+ *     security: [{ bearerAuth: [] }]
+ *     responses: { 200: { description: Configuração } }
+ *   put:
+ *     summary: Grava a configuração da geração automática (só ADMIN; repor true volta ao padrão)
+ *     tags: [Relatórios]
+ *     security: [{ bearerAuth: [] }]
+ *     responses: { 200: { description: Configuração gravada }, 400: { description: Valores inválidos } }
+ */
+router.get('/catalogo', authMiddleware, chefia, (req, res) => res.json(auto.catalogo()));
+router.get('/gerados', authMiddleware, chefia, h(async (req, res) => {
+  res.json(await auto.listar({ tipo: req.query.tipo, page: req.query.page, limit: req.query.limit, tenantId: req.tenantId }));
+}));
+router.get('/gerados/:id', authMiddleware, chefia, h(async (req, res) => {
+  if (!isUUID(req.params.id)) return res.status(400).json({ erro: 'ID inválido' });
+  res.json(await auto.obter({ id: req.params.id, tenantId: req.tenantId }));
+}));
+router.get('/gerados/:id/pdf', authMiddleware, chefia, h(async (req, res) => {
+  if (!isUUID(req.params.id)) return res.status(400).json({ erro: 'ID inválido' });
+  const relatorio = await auto.obter({ id: req.params.id, tenantId: req.tenantId });
+  const pdf = await relatorioPdf({ relatorio, tenantId: req.tenantId });
+  res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${relatorio.tipo.toLowerCase()}-${relatorio.de}.pdf"` }).send(pdf);
+}));
+router.post('/gerar', authMiddleware, chefia, h(async (req, res) => {
+  const { tipo, de, ate } = req.body || {};
+  res.status(201).json(await auto.gerarEGuardar({ tipo, de, ate: ate || de, userId: req.user && req.user.id, tenantId: req.tenantId }));
+}));
+router.get('/auto/config', authMiddleware, chefia, h(async (req, res) => res.json({ ...(await auto.lerConfig(req.tenantId)), padrao: auto.PADRAO })));
+router.put('/auto/config', authMiddleware, requerNivel(['ADMIN']), exigirModulo('configuracoes'), h(async (req, res) => {
+  const { ativo, hora, DIA, SEMANA, MES, repor } = req.body || {};
+  res.json(await auto.gravarConfig({ ativo, hora, DIA, SEMANA, MES, repor, tenantId: req.tenantId }));
 }));
 
 module.exports = router;

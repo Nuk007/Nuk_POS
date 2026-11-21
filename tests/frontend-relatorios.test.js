@@ -113,3 +113,54 @@ describe('Cadeia (frontend)', () => {
     expect(sem._els['rel-cadeia'].innerHTML).toBe('');
   });
 });
+
+describe('Relatórios gerados automaticamente (frontend, 21/11/2026)', () => {
+  const carregarG = (dados, enviados = []) => {
+    const caixas = {};
+    const ctx = {
+      console, window: {}, Promise, Date, NUK: { utilizador: { nivel_acesso: 'ADMIN' } }, encodeURIComponent,
+      document: {
+        getElementById: id => { caixas[id] = caixas[id] || { innerHTML: '', value: id === 'relg-tipo' ? 'VENDAS' : id === 'rauto-hora' ? '07:00' : '2026-11-20', checked: true }; return caixas[id]; },
+        querySelectorAll: sel => (sel === '.rauto-DIA' ? [{ checked: true, value: 'VENDAS' }, { checked: false, value: 'QUEBRAS' }] : []),
+      },
+      api: async (m, url, corpo) => { if (m !== 'GET') { enviados.push([m, url, corpo]); return { id: 'r9' }; } const k = Object.keys(dados).find(x => url.startsWith(x)); return k ? dados[k] : {}; },
+      formatarMoeda: v => `${v} Kz`, toast: () => {}, esc: v => String(v ?? ''), carregarModulo: () => {}, abrirModal: (t, h) => { ctx._modal = [t, h]; }, fecharModal: () => {}, licenciadoModulo: () => true,
+      modalConfirmar: (t, x, f) => { ctx._confirmar = f; },
+    };
+    vm.createContext(ctx);
+    for (const f of ['relatorios.js', 'relatorios-gerados.js']) vm.runInContext(fs.readFileSync(path.join(__dirname, '../public/js', f), 'utf8'), ctx);
+    ctx._caixas = caixas;
+    return ctx;
+  };
+  const catalogo = [{ tipo: 'VENDAS', nome: 'Vendas', frequencias: ['DIA', 'SEMANA', 'MES'] }, { tipo: 'STOCK', nome: 'Stock: movimento e valor', frequencias: ['SEMANA', 'MES'] }];
+
+  test('lista os gerados com Ver/PDF, abre um relatório e gera à mão', async () => {
+    const enviados = [];
+    const det = { id: 'r1', tipo: 'VENDAS', de: '2026-11-20', ate: '2026-11-20', dados: { titulo: 'Vendas', resumo: [{ rotulo: 'Vendas pagas', valor: 10000, formato: 'kz' }], alertas: ['1 pedido cancelado'],
+      seccoes: [{ titulo: 'Por funcionário', colunas: [{ rotulo: 'Nome', chave: 'nome', formato: 'txt' }, { rotulo: 'Valor', chave: 'valor', formato: 'kz', alinhar: 'dir' }], linhas: [{ nome: 'Ana', valor: 10000 }], total: { nome: 'Total', valor: 10000 } }] } };
+    const ctx = carregarG({ '/relatorios/catalogo': catalogo, '/relatorios/gerados/r1': det, '/relatorios/gerados?': { data: [{ id: 'r1', tipo: 'VENDAS', nome: 'Vendas', frequencia: 'DIA', de: '2026-11-20', ate: '2026-11-20', origem: 'AUTO', gerado_em: '2026-11-21T06:00:00Z', alertas: 1 }], total: 1 } }, enviados);
+    await ctx.carregarRelatoriosGerados();
+    const h = ctx._caixas['rel-gerados'].innerHTML;
+    ['RELATÓRIOS GERADOS', 'Vendas', '20/11/2026', 'Diário', "verRelatorioGerado('r1')", "/relatorios/gerados/r1/pdf", 'gerarRelatorioAgora()'].forEach(t => expect(h).toContain(t));
+    await ctx.verRelatorioGerado('r1');
+    ['Vendas pagas', '10000 Kz', '1 pedido cancelado', 'Ana', 'Total', 'Descarregar PDF'].forEach(t => expect(ctx._modal[1]).toContain(t));
+    await ctx.gerarRelatorioAgora();
+    expect(enviados[0]).toEqual(['POST', '/relatorios/gerar', { tipo: 'VENDAS', de: '2026-11-20', ate: '2026-11-20' }]);
+  });
+
+  test('configuração automática: só mostra frequências possíveis; guardar envia as escolhas; repor pede confirmação', async () => {
+    const enviados = [];
+    const ctx = carregarG({ '/relatorios/auto/config': { ativo: true, hora: '06:00', DIA: ['VENDAS'], SEMANA: ['STOCK'], MES: [], configurado: true }, '/relatorios/catalogo': catalogo }, enviados);
+    await ctx.carregarConfigRelatoriosAuto();
+    const h = ctx._caixas['cfg-relatorios-auto'].innerHTML;
+    expect(h).toContain('Geração automática');
+    expect((h.match(/class="rauto-DIA"/g) || []).length).toBe(1); // o stock não aparece nos diários
+    expect((h.match(/class="rauto-SEMANA"/g) || []).length).toBe(2);
+    expect(h).toContain('pedirReporRelatoriosAuto()');
+    await ctx.guardarConfigRelatoriosAuto();
+    expect(enviados[0][1]).toBe('/relatorios/auto/config');
+    expect(enviados[0][2]).toMatchObject({ ativo: true, hora: '07:00', DIA: ['VENDAS'] });
+    ctx.pedirReporRelatoriosAuto();
+    expect(ctx._confirmar).toBe('reporRelatoriosAutoConfirmado');
+  });
+});

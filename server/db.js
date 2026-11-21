@@ -743,6 +743,8 @@ async function initDB() {
     for (const sql of require('./migrations-data/cartoes-producao')) await client.query(sql);
     // Folha de Caixa diária: área, NIF e documento das compras; área das despesas (migração 1753100000000)
     for (const sql of require('./migrations-data/folha-caixa')) await client.query(sql);
+    // Relatórios gerados automaticamente (migração 1753200000000)
+    for (const sql of require('./migrations-data/relatorios-auto')) await client.query(sql);
 
     // Avaliacoes de staff
     await client.query(`
