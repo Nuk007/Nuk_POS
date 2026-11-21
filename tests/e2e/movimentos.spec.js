@@ -1,6 +1,7 @@
 'use strict';
 /** Rasto do caixa num navegador real: lista de movimentos, verificação da integridade, rasto do cartão e CSV. */
 const { test, expect } = require('@playwright/test');
+const { menu } = require('./menu');
 
 test('movimentos do caixa: pesquisa, verificação, rasto de cartão e exportação', async ({ page }) => {
   const erros = [];
@@ -24,7 +25,7 @@ test('movimentos do caixa: pesquisa, verificação, rasto de cartão e exportaç
     return cod;
   });
 
-  await page.click('.nav-item[data-modulo="movimentos"]');
+  await menu(page, 'movimentos');
   await expect(page.locator('#topbar-titulo')).toHaveText(/Movimentos do caixa/);
   const linha = page.locator('#mv-resultado tr', { hasText: codigo });
   await expect(linha).toBeVisible();

@@ -575,6 +575,30 @@ tr:hover td { background: rgba(255,255,255,.02); }
 .nav-subtitulo { padding: 0 .3rem; }
 .nav-sub .nav-item { padding-left: 1rem; }
 
+/* ── Menu em acordeão (pedido do dono, 22/11/2026): só as categorias à vista; os módulos descem ao tocar.
+   Sem barra de rolagem visível (a lista continua a rolar com o dedo/rato quando não cabe no ecrã). ── */
+.sidebar-nav { scrollbar-width: none; -ms-overflow-style: none; }
+.sidebar-nav::-webkit-scrollbar { display: none; width: 0; height: 0; }
+.nav-grupo > .nav-titulo {
+  display: flex; align-items: center; justify-content: space-between; gap: .5rem;
+  width: 100%; margin: 0; padding: .35rem .4rem;
+  background: none; border: none; cursor: pointer;
+  font: inherit; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--c-primary-light); text-align: left;
+}
+.nav-grupo > .nav-titulo:hover { color: #ffa05a; }
+.nav-grupo > .nav-titulo:focus-visible { outline: 2px solid var(--c-primary-light); outline-offset: 2px; border-radius: 6px; }
+.nav-seta { font-size: 1.15rem; line-height: 1; transition: transform .18s ease; }
+.nav-grupo.aberto .nav-seta { transform: rotate(90deg); }
+.nav-grupo:not(.aberto) { padding-top: .25rem; padding-bottom: .25rem; }
+.nav-grupo:not(.aberto) > :not(.nav-titulo) { display: none !important; }
+.nav-grupo.aberto > :not(.nav-titulo) { animation: navDesce .2s ease-out; }
+@keyframes navDesce { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .nav-seta { transition: none; }
+  .nav-grupo.aberto > :not(.nav-titulo) { animation: none; }
+}
+
 /* ── Botões suaves (tema único do sistema): saem da superfície e «entram» nela ao carregar ──
    Sombras translúcidas funcionam sobre qualquer fundo. A cor fica no texto/ícone, não no fundo. */
 .btn-primario, .btn-secundario, .btn-perigo, .btn-sucesso, .btn-logout, .btn-menu,

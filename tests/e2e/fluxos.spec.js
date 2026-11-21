@@ -4,6 +4,7 @@
  * Apanha o que os testes em vm não vêem: erros de execução no navegador, violações da CSP, ecrãs que não abrem.
  */
 const { test, expect } = require('@playwright/test');
+const { menu } = require('./menu');
 
 const DONO = { email: 'dono@e2e.ao', palavraPasse: '246810' };
 
@@ -25,7 +26,6 @@ async function entrar(page) {
   await page.click('#btn-entrar');
   await expect(page.locator('#app')).toBeVisible();
 }
-const menu = (page, modulo) => page.click(`.nav-item[data-modulo="${modulo}"]`);
 
 test('entrar mostra o Dashboard sem erros no navegador', async ({ page }) => {
   const erros = vigiarErros(page);

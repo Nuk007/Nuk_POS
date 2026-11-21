@@ -4,6 +4,7 @@
  * As Configurações respondem com atraso de propósito; toca-se logo a seguir noutro módulo.
  */
 const { test, expect } = require('@playwright/test');
+const { menu } = require('./menu');
 
 test('módulo lento que acaba depois não tapa o módulo escolhido a seguir', async ({ page }) => {
   const erros = [];
@@ -17,8 +18,8 @@ test('módulo lento que acaba depois não tapa o módulo escolhido a seguir', as
 
   // as leituras das Configurações demoram 1,5 s
   await page.route('**/api/configuracoes**', async rota => { await new Promise(r => setTimeout(r, 1500)); await rota.continue(); });
-  await page.click('.nav-item[data-modulo="configuracoes"]');
-  await page.click('.nav-item[data-modulo="movimentos"]');
+  await menu(page, 'configuracoes');
+  await menu(page, 'movimentos');
   await expect(page.locator('#main-content .secao-titulo', { hasText: 'Movimentos do caixa' })).toBeVisible();
 
   await page.waitForTimeout(2500); // as Configurações já acabaram de carregar entretanto

@@ -1,6 +1,7 @@
 'use strict';
 /** Sem internet num navegador real: a venda fica guardada no dispositivo e segue sozinha quando a rede volta. */
 const { test, expect } = require('@playwright/test');
+const { menu } = require('./menu');
 
 test('venda ao balcão sem internet é guardada e enviada quando a ligação volta', async ({ page, context }) => {
   const erros = [];
@@ -12,15 +13,15 @@ test('venda ao balcão sem internet é guardada e enviada quando a ligação vol
   await expect(page.locator('#app')).toBeVisible();
 
   // abrir o balcão com rede (fica a cópia dos produtos e preços neste dispositivo)
-  await page.click('.nav-item[data-modulo="balcao"]');
+  await menu(page, 'balcao');
   await expect(page.locator('.venda-produto', { hasText: 'Entrada piscina' })).toBeVisible();
   const antes = await page.evaluate(async () => (await (await fetch('/api/pedidos?limit=100', { headers: { Authorization: `Bearer ${NUK.token}` } })).json()));
   const nAntes = (antes.data || antes).length;
 
   await context.setOffline(true);
   // o painel volta a abrir sem rede, a partir da cópia guardada
-  await page.click('.nav-item[data-modulo="dashboard"]');
-  await page.click('.nav-item[data-modulo="balcao"]');
+  await menu(page, 'dashboard');
+  await menu(page, 'balcao');
   await page.locator('.venda-produto', { hasText: 'Entrada piscina' }).click();
   await page.click('button:has-text("Enviar pedido")');
   await expect(page.locator('.toast', { hasText: 'Sem internet' })).toBeVisible();

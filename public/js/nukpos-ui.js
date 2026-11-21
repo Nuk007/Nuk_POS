@@ -19,6 +19,8 @@ function carregarModulo(modulo, { deHistorico = false } = {}) {
   document.querySelectorAll('.nav-item').forEach(el => {
     el.classList.toggle('active', el.dataset.modulo === modulo);
   });
+  const activo = document.querySelector(`.nav-item[data-modulo="${modulo}"]`);
+  if (activo && activo.closest('.nav-grupo')) abrirGrupoNav(activo.closest('.nav-grupo'), true, false);
 
   const titulos = {
     dashboard: '📊 Dashboard', pedidos: '🍽️ Pedidos', mesas: '🪑 Mesa', balcao: '🧾 Balcão', remota: '📱 Remota', takeaway: '🥡 Take Away', cozinha: '👨‍🍳 Cozinha e bar',
@@ -151,6 +153,21 @@ function badgeStatus(status) {
   return `<span class="status-badge status-${status}">${status.replace(/_/g,' ')}</span>`;
 }
 
+// ── Menu em acordeão (pedido do dono, 22/11/2026): só as categorias ficam à vista; tocar numa abre-a (os
+// módulos descem por baixo) e fecha as outras. A categoria do módulo em uso abre sozinha ao mudar de módulo.
+function abrirGrupoNav(grupo, abrir, rolar = true) {
+  if (!grupo) return;
+  if (abrir) {
+    document.querySelectorAll('.nav-grupo.aberto').forEach(g => { if (g !== grupo) abrirGrupoNav(g, false); });
+  }
+  grupo.classList.toggle('aberto', abrir);
+  const t = grupo.querySelector('.nav-titulo');
+  if (t) t.setAttribute('aria-expanded', abrir ? 'true' : 'false');
+  if (abrir && rolar && typeof grupo.scrollIntoView === 'function') {
+    requestAnimationFrame(() => grupo.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+  }
+}
+
 // ── Acessos delegados: esconde os módulos a que a conta não tem acesso (o servidor também os recusa) ──
 function moduloPermitido(m) {
   const p = NUK.utilizador && NUK.utilizador.permissoes;
@@ -206,6 +223,8 @@ document.addEventListener('click', e => {
   if (action === 'toggle-sidebar') { e.stopPropagation(); toggleSidebar(); }
   // Logout
   else if (action === 'logout') logout();
+  // Categoria do menu: abre/fecha (acordeão)
+  else if (action === 'nav-grupo') { const g = el.closest('.nav-grupo'); abrirGrupoNav(g, !g.classList.contains('aberto')); }
   // Modal fechar (click no fundo ou no botão X) — só fechar se não for o modal-box em si
   else if (action === 'fechar-modal') {
     // fecha só se o clique for no próprio fundo ou no botão X (não em conteúdo do modal)

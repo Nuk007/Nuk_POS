@@ -4,6 +4,7 @@
  * carregam sem erros; em Relatórios gera-se um relatório à mão, abre-se e descarrega-se o PDF.
  */
 const { test, expect } = require('@playwright/test');
+const { menu } = require('./menu');
 
 test('Configuração de relatórios e «Relatórios gerados» funcionam sem erros', async ({ page }) => {
   const erros = [];
@@ -16,7 +17,7 @@ test('Configuração de relatórios e «Relatórios gerados» funcionam sem erro
   await page.click('#btn-entrar');
   await expect(page.locator('#app')).toBeVisible();
 
-  await page.click('.nav-item[data-modulo="configuracoes"]');
+  await menu(page, 'configuracoes');
   await expect(page.locator('#cfg-relatorios', { hasText: 'CONFIGURAÇÃO DE RELATÓRIOS' })).toBeVisible();
   await expect(page.locator('#cfg-relatorios-auto', { hasText: 'Geração automática' })).toBeVisible();
   // acrescenta um item às bebidas e guarda o modelo
@@ -33,7 +34,7 @@ test('Configuração de relatórios e «Relatórios gerados» funcionam sem erro
   await page.locator('#cfg-relatorios-auto button', { hasText: 'Guardar a geração automática' }).click();
   await expect(page.locator('#cfg-relatorios-auto button', { hasText: 'Repor o padrão' })).toBeVisible();
 
-  await page.click('.nav-item[data-modulo="relatorios"]');
+  await menu(page, 'relatorios');
   await expect(page.locator('#rel-gerados', { hasText: 'RELATÓRIOS GERADOS' })).toBeVisible();
   await page.selectOption('#relg-tipo', 'VENDAS');
   await page.locator('#rel-gerados button', { hasText: 'Gerar' }).click();

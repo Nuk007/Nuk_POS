@@ -4,6 +4,7 @@
  * menu, sai do painel de venda para a lista, ou volta ao módulo anterior. No primeiro ecrã pede um segundo toque.
  */
 const { test, expect } = require('@playwright/test');
+const { menu } = require('./menu');
 
 function vigiarErros(page) {
   const erros = [];
@@ -25,9 +26,9 @@ const voltar = page => page.goBack().catch(() => {}); // entradas do mesmo docum
 test('voltar: painel da mesa → lista das mesas → módulo anterior → Dashboard → segundo toque para sair', async ({ page }) => {
   const erros = vigiarErros(page);
   await entrar(page);
-  await page.click('.nav-item[data-modulo="caixa"]');
+  await menu(page, 'caixa');
   await expect(titulo(page)).toHaveText(/Caixa do dia/);
-  await page.click('.nav-item[data-modulo="mesas"]');
+  await menu(page, 'mesas');
   await expect(titulo(page)).toHaveText(/Mesa/);
   await page.locator('[data-on-click^="abrirVendaMesa"]').first().click();
   await expect(page.locator('#venda-grelha')).toBeVisible();
@@ -52,7 +53,7 @@ test('voltar: painel da mesa → lista das mesas → módulo anterior → Dashbo
 test('voltar fecha a janela aberta; fechada pelo botão, o voltar seguinte já muda de ecrã', async ({ page }) => {
   const erros = vigiarErros(page);
   await entrar(page);
-  await page.click('.nav-item[data-modulo="caixa"]');
+  await menu(page, 'caixa');
   await expect(titulo(page)).toHaveText(/Caixa do dia/);
   await page.evaluate(() => abrirModal('Teste', '<p>Janela de teste</p>'));
   await expect(page.locator('#modal-overlay')).toBeVisible();
@@ -79,7 +80,7 @@ test('telemóvel: voltar fecha o menu lateral; escolher no menu e voltar regress
   await expect(titulo(page)).toHaveText(/Dashboard/);
 
   await page.click('.btn-menu');
-  await page.click('.nav-item[data-modulo="caixa"]');
+  await menu(page, 'caixa');
   await expect(titulo(page)).toHaveText(/Caixa do dia/);
   await expect(page.locator('#sidebar')).not.toHaveClass(/aberta/);
   await voltar(page);
