@@ -6,6 +6,7 @@
  * Dinheiro esperado na gaveta = fundo + Σ movimentos em CASH (TPA, transferência, Nuk-Coin e cartão não entram na gaveta).
  */
 const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 const { pool } = require('../db');
 const { broadcast } = require('../middleware/broadcast');
 const { withTx, erro } = require('./shared');
@@ -218,20 +219,52 @@ async function listarCartoes({ tenantId }) {
 // O lote só cria códigos: nenhum dinheiro entra e nenhum cartão tem saldo até ser vendido no caixa.
 // Por isso um cartão perdido ou roubado antes da venda não vale nada, e gerar um lote não exige o caixa aberto.
 const LOTE_MAX = 200;
+// Decisão do dono (21/11/2026): imprime-se sempre em folhas A4 completas (a folha leva 10 cartões, 2 × 5);
+// o mínimo é uma folha e nunca fica uma folha a meio. 200 cartões = 20 folhas.
+const CARTOES_POR_FOLHA = 10;
 
-async function criarLote({ tenantId, userId, valor, quantidade }) {
-  // Só o Administrador gera códigos (verificado também aqui, não só na rota)
-  const adm = userId ? await pool.query(`SELECT 1 FROM funcionarios WHERE id = $1 AND tenant_id = $2 AND nivel_acesso = 'ADMIN' AND ativo`, [userId, tenantId]) : { rows: [] };
-  if (!adm.rows[0]) throw erro(403, 'Só o Administrador gera códigos de cartão');
-  const v = Number(valor), q = Number(quantidade);
+/** Quantidade em folhas completas? Senão 400 com as duas alternativas (reduzir / avançar com a folha completa). */
+function validarQuantidadeLote(quantidade) {
+  const q = Number(quantidade);
+  if (!Number.isInteger(q) || q < 1 || q > LOTE_MAX) throw erro(400, `Quantidade inválida (${CARTOES_POR_FOLHA} a ${LOTE_MAX} cartões por lote)`);
+  if (q < CARTOES_POR_FOLHA) {
+    throw Object.assign(erro(400, `O mínimo é uma folha A4 completa: ${CARTOES_POR_FOLHA} cartões`), { codigo: 'FOLHAS_INCOMPLETAS', dados: { reduzir: null, avancar: CARTOES_POR_FOLHA } });
+  }
+  if (q % CARTOES_POR_FOLHA) {
+    const menos = Math.floor(q / CARTOES_POR_FOLHA) * CARTOES_POR_FOLHA, mais = Math.min(LOTE_MAX, menos + CARTOES_POR_FOLHA);
+    throw Object.assign(erro(400, `${q} cartões não enchem folhas A4 completas (${CARTOES_POR_FOLHA} por folha): reduza para ${menos} ou avance com ${mais}`),
+      { codigo: 'FOLHAS_INCOMPLETAS', dados: { reduzir: menos, avancar: mais } });
+  }
+  return q;
+}
+
+/**
+ * Pode autorizar a impressão de cartões? O Administrador sempre; os outros só com o perfil «Imprimir cartões»,
+ * que o Administrador lhes dá na ficha do funcionário (lido da BD: retirar o perfil vale logo).
+ */
+async function podeImprimirCartoes(db, tenantId, funcionarioId) {
+  if (!funcionarioId) return false;
+  const r = await db.query(
+    `SELECT 1 FROM funcionarios WHERE id = $1 AND tenant_id = $2 AND ativo AND (nivel_acesso = 'ADMIN' OR imprime_cartoes)`, [funcionarioId, tenantId]);
+  return !!r.rows[0];
+}
+
+/**
+ * Gera um lote de códigos. `userId` = quem autoriza (fica em criado_por); `pedidoPor` = quem estava no Caixa
+ * quando o lote foi pedido (produção a partir do Caixa).
+ */
+async function criarLote({ tenantId, userId, valor, quantidade, pedidoPor = null }) {
+  // Só o Administrador ou quem ele autorizou gera códigos (verificado também aqui, não só na rota)
+  if (!(await podeImprimirCartoes(pool, tenantId, userId))) throw erro(403, 'Só o Administrador, ou quem ele autorizou a imprimir cartões, gera códigos de cartão');
+  const v = Number(valor);
   if (!Number.isInteger(v) || v < CARTAO_MIN || v > CARTAO_MAX) throw erro(400, `Valor do cartão inválido (${CARTAO_MIN} a ${CARTAO_MAX} Kz, sem cêntimos)`);
-  if (!Number.isInteger(q) || q < 1 || q > LOTE_MAX) throw erro(400, `Quantidade inválida (1 a ${LOTE_MAX} cartões por lote)`);
+  const q = validarQuantidadeLote(quantidade);
   const lote = await withTx(async db => {
     await db.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`cartoes_lote:${tenantId}`]);
     const n = await db.query(`SELECT COALESCE(MAX(numero), 0) + 1 AS n FROM cartoes_lotes WHERE tenant_id = $1`, [tenantId]);
     const l = (await db.query(
-      `INSERT INTO cartoes_lotes (tenant_id, numero, valor, quantidade, criado_por) VALUES ($1,$2,$3,$4,$5) RETURNING id, numero, valor, quantidade, criado_em`,
-      [tenantId, n.rows[0].n, v, q, userId || null])).rows[0];
+      `INSERT INTO cartoes_lotes (tenant_id, numero, valor, quantidade, criado_por, pedido_por) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, numero, valor, quantidade, criado_em`,
+      [tenantId, n.rows[0].n, v, q, userId || null, pedidoPor || null])).rows[0];
     let feitos = 0;
     for (let volta = 0; feitos < q && volta < 10; volta++) { // código repetido (raríssimo): ON CONFLICT ignora e gera outro
       const codigos = Array.from({ length: q - feitos }, gerarCodigo);
@@ -244,19 +277,52 @@ async function criarLote({ tenantId, userId, valor, quantidade }) {
     if (feitos < q) throw erro(500, 'Não foi possível gerar os códigos do lote');
     return l;
   });
-  return { ...lote, vendidos: 0, por_vender: lote.quantidade };
+  return { ...lote, vendidos: 0, por_vender: lote.quantidade, folhas: lote.quantidade / CARTOES_POR_FOLHA };
+}
+
+/**
+ * Credenciais de quem autoriza a impressão no Caixa (email + palavra-passe do Administrador ou de quem tem o perfil).
+ * Erros 403 e nunca 401 (um 401 terminaria a sessão de quem está no Caixa). Sem conta, compara na mesma com um
+ * hash fixo, para o tempo de resposta não dizer se o email existe.
+ */
+const HASH_FANTASMA = '$2a$12$IIrlabDuPndtto/bEwOOZ.UDf/ZF8Ic.5uXcGlHof5VrzYziMqHve';
+async function autorizadorCartoes({ tenantId, email, palavraPasse }) {
+  const mail = String(email || '').trim().toLowerCase();
+  const pass = String(palavraPasse || '');
+  if (!mail || !pass) throw erro(400, 'Indique o email e a palavra-passe de quem autoriza');
+  const r = await pool.query(
+    `SELECT id, nome, password_hash, nivel_acesso, imprime_cartoes FROM funcionarios
+      WHERE tenant_id = $1 AND LOWER(email) = $2 AND ativo ORDER BY titular DESC LIMIT 1`, [tenantId, mail]);
+  const f = r.rows[0];
+  const certo = await bcrypt.compare(pass, f ? f.password_hash : HASH_FANTASMA);
+  if (!f || !certo) throw Object.assign(erro(403, 'Email ou palavra-passe incorrectos'), { codigo: 'CREDENCIAIS_INVALIDAS' });
+  if (f.nivel_acesso !== 'ADMIN' && !f.imprime_cartoes) {
+    throw Object.assign(erro(403, `${f.nome} não está autorizado a imprimir cartões. Peça ao Administrador o perfil «Imprimir cartões».`), { codigo: 'SEM_PERFIL_CARTOES' });
+  }
+  return { id: f.id, nome: f.nome };
+}
+
+/** Produção a partir do Caixa: confirma quem autoriza e gera o lote de um cartão configurado e activo. */
+async function produzirLote({ tenantId, userId, email, palavraPasse, valor, quantidade }) {
+  const aut = await autorizadorCartoes({ tenantId, email, palavraPasse });
+  const v = Number(valor);
+  const t = await pool.query(`SELECT 1 FROM cartoes_tipos WHERE tenant_id = $1 AND valor = $2 AND ativo`, [tenantId, Number.isInteger(v) ? v : -1]);
+  if (!t.rows[0]) throw erro(404, 'Esse cartão não está configurado (ou foi desactivado) em Configurações → Cartões de consumo');
+  const lote = await criarLote({ tenantId, userId: aut.id, valor: v, quantidade, pedidoPor: userId });
+  return { ...lote, autorizado_por: aut.nome };
 }
 
 async function listarLotes({ tenantId }) {
   const r = await pool.query(
-    `SELECT l.id, l.numero, l.valor, l.quantidade, l.criado_em, f.nome AS criado_por_nome,
+    `SELECT l.id, l.numero, l.valor, l.quantidade, l.criado_em, f.nome AS criado_por_nome, pp.nome AS pedido_por_nome,
             COUNT(c.id) FILTER (WHERE c.estado = 'ACTIVO')::int AS vendidos,
             COUNT(c.id) FILTER (WHERE c.estado = 'POR_VENDER')::int AS por_vender
        FROM cartoes_lotes l
        LEFT JOIN cartoes_consumo c ON c.lote_id = l.id
        LEFT JOIN funcionarios f ON f.id = l.criado_por
+       LEFT JOIN funcionarios pp ON pp.id = l.pedido_por
       WHERE l.tenant_id = $1
-      GROUP BY l.id, f.nome ORDER BY l.numero DESC LIMIT 30`, [tenantId]);
+      GROUP BY l.id, f.nome, pp.nome ORDER BY l.numero DESC LIMIT 30`, [tenantId]);
   return r.rows;
 }
 
@@ -566,4 +632,4 @@ async function faturar({ tenantId, userId, pedido_ids, nif_cliente, nome_cliente
   return require('./fiscal/faturas.service').emitir({ tenantId, userId, tipo: 'FR', pedido_ids, nif_cliente, nome_cliente });
 }
 
-module.exports = { faturar, abrir, estado, fechar, contasPorPagar, registarPerda, sessoes, carregarNukcoin, consultarCartao, listarCartoes, criarLote, listarLotes, loteParaImprimir, venderCartaoImpresso, venderCartoesImpressos, listarTiposCartao, criarTipoCartao, actualizarTipoCartao, porReceber, receber, dividirConta, sessaoAberta, METODOS_BALCAO, METODOS_RECEBIMENTO };
+module.exports = { faturar, abrir, estado, fechar, contasPorPagar, registarPerda, sessoes, carregarNukcoin, consultarCartao, listarCartoes, criarLote, produzirLote, autorizadorCartoes, CARTOES_POR_FOLHA, listarLotes, loteParaImprimir, venderCartaoImpresso, venderCartoesImpressos, listarTiposCartao, criarTipoCartao, actualizarTipoCartao, porReceber, receber, dividirConta, sessaoAberta, METODOS_BALCAO, METODOS_RECEBIMENTO };

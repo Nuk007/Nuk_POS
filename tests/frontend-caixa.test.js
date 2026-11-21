@@ -150,7 +150,9 @@ describe('Caixa do dia (frontend)', () => {
     expect(el.innerHTML).toContain('modalVenderCartoes(3000)');
     expect(el.innerHTML).toContain('12 impressos por vender');
     expect(el.innerHTML).toContain('Piscina');
-    expect(el.innerHTML).toContain('quarto-card cartao-card LIMPEZA'); // 6000 sem impressos
+    expect(el.innerHTML).toContain('quarto-card cartao-card ESGOTADO'); // 6000 sem impressos: vermelho
+    expect(el.innerHTML).toContain('modalProduzirCartoes(6000)'); // tocado abre a produção, não a venda
+    expect(el.innerHTML).not.toContain('modalVenderCartoes(6000)');
     expect(el.innerHTML).not.toContain('gerarLoteCartoes()');
     expect(ctx._chamadas.some(c => c[1] === '/caixa/cartoes/lotes')).toBe(false);
   });
@@ -210,7 +212,77 @@ describe('Caixa do dia (frontend)', () => {
     const ctx = carregar({ '/caixa': { aberta: true }, '/caixa/cartoes': [], '/caixa/cartoes/tipos': TIPOS });
     const el = { innerHTML: '' };
     await ctx.modulo_cartoes(el);
-    expect(el.innerHTML).toContain('peça um lote ao Administrador');
+    expect(el.innerHTML).toContain('Esgotado · toque para imprimir mais');
+  });
+
+  // Produção de cartões no Caixa (21/11/2026): credenciais → cartão e quantidade → folhas A4 completas
+  function comFetch(ctx, resposta) {
+    ctx.NUK = { token: 'tk' };
+    ctx._fetch = [];
+    ctx.fetch = async (url, o) => { ctx._fetch.push([url, JSON.parse(o.body)]); return resposta; };
+    ctx.URL = { createObjectURL: () => 'blob:x', revokeObjectURL() {} };
+    ctx.document.createElement = () => ({ click() { ctx._descarregado = this.download; }, remove() {} });
+    ctx.document.body = { appendChild() {} };
+  }
+  const pdfOk = { ok: true, status: 201, headers: { get: h => ({ 'X-Lote-Numero': '7', 'X-Lote-Quantidade': '20' })[h] }, blob: async () => 'pdf' };
+
+  test('Produção: pede as credenciais primeiro e só depois o cartão e a quantidade (10 por omissão)', async () => {
+    const ctx = carregar({ '/caixa': { aberta: true }, '/caixa/cartoes': [], '/caixa/cartoes/tipos': TIPOS, '/caixa/cartoes/producao/autorizar': { nome: 'Ana Admin' } });
+    await ctx.modulo_cartoes({ innerHTML: '' });
+    ctx.modalProduzirCartoes(6000);
+    expect(ctx._modal).toContain('pc-email');
+    expect(ctx._modal).toContain('pc-senha');
+    expect(ctx._modal).not.toContain('pc-qtd');
+    ctx._els['pc-email'] = { value: '' }; ctx._els['pc-senha'] = { value: '' };
+    await ctx.pcAutorizar();
+    expect(ctx._chamadas.some(c => c[1] === '/caixa/cartoes/producao/autorizar')).toBe(false);
+    ctx._els['pc-email'] = { value: ' ana@x.ao ' }; ctx._els['pc-senha'] = { value: '246810' };
+    await ctx.pcAutorizar();
+    expect(ctx._chamadas).toContainEqual(['POST', '/caixa/cartoes/producao/autorizar', { email: 'ana@x.ao', palavra_passe: '246810' }]);
+    expect(ctx._modal).toContain('Autorizado por <b>Ana Admin</b>');
+    expect(ctx._modal).toMatch(/<option value="6000" selected>/);
+    expect(ctx._modal).toContain('value="10"');
+  });
+
+  test('Produção: menos de uma folha corrige para 10; 13 pergunta reduzir (10) ou avançar (20); folha completa imprime logo', async () => {
+    const ctx = carregar({ '/caixa': { aberta: true }, '/caixa/cartoes': [], '/caixa/cartoes/tipos': TIPOS, '/caixa/cartoes/producao/autorizar': { nome: 'Ana Admin' } });
+    comFetch(ctx, pdfOk);
+    await ctx.modulo_cartoes({ innerHTML: '' });
+    ctx.modalProduzirCartoes(6000);
+    ctx._els['pc-email'] = { value: 'ana@x.ao' }; ctx._els['pc-senha'] = { value: '246810' };
+    await ctx.pcAutorizar();
+    ctx._els['pc-valor'] = { value: '6000' };
+    ctx._els['pc-qtd'] = { value: '4' };
+    ctx.pcPedir();
+    expect(ctx._els['pc-qtd'].value).toBe(10);
+    expect(ctx._toast[0]).toMatch(/mínimo é 10/);
+    expect(ctx._fetch).toHaveLength(0);
+    ctx._els['pc-qtd'] = { value: '13' };
+    ctx.pcPedir();
+    expect(ctx._modal).toContain('pcProduzir(10)');
+    expect(ctx._modal).toContain('Reduzir para 10 (1 folha A4)');
+    expect(ctx._modal).toContain('Avançar com 20 (2 folhas A4 completas)');
+    expect(ctx._fetch).toHaveLength(0); // nada se gera sem a escolha
+    await ctx.pcProduzir(20);
+    expect(ctx._fetch).toEqual([['/api/caixa/cartoes/producao', { email: 'ana@x.ao', palavra_passe: '246810', valor: 6000, quantidade: 20 }]]);
+    expect(ctx._descarregado).toBe('cartoes-lote-7.pdf');
+    expect(ctx._modal).toContain('Lote N.º <b>7</b>');
+    expect(ctx._modal).toContain('2 folhas A4 · autorizado por Ana Admin');
+    expect(ctx.window._prodCartoes).toBeNull(); // a palavra-passe não fica guardada
+    // 5 cartões abaixo de uma folha só têm a opção de avançar
+    ctx.pcPerguntarFolhas(5, 0, 10);
+    expect(ctx._modal).not.toContain('Reduzir');
+  });
+
+  test('Produção: recusa do servidor volta às credenciais e mostra o motivo', async () => {
+    const ctx = carregar({ '/caixa': { aberta: true }, '/caixa/cartoes': [], '/caixa/cartoes/tipos': TIPOS, '/caixa/cartoes/producao/autorizar': { nome: 'Rui' } });
+    comFetch(ctx, { ok: false, status: 403, json: async () => ({ erro: 'Rui não está autorizado a imprimir cartões.', codigo: 'SEM_PERFIL_CARTOES' }) });
+    ctx.modalProduzirCartoes(3000);
+    ctx._els['pc-email'] = { value: 'rui@x.ao' }; ctx._els['pc-senha'] = { value: '135790' };
+    await ctx.pcAutorizar();
+    await ctx.pcProduzir(10);
+    expect(ctx._toast[0]).toMatch(/não está autorizado/);
+    expect(ctx._modal).toContain('pc-email');
   });
 
   test('Receber: agrupa por mesa, calcula troco e envia o corpo esperado (PIN e cartão)', async () => {

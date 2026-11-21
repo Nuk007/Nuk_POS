@@ -21,9 +21,9 @@ describe('Cartões configurados', () => {
     expect(r.status).toBe(200);
     expect(r.body.map(t => Number(t.valor))).toEqual([2000, 3000, 5000, 6000, 12000, 15000, 20000, 25000]);
     expect(r.body.every(t => t.por_vender === 0 && t.ativo)).toBe(true);
-    await a('post', '/api/caixa/cartoes/lotes', { valor: 3000, quantidade: 7 });
+    await a('post', '/api/caixa/cartoes/lotes', { valor: 3000, quantidade: 10 });
     const r2 = await a('get', '/api/caixa/cartoes/tipos');
-    expect(r2.body.find(t => Number(t.valor) === 3000).por_vender).toBe(7);
+    expect(r2.body.find(t => Number(t.valor) === 3000).por_vender).toBe(10);
     // isolamento: o outro estabelecimento tem os seus
     expect((await op(B, 'get', '/api/caixa/cartoes/tipos')).body.every(t => t.por_vender === 0)).toBe(true);
   });
@@ -49,7 +49,7 @@ describe('Venda de vários cartões impressos pelos códigos', () => {
   beforeAll(async () => {
     const lotes = (await a('get', '/api/caixa/cartoes/lotes')).body;
     codigos = (await a('get', `/api/caixa/cartoes/lotes/${lotes.find(l => Number(l.valor) === 3000).id}`)).body.cartoes.map(c => c.codigo);
-    const l5 = (await a('post', '/api/caixa/cartoes/lotes', { valor: 5000, quantidade: 1 })).body;
+    const l5 = (await a('post', '/api/caixa/cartoes/lotes', { valor: 5000, quantidade: 10 })).body;
     de5000 = (await a('get', `/api/caixa/cartoes/lotes/${l5.id}`)).body.cartoes[0].codigo;
   });
 
@@ -86,7 +86,7 @@ describe('Venda de vários cartões impressos pelos códigos', () => {
     expect(r.body.cartoes.every(c => Number(c.saldo) === 3000 && c.estado === 'ACTIVO')).toBe(true);
     const m = (await pool.query(`SELECT numero, valor, metodo FROM caixa_movimentos WHERE tenant_id = $1 ORDER BY numero`, [A.tenantId])).rows;
     expect(m.map(x => [Number(x.numero), Number(x.valor), x.metodo])).toEqual([[1, 3000, 'TPA'], [2, 3000, 'TPA'], [3, 3000, 'TPA']]);
-    expect((await a('get', '/api/caixa/cartoes/tipos')).body.find(t => Number(t.valor) === 3000).por_vender).toBe(4);
+    expect((await a('get', '/api/caixa/cartoes/tipos')).body.find(t => Number(t.valor) === 3000).por_vender).toBe(7);
     const de2 = await a('post', '/api/caixa/cartoes/vender', { valor: 3000, metodo: 'CASH', codigos: [codigos[3], codigos[1]] });
     expect(de2.status).toBe(409);
     expect(de2.body).toMatchObject({ codigo: 'CARTAO_JA_VENDIDO', codigos: [codigos[1]] });

@@ -28,21 +28,28 @@ describe('Lotes de cartões pré-impressos', () => {
     expect((await a('post', '/api/caixa/cartoes/lotes', { valor: 500, quantidade: 5 })).status).toBe(400);
     expect((await a('post', '/api/caixa/cartoes/lotes', { valor: 3000, quantidade: 0 })).status).toBe(400);
     expect((await a('post', '/api/caixa/cartoes/lotes', { valor: 3000, quantidade: 201 })).status).toBe(400);
-    expect((await a('post', '/api/caixa/cartoes/lotes', { valor: 3000.5, quantidade: 5 })).status).toBe(400);
+    expect((await a('post', '/api/caixa/cartoes/lotes', { valor: 3000.5, quantidade: 10 })).status).toBe(400);
+    // folhas A4 completas (21/11/2026): menos de uma folha ou folha a meio é recusado, com as duas alternativas
+    const meia = await a('post', '/api/caixa/cartoes/lotes', { valor: 3000, quantidade: 5 });
+    expect(meia.status).toBe(400);
+    expect(meia.body).toMatchObject({ codigo: 'FOLHAS_INCOMPLETAS', reduzir: null, avancar: 10 });
+    const treze = await a('post', '/api/caixa/cartoes/lotes', { valor: 3000, quantidade: 13 });
+    expect(treze.body).toMatchObject({ codigo: 'FOLHAS_INCOMPLETAS', reduzir: 10, avancar: 20 });
+    expect((await a('post', '/api/caixa/cartoes/lotes', { valor: 3000, quantidade: 195 })).body).toMatchObject({ reduzir: 190, avancar: 200 });
   });
 
   test('gera o lote com o caixa fechado: códigos únicos, por vender e sem saldo; numeração por estabelecimento', async () => {
-    const r = await a('post', '/api/caixa/cartoes/lotes', { valor: 3000, quantidade: 12 });
+    const r = await a('post', '/api/caixa/cartoes/lotes', { valor: 3000, quantidade: 20 });
     expect(r.status).toBe(201);
     lote = r.body;
-    expect(lote).toMatchObject({ numero: 1, quantidade: 12, vendidos: 0, por_vender: 12 });
+    expect(lote).toMatchObject({ numero: 1, quantidade: 20, vendidos: 0, por_vender: 20, folhas: 2 });
     const c = await pool.query(`SELECT codigo, saldo, estado, valor_inicial FROM cartoes_consumo WHERE lote_id = $1`, [lote.id]);
     codigos = c.rows.map(x => x.codigo);
-    expect(new Set(codigos).size).toBe(12);
+    expect(new Set(codigos).size).toBe(20);
     codigos.forEach(x => expect(x).toMatch(/^CC[A-Z2-9]{8}$/));
     expect(c.rows.every(x => x.estado === 'POR_VENDER' && Number(x.saldo) === 0 && Number(x.valor_inicial) === 3000)).toBe(true);
-    expect((await a('post', '/api/caixa/cartoes/lotes', { valor: 5000, quantidade: 1 })).body.numero).toBe(2);
-    expect((await op(B, 'post', '/api/caixa/cartoes/lotes', { valor: 2000, quantidade: 1 })).body.numero).toBe(1);
+    expect((await a('post', '/api/caixa/cartoes/lotes', { valor: 5000, quantidade: 10 })).body.numero).toBe(2);
+    expect((await op(B, 'post', '/api/caixa/cartoes/lotes', { valor: 2000, quantidade: 10 })).body.numero).toBe(1);
     // os cartões por vender não aparecem na lista de vendidos
     expect((await a('get', '/api/caixa/cartoes')).body.some(x => codigos.includes(x.codigo))).toBe(false);
   });
@@ -96,7 +103,7 @@ describe('Lotes de cartões pré-impressos', () => {
 
   test('a lista de lotes conta vendidos e por vender; gerar código fora dos lotes foi retirado', async () => {
     const l = (await a('get', '/api/caixa/cartoes/lotes')).body.find(x => x.id === lote.id);
-    expect(l).toMatchObject({ quantidade: 12, vendidos: 1, por_vender: 11 });
+    expect(l).toMatchObject({ quantidade: 20, vendidos: 1, por_vender: 19 });
     const v = await a('post', '/api/caixa/cartoes', { valor: 3000, metodo: 'CASH' });
     expect(v.status).toBe(410);
     expect(v.body.codigo).toBe('GERAR_SO_ADMIN');
@@ -105,12 +112,12 @@ describe('Lotes de cartões pré-impressos', () => {
 
   test('só o Administrador gera códigos: gerente recusado na rota e no serviço; a BD recusa cartões sem lote', async () => {
     const G = await criarTenantFixture({ slug: 'it-lotes-ger', nivel: 'GERENTE' });
-    expect((await op(G, 'post', '/api/caixa/cartoes/lotes', { valor: 3000, quantidade: 1 })).status).toBe(403);
+    expect((await op(G, 'post', '/api/caixa/cartoes/lotes', { valor: 3000, quantidade: 10 })).status).toBe(403);
     expect((await op(G, 'get', '/api/caixa/cartoes/lotes')).status).toBe(403);
     const svc = require('../../server/services/caixa.service');
     const ger = (await pool.query(`SELECT id FROM funcionarios WHERE tenant_id = $1 LIMIT 1`, [G.tenantId])).rows[0].id;
-    await expect(svc.criarLote({ tenantId: G.tenantId, userId: ger, valor: 3000, quantidade: 1 })).rejects.toMatchObject({ statusCode: 403 });
-    await expect(svc.criarLote({ tenantId: A.tenantId, userId: null, valor: 3000, quantidade: 1 })).rejects.toMatchObject({ statusCode: 403 });
+    await expect(svc.criarLote({ tenantId: G.tenantId, userId: ger, valor: 3000, quantidade: 10 })).rejects.toMatchObject({ statusCode: 403 });
+    await expect(svc.criarLote({ tenantId: A.tenantId, userId: null, valor: 3000, quantidade: 10 })).rejects.toMatchObject({ statusCode: 403 });
     await expect(pool.query(`INSERT INTO cartoes_consumo (tenant_id, codigo, valor_inicial, saldo) VALUES ($1, 'CCSEMLOTE2', 3000, 3000)`, [A.tenantId]))
       .rejects.toThrow(/só são gerados pelo Administrador/);
   });

@@ -9,6 +9,7 @@ const svc = require('../services/caixa.service');
 const cc = require('../services/conta-corrente.service');
 const auditoria = require('../services/caixa-auditoria.service');
 const { exigirModulo } = require('../middleware/modulos');
+const { loginLimiter, loginIpLimiter } = require('../middleware/rateLimiters');
 
 const h = fn => async (req, res, next) => {
   try { await fn(req, res); }
@@ -167,7 +168,7 @@ router.post('/cartoes/vender', authMiddleware, h(async (req, res) => res.json(aw
  *     summary: Gera um lote de cartões para imprimir (ficam sem saldo até serem vendidos no caixa) — só ADMIN
  *     tags: [Caixa]
  *     security: [{ bearerAuth: [] }]
- *     requestBody: { content: { application/json: { schema: { type: object, required: [valor, quantidade], properties: { valor: { type: integer, minimum: 1000, maximum: 500000 }, quantidade: { type: integer, minimum: 1, maximum: 200 } } } } } }
+ *     requestBody: { content: { application/json: { schema: { type: object, required: [valor, quantidade], properties: { valor: { type: integer, minimum: 1000, maximum: 500000 }, quantidade: { type: integer, minimum: 10, maximum: 200, multipleOf: 10, description: "Folhas A4 completas (10 cartões por folha)" } } } } } }
  *     responses: { 201: { description: Lote criado }, 400: { description: Valor ou quantidade inválidos } }
  */
 router.get('/cartoes/lotes', authMiddleware, requerNivel(['ADMIN']), exigirModulo('configuracoes'), h(async (req, res) => res.json(await svc.listarLotes(base(req)))));
@@ -202,6 +203,36 @@ router.get('/cartoes/lotes/:id/pdf', authMiddleware, requerNivel(['ADMIN']), exi
   if (!isUUID(req.params.id)) return res.status(400).json({ erro: 'id inválido' });
   const pdf = await require('../services/documentos.service').folhaCartoesLote({ tenantId: req.tenantId, loteId: req.params.id });
   res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="cartoes-lote-${req.params.id.slice(0, 8)}.pdf"`, 'Cache-Control': 'no-store' }).send(pdf);
+}));
+
+/**
+ * @openapi
+ * /api/caixa/cartoes/producao/autorizar:
+ *   post:
+ *     summary: "Produção de cartões no Caixa (cartão esgotado) — confirma as credenciais de quem autoriza: o Administrador ou quem tem o perfil «Imprimir cartões»"
+ *     tags: [Caixa]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody: { content: { application/json: { schema: { type: object, required: [email, palavra_passe], properties: { email: { type: string }, palavra_passe: { type: string } } } } } }
+ *     responses: { 200: { description: "{ nome } de quem autoriza" }, 403: { description: "Credenciais erradas (CREDENCIAIS_INVALIDAS) ou sem o perfil (SEM_PERFIL_CARTOES)" } }
+ * /api/caixa/cartoes/producao:
+ *   post:
+ *     summary: "Gera um lote de um cartão configurado, autorizado no próprio Caixa, e devolve logo a folha A4 para imprimir (PDF). A quantidade são folhas completas (10 cartões por folha)"
+ *     tags: [Caixa]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody: { content: { application/json: { schema: { type: object, required: [email, palavra_passe, valor, quantidade], properties: { email: { type: string }, palavra_passe: { type: string }, valor: { type: integer }, quantidade: { type: integer, minimum: 10, maximum: 200, multipleOf: 10 } } } } } }
+ *     responses: { 201: { description: "PDF; cabeçalhos X-Lote-Numero, X-Lote-Quantidade, X-Lote-Folhas" }, 400: { description: "Folhas incompletas (FOLHAS_INCOMPLETAS, com reduzir/avancar)" }, 403: { description: Sem autorização }, 404: { description: Cartão não configurado } }
+ */
+router.post('/cartoes/producao/autorizar', authMiddleware, exigirModulo('cartoes'), loginIpLimiter, loginLimiter, h(async (req, res) => {
+  const a = await svc.autorizadorCartoes({ tenantId: req.tenantId, email: req.body.email, palavraPasse: req.body.palavra_passe });
+  res.json({ nome: a.nome });
+}));
+router.post('/cartoes/producao', authMiddleware, exigirModulo('cartoes'), loginIpLimiter, loginLimiter, h(async (req, res) => {
+  const l = await svc.produzirLote({ tenantId: req.tenantId, userId: req.user.id, email: req.body.email, palavraPasse: req.body.palavra_passe, valor: req.body.valor, quantidade: req.body.quantidade });
+  const pdf = await require('../services/documentos.service').folhaCartoesLote({ tenantId: req.tenantId, loteId: l.id });
+  res.status(201).set({
+    'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="cartoes-lote-${l.numero}.pdf"`, 'Cache-Control': 'no-store',
+    'X-Lote-Id': l.id, 'X-Lote-Numero': String(l.numero), 'X-Lote-Quantidade': String(l.quantidade), 'X-Lote-Folhas': String(l.folhas),
+  }).send(pdf);
 }));
 
 /**

@@ -18,7 +18,7 @@ test('movimentos do caixa: pesquisa, verificação, rasto de cartão e exportaç
     const h = { Authorization: `Bearer ${NUK.token}`, 'Content-Type': 'application/json' };
     const e = await (await fetch('/api/caixa', { headers: h })).json();
     if (!e.aberta) await fetch('/api/caixa/abrir', { method: 'POST', headers: h, body: JSON.stringify({ fundo_inicial: 0 }) });
-    const l = await (await fetch('/api/caixa/cartoes/lotes', { method: 'POST', headers: h, body: JSON.stringify({ valor: 6000, quantidade: 1 }) })).json();
+    const l = await (await fetch('/api/caixa/cartoes/lotes', { method: 'POST', headers: h, body: JSON.stringify({ valor: 6000, quantidade: 10 }) })).json();
     const cod = (await (await fetch(`/api/caixa/cartoes/lotes/${l.id}`, { headers: h })).json()).cartoes[0].codigo;
     await fetch('/api/caixa/cartoes/vender', { method: 'POST', headers: h, body: JSON.stringify({ valor: 6000, metodo: 'CASH', codigos: [cod] }) });
     return cod;

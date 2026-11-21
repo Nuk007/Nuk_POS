@@ -11,7 +11,7 @@ const ac = require('./acessos');
 
 const NIVEIS = ['ADMIN', 'GERENTE', 'OPERADOR'];
 const COLS = `id, nome, email, cargo, nivel_acesso, salario, comissao_pct, media_avaliacao, total_avaliacoes, ativo, titular,
-              pode_vender_quartos, arruma_quartos, permissoes, ultimo_acesso, criado_em`;
+              pode_vender_quartos, arruma_quartos, imprime_cartoes, permissoes, ultimo_acesso, criado_em`;
 
 const bool = v => (v === undefined || v === null ? null : v === true || v === 'true');
 
@@ -23,7 +23,7 @@ async function listar({ tenantId }) {
 }
 
 async function actorDe(tenantId, actorId) {
-  const r = await pool.query(`SELECT id, nivel_acesso, titular, permissoes FROM funcionarios WHERE id = $1 AND ($2::uuid IS NULL OR tenant_id = $2) AND ativo = true`, [actorId, tenantId || null]);
+  const r = await pool.query(`SELECT id, nivel_acesso, titular, permissoes, imprime_cartoes FROM funcionarios WHERE id = $1 AND ($2::uuid IS NULL OR tenant_id = $2) AND ativo = true`, [actorId, tenantId || null]);
   if (!r.rows[0]) throw erro(403, 'Utilizador sem acesso');
   return r.rows[0];
 }
@@ -39,9 +39,15 @@ function validarLista(p) {
  * e só atribuem acessos que eles próprios têm — o limite foi fixado pelo titular.
  * Devolve a lista de acessos a gravar (undefined = não mexer).
  */
-function aplicarDelegacao({ actor, alvo, nivel, permissoes, vender, arrumar }) {
+function aplicarDelegacao({ actor, alvo, nivel, permissoes, vender, arrumar, imprimir }) {
   const meu = ac.efectivas(actor);
   if (!meu.includes('funcionarios')) throw erro(403, 'Não tem acesso à gestão de funcionários');
+  // Perfil «Imprimir cartões» (21/11/2026, regra do dono): só um Administrador o dá ou tira — quem o tem autoriza
+  // lotes de códigos no Caixa. Um administrador não titular precisa que o titular lho tenha delegado.
+  if (imprimir !== null && imprimir !== undefined && imprimir !== !!(alvo && alvo.imprime_cartoes)) {
+    if (actor.nivel_acesso !== 'ADMIN') throw erro(403, 'Só um Administrador atribui ou retira o perfil «Imprimir cartões».');
+    if (!actor.titular && !meu.includes('imprimir_cartoes')) throw erro(403, 'O titular não lhe delegou o perfil «Imprimir cartões».');
+  }
   if (actor.titular) {
     return permissoes === undefined ? undefined : (permissoes === null ? null : validarLista(permissoes));
   }
@@ -71,31 +77,31 @@ function validarComissao(v) {
   return Math.round(n * 100) / 100;
 }
 
-async function criar({ tenantId, actorId, nome, email, password, nivel_acesso, cargo, salario, comissao_pct, pode_vender_quartos, arruma_quartos, permissoes }) {
+async function criar({ tenantId, actorId, nome, email, password, nivel_acesso, cargo, salario, comissao_pct, pode_vender_quartos, arruma_quartos, imprime_cartoes, permissoes }) {
   if (!nome || !email || !password) throw erro(400, 'nome, email e password são obrigatórios');
   if (!NIVEIS.includes(nivel_acesso)) throw erro(400, `nivel_acesso inválido. Valores: ${NIVEIS.join(', ')}`);
   const comissao = validarComissao(comissao_pct);
-  const lista = aplicarDelegacao({ actor: await actorDe(tenantId, actorId), alvo: null, nivel: nivel_acesso, permissoes, vender: bool(pode_vender_quartos), arrumar: bool(arruma_quartos) });
+  const lista = aplicarDelegacao({ actor: await actorDe(tenantId, actorId), alvo: null, nivel: nivel_acesso, permissoes, vender: bool(pode_vender_quartos), arrumar: bool(arruma_quartos), imprimir: bool(imprime_cartoes) });
   validarPalavraPasse(password);
   // M-02: unicidade de email por tenant, não global
   const ex = await pool.query(`SELECT id FROM funcionarios WHERE LOWER(email) = LOWER($1) AND ($2::uuid IS NULL OR tenant_id = $2)`, [email.trim(), tenantId || null]);
   if (ex.rows[0]) throw erro(409, 'Email já registado neste estabelecimento');
   const hash = await bcrypt.hash(password, 12);
   const r = await pool.query(
-    `INSERT INTO funcionarios (id, tenant_id, nome, email, password_hash, nivel_acesso, cargo, salario, pode_vender_quartos, arruma_quartos, permissoes, ativo, criado_em, comissao_pct)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,true,NOW(),$12) RETURNING ${COLS}`,
-    [uuidv4(), tenantId || null, nome.trim(), email.trim().toLowerCase(), hash, nivel_acesso, cargo || null, Number(salario) || 0, bool(pode_vender_quartos) === true, bool(arruma_quartos) === true, lista ? JSON.stringify(lista) : null, comissao === null ? 0 : comissao]);
+    `INSERT INTO funcionarios (id, tenant_id, nome, email, password_hash, nivel_acesso, cargo, salario, pode_vender_quartos, arruma_quartos, permissoes, ativo, criado_em, comissao_pct, imprime_cartoes)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,true,NOW(),$12,$13) RETURNING ${COLS}`,
+    [uuidv4(), tenantId || null, nome.trim(), email.trim().toLowerCase(), hash, nivel_acesso, cargo || null, Number(salario) || 0, bool(pode_vender_quartos) === true, bool(arruma_quartos) === true, lista ? JSON.stringify(lista) : null, comissao === null ? 0 : comissao, bool(imprime_cartoes) === true]);
   return comAcessos(r.rows[0]);
 }
 
-async function actualizar({ tenantId, actorId, id, nome, nivel_acesso, ativo, password, cargo, salario, comissao_pct, pode_vender_quartos, arruma_quartos, permissoes }) {
+async function actualizar({ tenantId, actorId, id, nome, nivel_acesso, ativo, password, cargo, salario, comissao_pct, pode_vender_quartos, arruma_quartos, imprime_cartoes, permissoes }) {
   if (nivel_acesso !== undefined && !NIVEIS.includes(nivel_acesso)) throw erro(400, `nivel_acesso inválido. Valores: ${NIVEIS.join(', ')}`);
   if (password !== undefined && password !== '') validarPalavraPasse(password);
   const comissao = validarComissao(comissao_pct);
   const actor = await actorDe(tenantId, actorId);
-  const alvo = (await pool.query(`SELECT id, nivel_acesso, titular, permissoes FROM funcionarios WHERE id = $1 AND ($2::uuid IS NULL OR tenant_id = $2)`, [id, tenantId || null])).rows[0];
+  const alvo = (await pool.query(`SELECT id, nivel_acesso, titular, permissoes, imprime_cartoes FROM funcionarios WHERE id = $1 AND ($2::uuid IS NULL OR tenant_id = $2)`, [id, tenantId || null])).rows[0];
   if (!alvo) throw erro(404, 'Funcionário não encontrado');
-  const lista = aplicarDelegacao({ actor, alvo, nivel: nivel_acesso, permissoes, vender: bool(pode_vender_quartos), arrumar: bool(arruma_quartos) });
+  const lista = aplicarDelegacao({ actor, alvo, nivel: nivel_acesso, permissoes, vender: bool(pode_vender_quartos), arrumar: bool(arruma_quartos), imprimir: bool(imprime_cartoes) });
   const hash = password ? await bcrypt.hash(password, 12) : null;
   const novoAtivo = ativo !== undefined ? bool(ativo) : null;
   // A guarda do titular está no próprio UPDATE: nunca fica inactivo nem deixa de ser ADMIN.
@@ -111,12 +117,13 @@ async function actualizar({ tenantId, actorId, id, nome, nivel_acesso, ativo, pa
        arruma_quartos = COALESCE($8, arruma_quartos),
        permissoes = CASE WHEN $11::boolean THEN $12::jsonb ELSE permissoes END,
        comissao_pct = COALESCE($13, comissao_pct),
+       imprime_cartoes = COALESCE($14, imprime_cartoes),
        atualizado_em = NOW()
      WHERE id = $9 AND ($10::uuid IS NULL OR tenant_id = $10)
        AND NOT (titular AND (COALESCE($3, true) = false OR COALESCE($2, 'ADMIN') <> 'ADMIN'))
      RETURNING ${COLS}`,
     [nome || null, nivel_acesso || null, novoAtivo, hash, cargo === undefined ? null : cargo, salario === undefined ? null : Number(salario) || 0,
-     bool(pode_vender_quartos), bool(arruma_quartos), id, tenantId || null, lista !== undefined, lista ? JSON.stringify(lista) : null, comissao]);
+     bool(pode_vender_quartos), bool(arruma_quartos), id, tenantId || null, lista !== undefined, lista ? JSON.stringify(lista) : null, comissao, bool(imprime_cartoes)]);
   if (r.rows[0]) return comAcessos(r.rows[0]);
   const ex = await pool.query(`SELECT titular FROM funcionarios WHERE id = $1 AND ($2::uuid IS NULL OR tenant_id = $2)`, [id, tenantId || null]);
   if (!ex.rows[0]) throw erro(404, 'Funcionário não encontrado');

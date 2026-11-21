@@ -184,24 +184,26 @@ function cartaoTiposCartao(tipos, lotes = []) {
           <button class="btn-primario" data-on-click="criarTipoCartao()">+ Novo cartão</button>
         </div>
         ${euAdmin() ? `<div class="card-titulo mt-2" style="margin-top:1.2rem">GERAR CÓDIGOS (LOTES PARA IMPRIMIR)</div>
-        <div class="muted" style="font-size:.82rem;margin:.3rem 0 .6rem">Só o Administrador gera códigos de cartão, e só aqui. Imprima a folha em cartolina (10 cartões por página) e recorte. Cada cartão fica sem saldo até o Caixa o vender: perdido antes disso, não vale nada.</div>
+        <div class="muted" style="font-size:.82rem;margin:.3rem 0 .6rem">Só o Administrador gera códigos de cartão: aqui, ou no Caixa quando um cartão esgota (com as credenciais dele ou de quem tem o perfil «Imprimir cartões»). Imprime-se sempre em folhas A4 completas, de 10 cartões; imprima em cartolina e recorte. Cada cartão fica sem saldo até o Caixa o vender: perdido antes disso, não vale nada.</div>
         ${activos.length ? `<div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-end">
           <div class="campo" style="flex:1;min-width:8rem;margin:0"><label>Cartão</label><select id="lote-valor">${activos.map(t => `<option value="${Number(t.valor)}">${formatarMoeda(t.valor)}${t.nome ? ' · ' + esc(t.nome) : ''}</option>`).join('')}</select></div>
-          <div class="campo" style="width:7rem;margin:0"><label>Quantidade</label><input id="lote-qtd" type="number" min="1" max="200" value="20"></div>
+          <div class="campo" style="width:11rem;margin:0"><label>Folhas A4 (10 cartões cada)</label><select id="lote-folhas">${Array.from({ length: 20 }, (_, i) => `<option value="${i + 1}" ${i === 1 ? 'selected' : ''}>${i + 1} folha${i ? 's' : ''} · ${(i + 1) * 10} cartões</option>`).join('')}</select></div>
           <button class="btn-primario" data-on-click="gerarLoteCartoes()">Gerar lote</button>
         </div>` : '<div class="muted">Active ou crie um cartão primeiro.</div>'}
         <div class="tabela-wrapper mt-2"><table>
           <thead><tr><th>Lote</th><th style="text-align:right">Valor</th><th style="text-align:right">Cartões</th><th style="text-align:right">Vendidos</th><th>Criado</th><th></th></tr></thead>
           <tbody>${lotes.map(l => `<tr><td><b>N.º ${l.numero}</b></td><td style="text-align:right">${formatarMoeda(l.valor)}</td><td style="text-align:right">${l.quantidade}</td><td style="text-align:right">${l.vendidos}</td>
-              <td style="font-size:.78rem">${new Date(l.criado_em).toLocaleDateString('pt-PT', { timeZone: 'Africa/Luanda' })}${l.criado_por_nome ? ` · ${esc(l.criado_por_nome)}` : ''}</td>
+              <td style="font-size:.78rem">${new Date(l.criado_em).toLocaleDateString('pt-PT', { timeZone: 'Africa/Luanda' })}${l.criado_por_nome ? ` · ${esc(l.criado_por_nome)}` : ''}${l.pedido_por_nome ? ` <span class="muted">(pedido no Caixa por ${esc(l.pedido_por_nome)})</span>` : ''}</td>
               <td><button class="btn-secundario" style="padding:.2rem .55rem;font-size:.75rem" data-on-click="imprimirLoteCartoes('${esc(l.id)}','${l.numero}')">🖨️ Imprimir</button></td></tr>`).join('')
             || '<tr><td colspan="6" class="muted" style="text-align:center;padding:1rem">Ainda não gerou lotes</td></tr>'}</tbody></table></div>` : ''}
       </div>`;
 }
 async function gerarLoteCartoes() {
   const valor = parseInt(document.getElementById('lote-valor').value, 10);
-  const quantidade = parseInt(document.getElementById('lote-qtd').value, 10);
-  if (!(quantidade >= 1 && quantidade <= 200)) return toast('Quantidade de 1 a 200 cartões por lote', 'aviso');
+  // Sempre folhas A4 completas (decisão do dono de 21/11/2026): escolhe-se o número de folhas, 10 cartões cada
+  const folhas = parseInt(document.getElementById('lote-folhas').value, 10);
+  if (!(folhas >= 1 && folhas <= 20)) return toast('Escolha de 1 a 20 folhas A4', 'aviso');
+  const quantidade = folhas * 10;
   try {
     const l = await api('POST', '/caixa/cartoes/lotes', { valor, quantidade });
     toast(`Lote N.º ${l.numero}: ${l.quantidade} cartões de ${formatarMoeda(l.valor)}. A descarregar a folha para imprimir…`, 'sucesso', 6000);

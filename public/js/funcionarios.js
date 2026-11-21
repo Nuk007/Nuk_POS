@@ -26,7 +26,7 @@ async function modulo_funcionarios(el) {
           <tbody>
             ${lista.map(f => `
               <tr>
-                <td><b>${f.nome}</b>${f.titular ? ' <span class="status-badge status-CONFIRMADA" title="Conta titular do estabelecimento">Titular</span>' : ''}<div class="muted texto-pequeno">${f.email}</div>${f.pode_vender_quartos ? '<span class="muted texto-pequeno">🛏 vende quartos </span>' : ''}${f.arruma_quartos ? '<span class="muted texto-pequeno">🧹 arruma quartos</span>' : ''}</td>
+                <td><b>${f.nome}</b>${f.titular ? ' <span class="status-badge status-CONFIRMADA" title="Conta titular do estabelecimento">Titular</span>' : ''}<div class="muted texto-pequeno">${f.email}</div>${f.pode_vender_quartos ? '<span class="muted texto-pequeno">🛏 vende quartos </span>' : ''}${f.arruma_quartos ? '<span class="muted texto-pequeno">🧹 arruma quartos </span>' : ''}${f.imprime_cartoes ? '<span class="muted texto-pequeno">🖨 imprime cartões</span>' : ''}</td>
                 <td>${f.cargo || '—'}</td>
                 <td><span class="status-badge ${f.nivel_acesso === 'ADMIN' ? 'status-CONFIRMADA' : f.nivel_acesso === 'GERENTE' ? 'status-EM_PREPARO' : 'status-LIVRE'}">${f.nivel_acesso}</span></td>
                 <td>★ ${parseFloat(f.media_avaliacao||0).toFixed(1)} <span class="muted">(${f.total_avaliacoes})</span></td>
@@ -69,6 +69,14 @@ function actualizarAcessosForm(prefixo) {
   if (alvo) alvo.outerHTML = htmlAcessos(prefixo, (m.padrao[nivel] || []).filter(k => m.meu_limite.includes(k)), nivel, false);
 }
 
+// Perfil «Imprimir cartões» (21/11/2026): só um Administrador o vê e o muda (o servidor também verifica).
+// Quem o tem autoriza, com as suas credenciais, a impressão de cartões no Caixa quando um cartão esgota.
+function campoImprimeCartoes(prefixo, marcado) {
+  if (!(typeof NUK !== 'undefined' && NUK.utilizador && NUK.utilizador.nivel_acesso === 'ADMIN')) return '';
+  return `<div class="campo"><label><input type="checkbox" id="${prefixo}-ic" ${marcado ? 'checked' : ''}> Imprime cartões de consumo (autoriza novos lotes no Caixa)</label></div>`;
+}
+function lerImprimeCartoes(prefixo) { const c = document.getElementById(`${prefixo}-ic`); return c ? !!c.checked : undefined; }
+
 function modalNovoFuncionario() {
   abrirModal('Novo Funcionário', `
     <div class="campo"><label>Nome</label><input type="text" id="nf-nome"></div>
@@ -87,6 +95,7 @@ function modalNovoFuncionario() {
     <div class="campo"><label>Comissão sobre vendas (%)</label><input type="number" id="nf-com" value="0" min="0" max="100" step="0.5"></div>
     <div class="campo"><label><input type="checkbox" id="nf-vq"> Pode vender/reservar/abrir quartos</label></div>
     <div class="campo"><label><input type="checkbox" id="nf-aq"> Arruma quartos (recebe os avisos de limpeza)</label></div>
+    ${campoImprimeCartoes('nf', false)}
     <button class="btn-primario btn-bloco" data-on-click="guardarNovoFuncionario()">Guardar</button>
   `);
 }
@@ -101,7 +110,7 @@ async function guardarNovoFuncionario() {
   if (!nome || !email || !/^\d{6,8}$/.test(password)) { toast('Preencha todos os campos (palavra-passe de 6 a 8 dígitos)', 'erro'); return; }
   try {
     await api('POST', '/funcionarios', { nome, email, password, cargo, nivel_acesso, salario, comissao_pct: parseFloat((document.getElementById('nf-com') || {}).value) || 0,
-      pode_vender_quartos: document.getElementById('nf-vq').checked, arruma_quartos: document.getElementById('nf-aq').checked, permissoes: lerAcessos('nf') });
+      pode_vender_quartos: document.getElementById('nf-vq').checked, arruma_quartos: document.getElementById('nf-aq').checked, imprime_cartoes: lerImprimeCartoes('nf'), permissoes: lerAcessos('nf') });
     toast('Funcionário criado!', 'sucesso');
     fecharModal();
     carregarModulo('funcionarios');
@@ -122,6 +131,7 @@ function modalEditarFuncionario(id) {
     <div class="campo"><label>Comissão sobre vendas (%)</label><input type="number" id="ef-com" value="${esc(Number(f.comissao_pct || 0))}" min="0" max="100" step="0.5"></div>
     <div class="campo"><label><input type="checkbox" id="ef-vq" ${f.pode_vender_quartos ? 'checked' : ''}> Pode vender/reservar/abrir quartos</label></div>
     <div class="campo"><label><input type="checkbox" id="ef-aq" ${f.arruma_quartos ? 'checked' : ''}> Arruma quartos (recebe os avisos de limpeza)</label></div>
+    ${f.nivel_acesso === 'ADMIN' ? '' : campoImprimeCartoes('ef', !!f.imprime_cartoes)}
     ${f.titular ? '' : htmlAcessos('ef', f.acessos || [], f.nivel_acesso, !!window._acessosMeta && !window._acessosMeta.sou_titular && (f.acessos || []).some(k => !window._acessosMeta.meu_limite.includes(k)))}
     <div class="campo"><label>Nova palavra-passe (6 a 8 dígitos; vazio para não alterar)</label><input type="password" id="ef-senha" inputmode="numeric" minlength="6" maxlength="8" placeholder="6 a 8 dígitos" autocomplete="new-password"></div>
     <button class="btn-primario btn-bloco" data-on-click="salvarEdicaoFuncionario('${id}')">Guardar</button>
@@ -160,7 +170,7 @@ async function salvarEdicaoFuncionario(id) {
   const salario = parseFloat(document.getElementById('ef-sal').value) || 0;
   const password = document.getElementById('ef-senha').value;
   const dados = { nome, cargo, nivel_acesso, salario, comissao_pct: parseFloat((document.getElementById('ef-com') || {}).value) || 0,
-    pode_vender_quartos: document.getElementById('ef-vq').checked, arruma_quartos: document.getElementById('ef-aq').checked };
+    pode_vender_quartos: document.getElementById('ef-vq').checked, arruma_quartos: document.getElementById('ef-aq').checked, imprime_cartoes: lerImprimeCartoes('ef') };
   if (password && !/^\d{6,8}$/.test(password)) { toast('A palavra-passe tem de ter entre 6 e 8 dígitos', 'erro'); return; }
   if (password) dados.password = password;
   const acessos = lerAcessos('ef');

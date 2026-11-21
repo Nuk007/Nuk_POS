@@ -739,6 +739,8 @@ async function initDB() {
     for (const sql of require('./migrations-data/pin-bloqueio')) await client.query(sql);
     // Venda ao peso e códigos de barras (migração 1752900000000)
     for (const sql of require('./migrations-data/peso-codigos')) await client.query(sql);
+    // Produção de cartões no Caixa com autorização (migração 1753000000000)
+    for (const sql of require('./migrations-data/cartoes-producao')) await client.query(sql);
 
     // Avaliacoes de staff
     await client.query(`

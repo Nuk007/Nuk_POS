@@ -218,7 +218,8 @@ async function nukcoinCarregar(valor) {
 // ── Cartões de consumo ──────────────────────────────────────
 // Os cartões (valores) configuram-se em Configurações → Cartões de consumo e aparecem aqui como botões, como os quartos.
 // Vende-se carregando no cartão, indicando a quantidade e os códigos dos cartões impressos entregues, e validando.
-// Regra do dono: os códigos só são gerados pelo Administrador (lotes em Configurações); aqui só se vendem.
+// Regra do dono: os códigos só são gerados pelo Administrador (lotes em Configurações) ou, com um cartão esgotado,
+// aqui mesmo com as credenciais do Administrador ou de quem ele autorizou (caixa-producao.js).
 // Cobra-se o valor do cartão, sem desconto (decisão do dono de 20/11/2026).
 const VENDA_CARTOES_MAX = 50;
 const RE_CODIGO_CARTAO = /^CC[A-Z0-9]{8}$/;
@@ -226,10 +227,11 @@ const normCodigoCartao = c => String(c || '').trim().toUpperCase().replace(/[\s-
 
 function htmlBotaoCartao(t) {
   const n = Number(t.por_vender) || 0;
-  return `<div class="quarto-card cartao-card ${n ? 'DISPONIVEL' : 'LIMPEZA'}" data-on-click="modalVenderCartoes(${Number(t.valor)})">
+  // Esgotado (21/11/2026, pedido do dono): o botão fica vermelho e, tocado, abre a produção de cartões (caixa-producao.js)
+  return `<div class="quarto-card cartao-card ${n ? 'DISPONIVEL' : 'ESGOTADO'}" data-on-click="${n ? 'modalVenderCartoes' : 'modalProduzirCartoes'}(${Number(t.valor)})">
       <div class="card-numero">${formatarMoeda(t.valor)}</div>
       <div class="card-tipo">${esc(t.nome || 'Cartão de consumo')}</div>
-      <div class="quarto-estado">${n ? `${n} impresso${n === 1 ? '' : 's'} por vender` : 'Sem impressos: peça um lote ao Administrador'}</div>
+      <div class="quarto-estado">${n ? `${n} impresso${n === 1 ? '' : 's'} por vender` : 'Esgotado · toque para imprimir mais'}</div>
     </div>`;
 }
 

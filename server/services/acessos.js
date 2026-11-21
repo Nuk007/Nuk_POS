@@ -7,13 +7,13 @@
  * `permissoes` NULL = predefinição do nível (comportamento anterior à delegação).
  */
 const MODULOS = ['dashboard', 'caixa', 'nukcoin', 'cartoes', 'recebimentos', 'contas', 'movimentos', 'pedidos', 'mesas', 'balcao', 'remota', 'takeaway', 'cozinha', 'produtos', 'quartos', 'solicitacoes', 'lazer', 'loja', 'compras', 'stock', 'servicos', 'manutencao', 'funcionarios', 'assiduidade', 'financeiro', 'relatorios', 'patrimonio', 'clientes', 'configuracoes'];
-const CAPACIDADES = ['vender_quartos', 'arrumar_quartos']; // limite para atribuir os perfis de quartos
+const CAPACIDADES = ['vender_quartos', 'arrumar_quartos', 'imprimir_cartoes']; // limite para atribuir os perfis (quartos; cartões só entre administradores)
 const TODAS = [...MODULOS, ...CAPACIDADES];
 const ROTULOS = {
   dashboard: 'Dashboard', pedidos: 'Pedidos', mesas: 'Venda · Mesa', balcao: 'Venda · Balcão', remota: 'Venda · Remota', takeaway: 'Venda · Take Away', cozinha: 'Cozinha e bar', quartos: 'Quartos', solicitacoes: 'Solicitações', produtos: 'Menu / Produtos',
   caixa: 'Caixa do dia', nukcoin: 'Caixa · Nuk-Coin', cartoes: 'Caixa · Cartões de consumo', recebimentos: 'Caixa · Receber mesas', contas: 'Caixa · Contas correntes', movimentos: 'Caixa · Movimentos e auditoria', lazer: 'Lazer', loja: 'Loja', compras: 'Compras', servicos: 'Avarias e danos', manutencao: 'Prazos de manutenção', patrimonio: 'Património',
   stock: 'Stock', financeiro: 'Financeiro', relatorios: 'Relatórios', clientes: 'Clientes', funcionarios: 'Funcionários', assiduidade: 'Assiduidade', configuracoes: 'Configurações',
-  vender_quartos: 'Atribuir «vender quartos»', arrumar_quartos: 'Atribuir «arrumar quartos»',
+  vender_quartos: 'Atribuir «vender quartos»', arrumar_quartos: 'Atribuir «arrumar quartos»', imprimir_cartoes: 'Atribuir «imprimir cartões»',
 };
 const PADRAO = {
   ADMIN: TODAS,

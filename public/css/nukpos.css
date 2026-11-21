@@ -516,6 +516,9 @@ tr:hover td { background: rgba(255,255,255,.02); }
 .quarto-card { min-height: 8.2rem; display: flex; flex-direction: column; justify-content: flex-start; }
 .quarto-estado { font-size: .74rem; font-weight: 600; margin-top: .35rem; line-height: 1.25; }
 .quarto-card.DISPONIVEL .quarto-estado { color: var(--c-success); }
+/* Cartão de consumo esgotado (21/11/2026): vermelho, para se ver logo que é preciso imprimir mais */
+.quarto-card.ESGOTADO { border-color: var(--c-danger); }
+.quarto-card.ESGOTADO .quarto-estado { color: var(--c-danger); }
 .quarto-card.OCUPADO .quarto-estado { color: var(--c-primary); }
 .quarto-card.LIMPEZA .quarto-estado, .quarto-card.POR_PAGAR .quarto-estado { color: var(--c-warning); }
 .quarto-card.escalado { border-color: var(--c-danger); animation: quarto-pulsa 1.6s ease-in-out infinite; }

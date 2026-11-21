@@ -315,7 +315,7 @@ describe('Configurações → Cartões de consumo (códigos só pelo Administrad
     expect(h).toContain("pedirDesactivarTipoCartao('t1')");
     expect(h).toContain("activarTipoCartao('t2')");
     const chamadas = [], pdfs = [];
-    ctx.document.getElementById = id => ({ value: { 'lote-valor': '3000', 'lote-qtd': '30' }[id] || '' });
+    ctx.document.getElementById = id => ({ value: { 'lote-valor': '3000', 'lote-folhas': '3' }[id] || '' });
     ctx.api = async (m, u, b) => { chamadas.push([m, u, b]); return { id: 'l9', numero: 3, valor: 3000, quantidade: 30 }; };
     ctx.descarregarPdf = (c, n) => pdfs.push([c, n]);
     await ctx.gerarLoteCartoes();
