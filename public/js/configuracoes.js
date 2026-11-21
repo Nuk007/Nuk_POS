@@ -34,6 +34,7 @@ function listaContratada(lista) {
   if (lista === 'CATEGORIA_PRODUTO') return licenciadoModulo('restauracao') || licenciadoModulo('lazer') || licenciadoModulo('loja');
   if (lista === 'CATEGORIA_STOCK' || lista === 'UNIDADE_STOCK') return licenciadoModulo('compras');
   if (lista === 'CATEGORIA_PATRIMONIO') return licenciadoModulo('patrimonio');
+  if (lista === 'AREA_SAIDA') return licenciadoModulo('caixa');
   return true;
 }
 

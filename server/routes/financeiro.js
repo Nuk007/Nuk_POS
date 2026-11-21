@@ -152,7 +152,7 @@ router.get('/resultado', authMiddleware, chefia, h(async (req, res) => res.json(
 router.get('/despesas', authMiddleware, chefia, h(async (req, res) => res.json(await fin.listarDespesas({ tenantId: req.tenantId, de: req.query.de, ate: req.query.ate }))));
 router.post('/despesas', authMiddleware, chefia, h(async (req, res) => {
   const b = req.body || {};
-  res.status(201).json(await fin.criarDespesa({ categoria: b.categoria, descricao: b.descricao, valor: b.valor, data: b.data, pela_gaveta: b.pela_gaveta, ...base(req) }));
+  res.status(201).json(await fin.criarDespesa({ categoria: b.categoria, descricao: b.descricao, valor: b.valor, data: b.data, pela_gaveta: b.pela_gaveta, area: b.area, ...base(req) }));
 }));
 router.post('/despesas/:id/anular', authMiddleware, chefia, h(async (req, res) => {
   if (!isUUID(req.params.id)) return res.status(400).json({ erro: 'id inválido' });

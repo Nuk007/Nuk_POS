@@ -140,7 +140,7 @@ async function listarDespesas({ tenantId, de, ate }) {
   return r.rows.map(x => ({ ...x, valor: N(x.valor), rotulo: CATEGORIAS_DESPESA[x.categoria] || x.categoria }));
 }
 
-async function criarDespesa({ tenantId, userId, categoria, descricao, valor, data, pela_gaveta }) {
+async function criarDespesa({ tenantId, userId, categoria, descricao, valor, data, pela_gaveta, area }) {
   const cat = String(categoria || '').toUpperCase();
   if (!CATEGORIAS_DESPESA[cat]) throw erro(400, `Categoria inválida. Aceites: ${Object.keys(CATEGORIAS_DESPESA).join(', ')}`);
   const desc = String(descricao || '').trim();
@@ -151,6 +151,9 @@ async function criarDespesa({ tenantId, userId, categoria, descricao, valor, dat
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dia) || isNaN(new Date(dia + 'T00:00:00Z'))) throw erro(400, 'Data inválida (AAAA-MM-DD)');
   if (dia > hojeLuanda()) throw erro(400, 'A data não pode ser no futuro');
   const gaveta = pela_gaveta === true;
+  // Área da Folha de Caixa (opcional, lista AREA_SAIDA do estabelecimento; 21/11/2026)
+  const ar = area ? String(area).toUpperCase() : null;
+  if (ar) await require('./listas.service').exigirValor(tenantId, 'AREA_SAIDA', ar, 'Área');
   const out = await withTx(async db => {
     let sessaoId = null;
     if (gaveta) {
@@ -162,8 +165,8 @@ async function criarDespesa({ tenantId, userId, categoria, descricao, valor, dat
       sessaoId = s.rows[0].id;
     }
     const d = (await db.query(
-      `INSERT INTO despesas (tenant_id, categoria, descricao, valor, data, pela_gaveta, sessao_id, criado_por) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [tenantId, cat, desc, v, dia, gaveta, sessaoId, userId || null])).rows[0];
+      `INSERT INTO despesas (tenant_id, categoria, descricao, valor, data, pela_gaveta, sessao_id, criado_por, area) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [tenantId, cat, desc, v, dia, gaveta, sessaoId, userId || null, ar])).rows[0];
     if (gaveta) {
       await db.query(`INSERT INTO caixa_movimentos (tenant_id, sessao_id, tipo, metodo, valor, descricao, despesa_id, criado_por) VALUES ($1,$2,'DESPESA','CASH',$3,$4,$5,$6)`,
         [tenantId, sessaoId, -v, `Despesa · ${desc}`, d.id, userId || null]);

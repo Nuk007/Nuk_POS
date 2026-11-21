@@ -28,7 +28,7 @@ async function modulo_caixa(el) {
     window._caixaEstado = e;
     if (!e.aberta) {
       const hist = (await api('GET', '/caixa/sessoes')) || [];
-      el.innerHTML = `<div class="toolbar"><span class="secao-titulo">💵 Caixa do dia</span></div>
+      el.innerHTML = `<div class="toolbar"><span class="secao-titulo">💵 Caixa do dia</span>${botaoFolhaCaixa()}</div>
         <div class="card" style="max-width:480px">
           <div class="card-titulo">ABRIR CAIXA</div>
           <p class="muted texto-pequeno" style="margin:.4rem 0 .8rem">Indique o dinheiro que está na gaveta ao começar (fundo de caixa).</p>
@@ -43,6 +43,7 @@ async function modulo_caixa(el) {
     el.innerHTML = `
       <div class="toolbar"><span class="secao-titulo">💵 Caixa do dia</span>
         <span class="muted">Aberto às ${hora(e.sessao.aberta_em)}</span>
+        ${botaoFolhaCaixa()}
         <button class="btn-perigo" data-on-click="modalFecharCaixa()">Fechar caixa</button></div>
       <div class="kpi-grid">
         ${kpi('Dinheiro esperado na gaveta', r.dinheiro_esperado, `fundo ${formatarMoeda(r.fundo_inicial)} + movimentos em dinheiro ${formatarMoeda(r.dinheiro_recebido)}`)}

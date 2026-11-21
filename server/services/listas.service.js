@@ -12,6 +12,8 @@ const DEFAULTS = {
   CATEGORIA_STOCK: ['CARNE', 'PEIXE', 'VEGETAL', 'TEMPERO', 'BEBIDA', 'CARVAO', 'LIMPEZA', 'OUTRO'],
   UNIDADE_STOCK: ['un', 'kg', 'g', 'L', 'ml'],
   CATEGORIA_PATRIMONIO: ['MOBILIARIO', 'EQUIPAMENTO', 'INFORMATICA', 'VEICULO', 'IMOVEL', 'OUTRO'],
+  // Áreas das saídas na Folha de Caixa (21/11/2026, folha em papel do Clube 3D)
+  AREA_SAIDA: ['ESPLANADA_BAR', 'COZINHA', 'PISCINA', 'HOTEL', 'TECNICA', 'DIVERSOS'],
 };
 // Onde cada lista é usada (para impedir apagar valores em uso)
 const USO = {
@@ -20,8 +22,9 @@ const USO = {
   CATEGORIA_STOCK: ['stock_items', 'categoria'],
   UNIDADE_STOCK: ['stock_items', 'unidade'],
   CATEGORIA_PATRIMONIO: ['patrimonio_bens', 'categoria'],
+  AREA_SAIDA: ['compras_pontuais', 'area'],
 };
-const NOMES = { TIPO_QUARTO: 'Tipos de quarto', CATEGORIA_PRODUTO: 'Categorias de produto', CATEGORIA_STOCK: 'Categorias de stock', UNIDADE_STOCK: 'Unidades de stock', CATEGORIA_PATRIMONIO: 'Categorias de património' };
+const NOMES = { TIPO_QUARTO: 'Tipos de quarto', CATEGORIA_PRODUTO: 'Categorias de produto', CATEGORIA_STOCK: 'Categorias de stock', UNIDADE_STOCK: 'Unidades de stock', CATEGORIA_PATRIMONIO: 'Categorias de património', AREA_SAIDA: 'Áreas das saídas (Folha de Caixa)' };
 
 function validarLista(lista) {
   if (!DEFAULTS[lista]) throw erro(404, 'Lista desconhecida');

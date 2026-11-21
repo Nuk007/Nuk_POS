@@ -13,7 +13,7 @@ const MODULOS = ['modulos.js', 'mesas-quartos.js', 'produtos-stock.js', 'finance
 const GRUPOS = {
   modulos: MODULOS,
   nukpos: ['nukpos.js', 'nukpos-ui.js', 'navegacao.js'],
-  caixa: ['caixa.js', 'caixa-receber.js', 'caixa-contas.js', 'caixa-producao.js'],
+  caixa: ['caixa.js', 'caixa-receber.js', 'caixa-contas.js', 'caixa-producao.js', 'caixa-folha.js'],
   cliente: ['cliente.js', 'cliente-pedidos.js'],
   superadmin: ['superadmin.js', 'superadmin-tenants.js'],
 };

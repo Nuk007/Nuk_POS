@@ -13,7 +13,8 @@ async function modulo_compras(el) {
         <button class="btn-primario" data-on-click="carregarModulo('caixa')">Ir para o Caixa do dia</button></div>`;
       return;
     }
-    const [stock, compras] = await Promise.all([api('GET', '/stock?limit=500'), api('GET', '/compras')]);
+    const [stock, compras, areas] = await Promise.all([api('GET', '/stock?limit=500'), api('GET', '/compras'), api('GET', '/listas/AREA_SAIDA').catch(() => [])]);
+    const areasActivas = (Array.isArray(areas) ? areas : []).filter(a => a.ativo);
     window._comprasItens = (Array.isArray(stock) ? stock : (stock.data || []));
     const gaveta = cx.resumo.dinheiro_esperado;
     el.innerHTML = `
@@ -27,7 +28,12 @@ async function modulo_compras(el) {
           <div class="campo"><label>Quantidade <span id="cp-un" class="muted">${esc(window._comprasItens[0].unidade)}</span></label><input id="cp-qtd" type="number" min="0" step="any"></div>
           <div class="campo"><label>Valor pago (Kz)</label><input id="cp-valor" type="number" min="0" step="any"></div>
         </div>
+        <div class="campo"><label>Área (Folha de Caixa)</label><select id="cp-area"><option value="">Pela categoria do stock</option>${areasActivas.map(a => `<option value="${esc(a.valor)}">${esc(a.valor.replace(/_/g, ' '))}</option>`).join('')}</select></div>
         <div class="campo"><label>Fornecedor</label><input id="cp-forn" placeholder="Opcional" maxlength="120"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
+          <div class="campo"><label>NIF do fornecedor</label><input id="cp-nif" placeholder="Opcional" maxlength="20"></div>
+          <div class="campo"><label>N.º da factura/recibo</label><input id="cp-doc" placeholder="Ex.: FR FR2026/47546" maxlength="60"></div>
+        </div>
         <div class="campo"><label>Observações</label><input id="cp-obs" placeholder="Opcional" maxlength="500"></div>
         <button class="btn-primario btn-bloco" data-on-click="registarCompra()">Registar compra e tirar do caixa</button>`
         : `<p class="muted">Ainda não há produtos no stock. Cadastre-os primeiro em Stock; só se compra o que está cadastrado.</p>
@@ -37,7 +43,7 @@ async function modulo_compras(el) {
         <thead><tr><th>Quando</th><th>Produto</th><th style="text-align:right">Qtd.</th><th style="text-align:right">Valor</th><th>Fornecedor</th><th></th></tr></thead>
         <tbody>${compras.map(c => `<tr style="${c.anulada_em ? 'opacity:.55;text-decoration:line-through' : ''}">
           <td>${new Date(c.criado_em).toLocaleString('pt-PT', { timeZone: 'Africa/Luanda' })}</td><td>${esc(c.item_nome)}</td>
-          <td style="text-align:right">${esc(c.quantidade)} ${esc(c.unidade)}</td><td style="text-align:right">${formatarMoeda(c.valor_total)}</td><td>${esc(c.fornecedor || '')}</td>
+          <td style="text-align:right">${esc(c.quantidade)} ${esc(c.unidade)}</td><td style="text-align:right">${formatarMoeda(c.valor_total)}</td><td>${esc(c.fornecedor || '')}${c.documento ? `<div class="muted texto-pequeno">${esc(c.documento)}</div>` : ''}</td>
           <td>${!c.anulada_em && c.sessao_aberta ? `<button class="btn-secundario" data-on-click="pedirAnularCompra('${esc(c.id)}')">Anular</button>` : (c.anulada_em ? 'Anulada' : '')}</td></tr>`).join('')
           || '<tr><td colspan="6" class="muted" style="text-align:center;padding:1rem">Ainda sem compras</td></tr>'}</tbody></table></div>`;
   } catch (e) { el.innerHTML = `<div class="erro-msg">Erro: ${esc(e.message)}</div>`; }
@@ -53,6 +59,9 @@ async function registarCompra() {
     valor_total: parseFloat(document.getElementById('cp-valor').value),
     fornecedor: document.getElementById('cp-forn').value.trim() || undefined,
     observacoes: document.getElementById('cp-obs').value.trim() || undefined,
+    area: document.getElementById('cp-area').value || undefined,
+    fornecedor_nif: document.getElementById('cp-nif').value.trim() || undefined,
+    documento: document.getElementById('cp-doc').value.trim() || undefined,
   };
   if (!(corpo.quantidade > 0) || !(corpo.valor_total > 0)) { toast('Indique a quantidade e o valor pago', 'erro'); return; }
   try {

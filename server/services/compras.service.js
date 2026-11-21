@@ -6,6 +6,7 @@
 const { pool } = require('../db');
 const { broadcast } = require('../middleware/broadcast');
 const { withTx, erro } = require('./shared');
+const listas = require('./listas.service');
 
 const arred = n => Math.round(n * 100) / 100;
 const arred3 = n => Math.round(n * 1000) / 1000;
@@ -22,7 +23,7 @@ async function dinheiroNaGaveta(db, sessao) {
 
 async function listar({ tenantId }) {
   const r = await pool.query(`
-    SELECT c.id, c.quantidade, c.valor_total, c.fornecedor, c.observacoes, c.criado_em, c.anulada_em, c.sessao_id,
+    SELECT c.id, c.quantidade, c.valor_total, c.fornecedor, c.fornecedor_nif, c.documento, c.area, c.observacoes, c.criado_em, c.anulada_em, c.sessao_id,
            s.nome AS item_nome, s.unidade, f.nome AS operador, (cs.fechada_em IS NULL) AS sessao_aberta
     FROM compras_pontuais c
     JOIN stock_items s ON s.id = c.stock_item_id
@@ -32,11 +33,22 @@ async function listar({ tenantId }) {
   return r.rows;
 }
 
-async function registar({ tenantId, userId, stock_item_id, quantidade, valor_total, fornecedor, observacoes }) {
+/** Área da Folha de Caixa (lista AREA_SAIDA), NIF e n.º do documento do fornecedor — todos opcionais (21/11/2026). */
+async function camposFolha(tenantId, { area, fornecedor_nif, documento }) {
+  const a = area ? String(area).toUpperCase() : null;
+  if (a) await listas.exigirValor(tenantId, 'AREA_SAIDA', a, 'Área');
+  const nif = fornecedor_nif ? String(fornecedor_nif).trim() : null;
+  if (nif && !/^[A-Za-z0-9]{5,20}$/.test(nif)) throw erro(400, 'NIF do fornecedor inválido (5 a 20 letras ou números)');
+  const doc = documento ? String(documento).trim().slice(0, 60) : null;
+  return { area: a, nif, doc };
+}
+
+async function registar({ tenantId, userId, stock_item_id, quantidade, valor_total, fornecedor, observacoes, area, fornecedor_nif, documento }) {
   const q = Number(quantidade), v = Number(valor_total);
   if (!stock_item_id) throw erro(400, 'Escolha o produto comprado (tem de estar cadastrado no stock)');
   if (!Number.isFinite(q) || q <= 0 || q > 1000000) throw erro(400, 'Quantidade inválida');
   if (!Number.isFinite(v) || v <= 0 || v > 100000000) throw erro(400, 'Valor pago inválido');
+  const f = await camposFolha(tenantId, { area, fornecedor_nif, documento });
 
   const out = await withTx(async db => {
     const sessao = await sessaoBloqueada(db, tenantId);
@@ -46,9 +58,9 @@ async function registar({ tenantId, userId, stock_item_id, quantidade, valor_tot
     if (arred(v) > gaveta) throw erro(409, 'Dinheiro insuficiente no caixa para esta compra', { disponivel: gaveta });
 
     const c = await db.query(
-      `INSERT INTO compras_pontuais (tenant_id, sessao_id, stock_item_id, quantidade, valor_total, fornecedor, observacoes, criado_por)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [tenantId, sessao.id, stock_item_id, arred3(q), arred(v), fornecedor ? String(fornecedor).slice(0, 120) : null, observacoes ? String(observacoes).slice(0, 500) : null, userId || null]);
+      `INSERT INTO compras_pontuais (tenant_id, sessao_id, stock_item_id, quantidade, valor_total, fornecedor, observacoes, criado_por, area, fornecedor_nif, documento)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+      [tenantId, sessao.id, stock_item_id, arred3(q), arred(v), fornecedor ? String(fornecedor).slice(0, 120) : null, observacoes ? String(observacoes).slice(0, 500) : null, userId || null, f.area, f.nif, f.doc]);
     await db.query(
       `INSERT INTO caixa_movimentos (tenant_id, sessao_id, tipo, metodo, valor, descricao, compra_id, criado_por) VALUES ($1,$2,'COMPRA','CASH',$3,$4,$5,$6)`,
       [tenantId, sessao.id, -arred(v), `Compra: ${it.rows[0].nome}`, c.rows[0].id, userId || null]);

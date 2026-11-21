@@ -8,6 +8,8 @@ const { authMiddleware, requerNivel, isUUID } = require('../middleware/auth');
 const svc = require('../services/caixa.service');
 const cc = require('../services/conta-corrente.service');
 const auditoria = require('../services/caixa-auditoria.service');
+const folha = require('../services/folha-caixa.service');
+const { folhaPdf } = require('../services/folha-caixa-pdf.service');
 const { exigirModulo } = require('../middleware/modulos');
 const { loginLimiter, loginIpLimiter } = require('../middleware/rateLimiters');
 
@@ -384,6 +386,59 @@ router.put('/conta-corrente/:clienteId', authMiddleware, requerNivel(['ADMIN']),
 router.post('/conta-corrente/:clienteId/pagamentos', authMiddleware, h(async (req, res) => {
   if (!isUUID(req.params.clienteId)) return res.status(400).json({ erro: 'clienteId inválido' });
   res.status(201).json(await cc.pagar({ valor: req.body.valor, metodo: req.body.metodo, observacoes: req.body.observacoes, clienteId: req.params.clienteId, ...base(req) }));
+}));
+
+// ── Folha de Caixa diária (21/11/2026) ─────────────────────
+// Só a chefia (ADMIN/GERENTE). A configuração (grupos e áreas) só o ADMIN com acesso a Configurações.
+const chefia = requerNivel(['ADMIN', 'GERENTE']);
+
+/**
+ * @openapi
+ * /api/caixa/folha:
+ *   get:
+ *     summary: Folha de Caixa de um dia de Luanda (abertura, compras/saídas por área, vendas por grupo, J, K e fecho A+J−D)
+ *     tags: [Caixa]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: dia, in: query, schema: { type: string, example: "2026-11-15" } }]
+ *     responses: { 200: { description: "{ dia, numero, abertura, saidas, vendas, entradas, quebras, fecho, por_receber, alertas }" }, 400: { description: Dia inválido ou no futuro }, 403: { description: Só a chefia } }
+ */
+router.get('/folha', authMiddleware, chefia, h(async (req, res) => res.json(await folha.gerar({ dia: req.query.dia, tenantId: req.tenantId }))));
+
+/**
+ * @openapi
+ * /api/caixa/folha.pdf:
+ *   get:
+ *     summary: Folha de Caixa do dia em PDF A4 (desenho da folha em papel)
+ *     tags: [Caixa]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: dia, in: query, schema: { type: string } }]
+ *     responses: { 200: { description: PDF }, 400: { description: Dia inválido }, 403: { description: Só a chefia } }
+ */
+router.get('/folha.pdf', authMiddleware, chefia, h(async (req, res) => {
+  const pdf = await folhaPdf({ dia: req.query.dia, tenantId: req.tenantId });
+  const dia = folha.validarDia(req.query.dia);
+  res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="folha-caixa-${dia}.pdf"` }).send(pdf);
+}));
+
+/**
+ * @openapi
+ * /api/caixa/folha/config:
+ *   get:
+ *     summary: Grupos da folha por categoria de produto e áreas por categoria de stock/despesa (com o padrão)
+ *     tags: [Caixa]
+ *     security: [{ bearerAuth: [] }]
+ *     responses: { 200: { description: "{ grupos, areas_stock, areas_despesa, configurado, padrao }" } }
+ *   put:
+ *     summary: Grava a configuração da Folha de Caixa (só ADMIN; repor true volta ao padrão)
+ *     tags: [Caixa]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody: { content: { application/json: { schema: { type: object, properties: { grupos: { type: object }, areas_stock: { type: object }, areas_despesa: { type: object }, repor: { type: boolean } } } } } }
+ *     responses: { 200: { description: Configuração gravada }, 400: { description: Grupo ou área inválidos } }
+ */
+router.get('/folha/config', authMiddleware, chefia, h(async (req, res) => res.json({ ...(await folha.lerConfig(req.tenantId)), padrao: folha.PADRAO })));
+router.put('/folha/config', authMiddleware, requerNivel(['ADMIN']), exigirModulo('configuracoes'), h(async (req, res) => {
+  const { grupos, areas_stock, areas_despesa, repor } = req.body || {};
+  res.json(await folha.guardarConfig({ grupos, areas_stock, areas_despesa, repor, tenantId: req.tenantId }));
 }));
 
 // ── Rasto do caixa (auditoria) ──────────────────────────────

@@ -741,6 +741,8 @@ async function initDB() {
     for (const sql of require('./migrations-data/peso-codigos')) await client.query(sql);
     // Produção de cartões no Caixa com autorização (migração 1753000000000)
     for (const sql of require('./migrations-data/cartoes-producao')) await client.query(sql);
+    // Folha de Caixa diária: área, NIF e documento das compras; área das despesas (migração 1753100000000)
+    for (const sql of require('./migrations-data/folha-caixa')) await client.query(sql);
 
     // Avaliacoes de staff
     await client.query(`
