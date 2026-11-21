@@ -44,6 +44,7 @@ function serve(t, origem, agora) {
 /** Tabela aplicável (ou null) e mapa produto_id → preço dessa tabela. */
 async function precosAplicaveis(db, { tenantId, origem, agora = agoraLuanda() }) {
   if (!tenantId) return { tabela: null, precos: {} };
+  db = db || pool; // sem transacção (ex.: o ecrã a perguntar os preços em vigor) usa o pool
   const r = await db.query(`SELECT * FROM tabelas_preco WHERE tenant_id = $1 AND ativa ORDER BY prioridade DESC, criado_em`, [tenantId]);
   const tabela = r.rows.find(t => serve(t, origem, agora)) || null;
   if (!tabela) return { tabela: null, precos: {} };

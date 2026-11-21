@@ -5,7 +5,7 @@
  * O cliente pede no portal; a equipa vê a solicitação em tempo real no POS e confirma ou cancela.
  * Não há dinheiro envolvido (os preços mostrados no portal são só indicativos), por isso não se grava preço.
  */
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID: uuidv4 } = require('crypto'); // UUID v4 do próprio Node (a biblioteca uuid saiu a 21/11/2026)
 const { pool } = require('../db');
 const { broadcast } = require('../middleware/broadcast');
 const { buildWhere, erro, withTx } = require('./shared');
@@ -156,4 +156,29 @@ async function confirmarComReserva({ tenantId, userId, id, quarto_id }) {
   return { ...res, quarto_numero: num, link_whatsapp: require('./whatsapp.service').linkWaMe(res.solicitacao.telefone_contacto, texto) };
 }
 
-module.exports = { criar, listar, contarPendentes, actualizarStatus, tarifasHospedagem, pedirReservaQuarto, quartosParaSolicitacao, confirmarComReserva, TIPOS, ESTADOS, FRACOES };
+// ── Pedidos de hospedagem antigos (solicitacoes_hospedagem; o portal já não os cria — ver solicitacoes_portal) ──
+const ESTADOS_ANTIGOS = ['PENDENTE', 'CONFIRMADA', 'CANCELADA'];
+
+/** Lista os pedidos antigos do estabelecimento (só os que têm cliente: os de convidados não têm estabelecimento). */
+async function listarAntigas({ tenantId }) {
+  const r = await pool.query(
+    `SELECT s.*, c.nome AS cliente_nome, c.telefone AS cliente_telefone
+       FROM solicitacoes_hospedagem s LEFT JOIN clientes c ON c.id = s.cliente_id
+      WHERE ($1::uuid IS NULL OR c.tenant_id = $1 OR (s.cliente_id IS NULL AND $1 IS NULL))
+      ORDER BY s.criado_em DESC LIMIT 100`, [tenantId || null]);
+  return r.rows;
+}
+
+/** Muda o estado de um pedido antigo (ADMIN/GERENTE, a rota garante). */
+async function actualizarStatusAntiga({ tenantId, id, status }) {
+  if (!ESTADOS_ANTIGOS.includes(status)) throw erro(400, 'Status inválido');
+  const r = await pool.query(
+    `UPDATE solicitacoes_hospedagem s SET status = $1, atualizado_em = NOW()
+       FROM (SELECT sh.id FROM solicitacoes_hospedagem sh LEFT JOIN clientes c ON c.id = sh.cliente_id
+              WHERE sh.id = $2 AND ($3::uuid IS NULL OR c.tenant_id = $3 OR sh.cliente_id IS NULL)) sub
+      WHERE s.id = sub.id RETURNING s.*`, [status, id, tenantId || null]);
+  if (!r.rows[0]) throw erro(404, 'Solicitação não encontrada');
+  return r.rows[0];
+}
+
+module.exports = { listarAntigas, actualizarStatusAntiga, criar, listar, contarPendentes, actualizarStatus, tarifasHospedagem, pedirReservaQuarto, quartosParaSolicitacao, confirmarComReserva, TIPOS, ESTADOS, FRACOES };

@@ -2,10 +2,12 @@
 /**
  * Relatórios de gestão (benchmarking WinREST, 14/11/2026): vendas, formas de pagamento, funcionários, produtos,
  * horas, descontos e cancelamentos num período (dias de Luanda), e o relatório de fecho de uma sessão de caixa.
- * Só leitura. Vendas = pedidos FECHADOS (criado_em no período); recebimentos = livro-razão do caixa no período.
+ * Só leitura. Vendas = pedidos pagos no período (`vendaPaga`, a mesma regra das Finanças desde 21/11/2026; antes contava
+ * os FECHADOS criados no período e os números não batiam certo com as Finanças); cancelamentos pela data do pedido;
+ * recebimentos = livro-razão do caixa no período; por receber = contas fechadas ainda não pagas, agora (como nas Finanças).
  */
 const { pool } = require('../db');
-const { erro } = require('./shared');
+const { erro, vendaPaga } = require('./shared');
 
 const DIA_RE = /^\d{4}-\d{2}-\d{2}$/;
 const hojeLuanda = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Africa/Luanda' });
@@ -29,13 +31,14 @@ async function vendas({ tenantId, de, ate }) {
   const v = [tenantId, p.de, p.ate];
   const [tot, formas, conta, porFunc, cancPorFunc, porProd, porHora, canc, perdas] = await Promise.all([
     pool.query(`
-      SELECT COUNT(*) FILTER (WHERE status = 'FECHADO')::int AS pedidos,
-             COALESCE(SUM(total) FILTER (WHERE status = 'FECHADO'), 0) AS valor,
-             COALESCE(SUM(desconto) FILTER (WHERE status = 'FECHADO'), 0) AS descontos,
-             COUNT(*) FILTER (WHERE status = 'CANCELADO')::int AS cancelados,
-             COALESCE(SUM(total) FILTER (WHERE status = 'CANCELADO'), 0) AS valor_cancelado,
+      SELECT COUNT(*) FILTER (WHERE ${vendaPaga()} AND ${NO_PERIODO('pago_em')})::int AS pedidos,
+             COALESCE(SUM(total) FILTER (WHERE ${vendaPaga()} AND ${NO_PERIODO('pago_em')}), 0) AS valor,
+             COALESCE(SUM(desconto) FILTER (WHERE ${vendaPaga()} AND ${NO_PERIODO('pago_em')}), 0) AS descontos,
+             COUNT(*) FILTER (WHERE status = 'CANCELADO' AND ${NO_PERIODO('criado_em')})::int AS cancelados,
+             COALESCE(SUM(total) FILTER (WHERE status = 'CANCELADO' AND ${NO_PERIODO('criado_em')}), 0) AS valor_cancelado,
              COALESCE(SUM(total) FILTER (WHERE status = 'FECHADO' AND pago_em IS NULL AND perda_em IS NULL), 0) AS por_receber
-        FROM pedidos WHERE tenant_id = $1 AND ${NO_PERIODO('criado_em')}`, v),
+        FROM pedidos WHERE tenant_id = $1
+         AND (${NO_PERIODO('pago_em')} OR ${NO_PERIODO('criado_em')} OR (status = 'FECHADO' AND pago_em IS NULL AND perda_em IS NULL))`, v),
     pool.query(`
       SELECT metodo, tipo, COALESCE(SUM(valor), 0) AS valor, COUNT(*)::int AS n
         FROM caixa_movimentos WHERE tenant_id = $1 AND ${NO_PERIODO('criado_em')}
@@ -47,7 +50,7 @@ async function vendas({ tenantId, de, ate }) {
       SELECT f.id, COALESCE(f.nome, 'Portal / sem funcionário') AS nome, COALESCE(f.comissao_pct, 0) AS comissao_pct,
              COUNT(*)::int AS pedidos, COALESCE(SUM(p.total), 0) AS valor
         FROM pedidos p LEFT JOIN funcionarios f ON f.id = p.funcionario_id
-       WHERE p.tenant_id = $1 AND p.status = 'FECHADO' AND ${NO_PERIODO('p.criado_em')}
+       WHERE p.tenant_id = $1 AND ${vendaPaga('p')} AND ${NO_PERIODO('p.pago_em')}
        GROUP BY f.id, f.nome, f.comissao_pct ORDER BY valor DESC`, v),
     pool.query(`
       SELECT p.cancelado_por AS id, COUNT(*)::int AS n FROM pedidos p
@@ -55,12 +58,12 @@ async function vendas({ tenantId, de, ate }) {
     pool.query(`
       SELECT pr.id, pr.nome, pr.categoria, COALESCE(SUM(i.quantidade), 0) AS quantidade, COALESCE(SUM(i.quantidade * i.preco_unitario), 0) AS valor
         FROM itens_pedido i JOIN pedidos p ON p.id = i.pedido_id JOIN produtos pr ON pr.id = i.produto_id
-       WHERE p.tenant_id = $1 AND p.status = 'FECHADO' AND ${NO_PERIODO('p.criado_em')}
+       WHERE p.tenant_id = $1 AND ${vendaPaga('p')} AND ${NO_PERIODO('p.pago_em')}
        GROUP BY pr.id, pr.nome, pr.categoria ORDER BY valor DESC LIMIT 30`, v),
     pool.query(`
       SELECT EXTRACT(HOUR FROM p.criado_em AT TIME ZONE 'Africa/Luanda')::int AS hora, COUNT(*)::int AS pedidos, COALESCE(SUM(p.total), 0) AS valor
-        FROM pedidos p WHERE p.tenant_id = $1 AND p.status = 'FECHADO' AND ${NO_PERIODO('p.criado_em')}
-       GROUP BY 1 ORDER BY 1`, v),
+        FROM pedidos p WHERE p.tenant_id = $1 AND ${vendaPaga('p')} AND ${NO_PERIODO('p.pago_em')}
+       GROUP BY 1 ORDER BY 1`, v), // hora a que o pedido foi feito, das vendas pagas no período
     pool.query(`
       SELECT p.id, p.criado_em, p.cancelado_em, p.origem, p.total, p.motivo_cancelamento, m.numero AS mesa,
              fc.nome AS cancelado_por_nome, fp.nome AS criado_por_nome
@@ -94,7 +97,7 @@ async function vendas({ tenantId, de, ate }) {
     // Recebimentos de vendas por forma (CONTA = lançado em conta corrente) e todas as entradas/saídas do caixa por forma
     recebido_por_forma: recebido,
     caixa_por_forma: entradas,
-    // Comissão = % do funcionário sobre as suas vendas FECHADAS no período (valor com IVA, como o total do pedido)
+    // Comissão = % do funcionário sobre as suas vendas pagas no período (valor com IVA, como o total do pedido)
     por_funcionario: porFunc.rows.map(r => ({ id: r.id, nome: r.nome, pedidos: r.pedidos, valor: N(r.valor), cancelamentos: canc_por[r.id] || 0,
       comissao_pct: N(r.comissao_pct), comissao: Math.round(N(r.valor) * N(r.comissao_pct)) / 100 })),
     por_produto: porProd.rows.map(r => ({ ...r, quantidade: N(r.quantidade), valor: N(r.valor) })),

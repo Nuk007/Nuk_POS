@@ -18,7 +18,7 @@ function carregar(dados) {
   };
   ctx._chamadas = chamadas; ctx._els = els;
   vm.createContext(ctx);
-  vm.runInContext(ler('caixa.js'), ctx);
+  vm.runInContext(require('./frontend-ficheiros').lerGrupo('caixa'), ctx);
   return ctx;
 }
 const sessao = { id: 's1', aberta_em: '2026-11-06T08:00:00Z' };

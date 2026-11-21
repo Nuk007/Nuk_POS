@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const express = require('express');
 const router = express.Router();
-const { pool } = require('../db');
+const tenants = require('../services/tenants.service');
 
 const TEMPLATE = fs.readFileSync(path.join(__dirname, '..', 'pwa', 'sw.template.js'), 'utf8');
 const VERSAO = (process.env.RENDER_GIT_COMMIT || process.env.APP_VERSION || String(Date.now())).slice(0, 12);
@@ -20,12 +20,9 @@ router.get('/sw.js', (req, res) => {
 router.get('/manifest-cliente.webmanifest', async (req, res) => {
   const slug = String(req.query.r || '').toLowerCase();
   let nome = 'Nuk_POS';
-  const valido = /^[a-z0-9][a-z0-9-]{0,59}$/.test(slug);
+  const valido = tenants.SLUG_RE.test(slug);
   if (valido) {
-    try {
-      const t = await pool.query(`SELECT nome FROM tenants WHERE slug = $1 LIMIT 1`, [slug]);
-      if (t.rows[0]) nome = t.rows[0].nome;
-    } catch (_) { /* sem nome: usa o genérico */ }
+    try { nome = (await tenants.nomePorSlug(slug)) || nome; } catch (_) { /* sem nome: usa o genérico */ }
   }
   const start = valido ? `/cliente?r=${slug}` : '/cliente';
   res.set({ 'Content-Type': 'application/manifest+json; charset=utf-8', 'Cache-Control': 'public, max-age=300' });

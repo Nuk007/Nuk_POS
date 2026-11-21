@@ -72,10 +72,18 @@ function validarChaveIdempotencia(chave) {
   return c;
 }
 
+/**
+ * Venda = pedido não cancelado e já pago (recebido no Caixa ou lançado em conta corrente). É a regra das Finanças e,
+ * desde 21/11/2026 (pedido do dono), também do resumo do dia, do relatório de vendas e da facturação do dashboard,
+ * para os números baterem certo entre ecrãs. As contas não pagas registadas pela chefia (`perda_em`) nunca têm `pago_em`.
+ * O período conta pela data do pagamento (`pago_em`). `a` = alias da tabela pedidos (texto fixo do código).
+ */
+const vendaPaga = (a = '') => { const p = a ? `${a}.` : ''; return `${p}status <> 'CANCELADO' AND ${p}pago_em IS NOT NULL`; };
+
 /** Quantidade para talões e documentos: «2x» nas unidades, «0,355 kg» nos produtos vendidos ao peso (21/11/2026). */
 function textoQtd(q) {
   const n = Number(q);
   return Number.isInteger(n) ? `${n}x` : `${n.toLocaleString('pt-PT', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg`;
 }
 
-module.exports = { PALAVRA_PASSE_RE, validarPalavraPasse, buildWhere, withTx, erro, validarChaveIdempotencia, textoQtd };
+module.exports = { PALAVRA_PASSE_RE, validarPalavraPasse, buildWhere, withTx, erro, validarChaveIdempotencia, textoQtd, vendaPaga };

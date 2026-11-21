@@ -18,7 +18,7 @@ beforeAll(async () => {
 }, 60000);
 
 describe('Comissões', () => {
-  test('ADMIN define a comissão (0–100) e o relatório calcula-a sobre as vendas fechadas', async () => {
+  test('ADMIN define a comissão (0–100) e o relatório calcula-a sobre as vendas pagas', async () => {
     const f = await call(A, 'post', '/api/funcionarios', { nome: 'Garçom Zé', email: 'ze@it-comis-a.ao', password: '123456', nivel_acesso: 'OPERADOR', comissao_pct: 5 });
     expect(f.status).toBe(201);
     expect(Number(f.body.comissao_pct)).toBe(5);
@@ -26,6 +26,9 @@ describe('Comissões', () => {
     const ze = { token: require('../../server/middleware/auth').gerarToken({ id: f.body.id, email: 'ze@it-comis-a.ao', nivel_acesso: 'OPERADOR', tenantId: A.tenantId }) };
     const p = await call(ze, 'post', '/api/pedidos', { origem: 'BALCAO', itens: [{ produto_id: picanha, quantidade: 2 }] });
     await call(ze, 'patch', `/api/pedidos/${p.body.id}/status`, { status: 'FECHADO' });
+    // a comissão conta sobre as vendas pagas (21/11/2026): recebe-se no Caixa
+    await call(A, 'post', '/api/caixa/abrir', { fundo_inicial: 0 });
+    expect((await call(A, 'post', '/api/caixa/receber', { pedido_ids: [p.body.id], metodo: 'TPA' })).status).toBe(200);
     expect((await call(A, 'put', `/api/funcionarios/${f.body.id}`, { comissao_pct: 2.5 })).status).toBe(200);
     const r = await call(A, 'get', `/api/relatorios/vendas?de=${hoje()}&ate=${hoje()}`);
     expect(r.body.por_funcionario.find(x => x.nome === 'Garçom Zé')).toMatchObject({ valor: 9000, comissao_pct: 2.5, comissao: 225 });

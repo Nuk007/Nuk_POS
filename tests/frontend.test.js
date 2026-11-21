@@ -26,13 +26,13 @@ test('nenhuma página HTML tem <script> inline (script-src sem unsafe-inline)', 
 });
 
 test('o login do frontend lê a chave "funcionario" que a API devolve', () => {
-  const src = ler('js/nukpos.js');
+  const src = require('./frontend-ficheiros').lerGrupo('nukpos');
   expect(src).toMatch(/NUK\.utilizador\s*=\s*res\.funcionario/);
   expect(src).not.toMatch(/NUK\.utilizador\s*=\s*res\.utilizador/);
 });
 
 describe('delegação data-on-*', () => {
-  const nuk = ler('js/nukpos.js');
+  const nuk = require('./frontend-ficheiros').lerGrupo('nukpos');
   const bloco = nuk.slice(nuk.indexOf('function _parseArgs'), nuk.indexOf("['click', 'change', 'input']"));
   const chamadas = [];
   const ctx = { window: {}, Error, Number, isNaN, console };
@@ -74,7 +74,7 @@ describe('delegação data-on-*', () => {
 
 describe('portal do cliente (cliente.html ↔ cliente.js)', () => {
   const html = ler('cliente.html');
-  const js = ler('js/cliente.js');
+  const js = require('./frontend-ficheiros').lerGrupo('cliente');
 
   test('todo o data-action do portal tem uma acção registada no JS', () => {
     const usadas = new Set([...html.matchAll(/data-action="([^"]+)"/g)].map(m => m[1]));

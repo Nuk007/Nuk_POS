@@ -10,8 +10,11 @@ const op = (T, m, url, body) => request(app)[m](url).set('X-Forwarded-For', ip()
 const hoje = svc.diaLuanda();
 const ts = (dia, h = 12) => new Date(`${dia}T${String(h).padStart(2, '0')}:00:00+01:00`);
 
-async function venda(T, dia, produtoId, qtd, preco, status = 'FECHADO', h = 12) {
-  const p = (await pool.query(`INSERT INTO pedidos (tenant_id, status, total, criado_em) VALUES ($1,$2,$3,$4) RETURNING id`, [T.tenantId, status, qtd * preco, ts(dia, h)])).rows[0].id;
+// Venda FECHADA conta como paga no mesmo momento (facturação = vendas pagas, 21/11/2026); pago=false deixa-a por pagar
+async function venda(T, dia, produtoId, qtd, preco, status = 'FECHADO', h = 12, pago = true) {
+  const quando = ts(dia, h);
+  const p = (await pool.query(`INSERT INTO pedidos (tenant_id, status, total, criado_em, pago_em) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+    [T.tenantId, status, qtd * preco, quando, status === 'FECHADO' && pago ? quando : null])).rows[0].id;
   await pool.query(`INSERT INTO itens_pedido (pedido_id, produto_id, quantidade, preco_unitario) VALUES ($1,$2,$3,$4)`, [p, produtoId, qtd, preco]);
 }
 
@@ -68,7 +71,7 @@ describe('Comparativo hoje / ontem / homólogo', () => {
     expect(r.body.itens.find(i => i.id === idCat).quantidade).toEqual(sh.quantidade);
     expect(r.body.dias).toEqual({ hoje, ontem: svc.somaDias(hoje, -1), homologo: svc.somaDias(hoje, -7) });
   });
-  test('facturação total: pedidos fechados + vendas de quartos', async () => {
+  test('facturação total: vendas pagas + vendas de quartos', async () => {
     const q = (await pool.query(`INSERT INTO quartos (tenant_id, numero, tipo, preco_2h, preco_pernoite, preco_diaria) VALUES ($1,'D1','SUITE',1,2,3) RETURNING id`, [A.tenantId])).rows[0].id;
     await pool.query(`INSERT INTO reservas (tenant_id, quarto_id, nome_hospede, fracao, checkin, checkout, valor_total, criado_em) VALUES ($1,$2,'X','DUAS_HORAS',NOW(),NOW(),20000,$3)`, [A.tenantId, q, ts(hoje, 10)]);
     await pool.query(`INSERT INTO reservas (tenant_id, quarto_id, nome_hospede, fracao, checkin, checkout, valor_total, status, criado_em) VALUES ($1,$2,'Y','PERNOITE',NOW(),NOW(),50000,'CANCELADA',$3)`, [A.tenantId, q, ts(hoje, 11)]);
@@ -76,6 +79,19 @@ describe('Comparativo hoje / ontem / homólogo', () => {
     expect(f.restaurante.hoje).toBe(16000 + 10000);
     expect(f.quartos.hoje).toBe(20000);               // a cancelada não conta
     expect(f.valor).toEqual({ hoje: 46000, ontem: 43000, homologo: 32000 });
+  });
+  test('conta fechada ainda por pagar não entra na facturação (como nas Finanças); paga noutro dia conta nesse dia', async () => {
+    const antes = (await op(A, 'get', '/api/dashboard/comparativo')).body.facturacao;
+    const prod = (await pool.query(`SELECT id FROM produtos WHERE tenant_id = $1 LIMIT 1`, [A.tenantId])).rows[0].id;
+    await venda(A, hoje, prod, 1, 7000, 'FECHADO', 9, false);
+    const f1 = (await op(A, 'get', '/api/dashboard/comparativo')).body.facturacao;
+    expect(f1.valor.hoje).toBe(antes.valor.hoje);
+    // pedido de ontem pago hoje: conta hoje
+    const id = (await pool.query(`INSERT INTO pedidos (tenant_id, status, total, criado_em, pago_em) VALUES ($1,'FECHADO',500,$2,$3) RETURNING id`, [A.tenantId, ts(svc.somaDias(hoje, -1), 22), ts(hoje, 8)])).rows[0].id;
+    const f2 = (await op(A, 'get', '/api/dashboard/comparativo')).body.facturacao;
+    expect(f2.valor.hoje).toBe(antes.valor.hoje + 500);
+    expect(f2.valor.ontem).toBe(antes.valor.ontem);
+    await pool.query(`UPDATE pedidos SET status = 'CANCELADO' WHERE id = $1`, [id]);
   });
   test('item de quartos por período (Hora) usa a fracção certa', async () => {
     const id = (await op(A, 'post', '/api/dashboard/itens', { nome: 'Quartos à hora', fonte: 'SERVICO', ref: 'QUARTO_HORA' })).body.id;

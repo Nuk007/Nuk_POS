@@ -7,7 +7,6 @@ const express = require('express');
 const router = express.Router();
 const { authMiddleware, requerNivel, isUUID } = require('../middleware/auth');
 const svc = require('../services/precos.service');
-const { pool } = require('../db');
 
 const h = fn => async (req, res, next) => {
   try { await fn(req, res); }
@@ -56,7 +55,7 @@ const campos = b => ({ nome: b.nome, prioridade: b.prioridade, ativa: b.ativa, o
 router.get('/actuais', authMiddleware, h(async (req, res) => {
   const origem = String(req.query.origem || 'BALCAO').toUpperCase();
   if (!svc.ORIGENS.includes(origem)) return res.status(400).json({ erro: 'origem inválida' });
-  res.json(await svc.precosAplicaveis(pool, { tenantId: req.tenantId, origem }));
+  res.json(await svc.precosAplicaveis(null, { tenantId: req.tenantId, origem }));
 }));
 router.get('/tabelas', authMiddleware, admin, h(async (req, res) => res.json(await svc.listar({ tenantId: req.tenantId }))));
 router.post('/tabelas', authMiddleware, admin, h(async (req, res) => res.status(201).json(await svc.criar({ ...campos(req.body || {}), tenantId: req.tenantId }))));

@@ -4,7 +4,7 @@
  * Regra do dono: a 1.ª conta (ADMIN) é a TITULAR; não se desactiva nem se despromove — só transfere a titularidade.
  */
 const bcrypt = require('bcryptjs');
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID: uuidv4 } = require('crypto'); // UUID v4 do próprio Node (a biblioteca uuid saiu a 21/11/2026)
 const { pool } = require('../db');
 const { erro, withTx, validarPalavraPasse } = require('./shared');
 const ac = require('./acessos');

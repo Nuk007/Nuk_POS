@@ -36,8 +36,8 @@ async function modulo_relatorios(el) {
       <div id="rel-resumo" class="mb-3"></div>
       <div id="rel-cadeia"></div>
       <div class="kpi-grid mb-3">
-        <div class="kpi-card"><div class="kpi-label">Vendas</div><div class="kpi-valor texto-primario">${formatarMoeda(t.valor)}</div><div class="kpi-sub">${t.pedidos} pedidos · ticket médio ${formatarMoeda(t.ticket_medio)}</div></div>
-        <div class="kpi-card"><div class="kpi-label">Por receber</div><div class="kpi-valor">${formatarMoeda(t.por_receber)}</div><div class="kpi-sub">Contas fechadas ainda não pagas</div></div>
+        <div class="kpi-card"><div class="kpi-label">Vendas</div><div class="kpi-valor texto-primario">${formatarMoeda(t.valor)}</div><div class="kpi-sub">${t.pedidos} pedidos pagos · ticket médio ${formatarMoeda(t.ticket_medio)}</div></div>
+        <div class="kpi-card"><div class="kpi-label">Por receber</div><div class="kpi-valor">${formatarMoeda(t.por_receber)}</div><div class="kpi-sub">Contas fechadas ainda não pagas (agora)</div></div>
         <div class="kpi-card"><div class="kpi-label">Descontos</div><div class="kpi-valor">${formatarMoeda(t.descontos)}</div></div>
         <div class="kpi-card"><div class="kpi-label">Cancelamentos</div><div class="kpi-valor">${t.cancelados}</div><div class="kpi-sub">${formatarMoeda(t.valor_cancelado)}</div></div>
       </div>

@@ -20,7 +20,7 @@ async function modulo_financeiro(el) {
         <div class="kpi-card">
           <div class="kpi-label">Receita Total Hoje</div>
           <div class="kpi-valor texto-primario">${formatarMoeda(resumo.pedidos.receita_total)}</div>
-          <div class="kpi-sub">${resumo.pedidos.total_pedidos} pedidos · ${resumo.pedidos.pedidos_fechados} fechados</div>
+          <div class="kpi-sub">${resumo.pedidos.pedidos_pagos ?? resumo.pedidos.pedidos_fechados} pagos · ${resumo.pedidos.total_pedidos} pedidos feitos</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-label">Receita Quartos Hoje</div>

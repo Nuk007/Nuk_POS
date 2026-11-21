@@ -8,7 +8,7 @@
  * ex.: reclamações).
  */
 const { pool } = require('../db');
-const { erro } = require('./shared');
+const { erro, vendaPaga } = require('./shared');
 const listas = require('./listas.service');
 
 const SERVICOS = {
@@ -122,8 +122,9 @@ async function registar({ tenantId, userId, itemId, evento }) {
 async function facturacao(tenantId, j) {
   const [ped, res] = await Promise.all([
     pool.query(
-      `SELECT to_char((criado_em AT TIME ZONE 'Africa/Luanda')::date,'YYYY-MM-DD') AS dia, SUM(total) AS valor
-       FROM pedidos WHERE tenant_id = $1 AND status = 'FECHADO' AND criado_em >= $2 AND criado_em < $3 GROUP BY 1`, [tenantId, j.lo, j.hi]),
+      // Facturação = vendas pagas, pela data do pagamento (a regra das Finanças; 21/11/2026)
+      `SELECT to_char((pago_em AT TIME ZONE 'Africa/Luanda')::date,'YYYY-MM-DD') AS dia, SUM(total) AS valor
+       FROM pedidos WHERE tenant_id = $1 AND ${vendaPaga()} AND pago_em >= $2 AND pago_em < $3 GROUP BY 1`, [tenantId, j.lo, j.hi]),
     pool.query(
       `SELECT to_char((criado_em AT TIME ZONE 'Africa/Luanda')::date,'YYYY-MM-DD') AS dia, SUM(valor_total) AS valor
        FROM reservas WHERE tenant_id = $1 AND status NOT IN ('CANCELADA','NO_SHOW') AND criado_em >= $2 AND criado_em < $3 GROUP BY 1`, [tenantId, j.lo, j.hi]),
@@ -194,4 +195,39 @@ async function comparativo({ tenantId }) {
   return { dias: j.dias, facturacao: fact, itens: calc };
 }
 
-module.exports = { listarItens, criarItem, actualizarItem, removerItem, registar, comparativo, SERVICOS, FONTES, diaLuanda, somaDias };
+// ── resumo do ecrã inicial ─────────────────────────────────────────
+/**
+ * Resumo de hoje para o Dashboard (lógica que estava na rota; 21/11/2026). Receita = vendas pagas hoje (a regra das
+ * Finanças); `fechados` = pedidos feitos hoje já fechados (o trabalho da sala); mais vendidos = pedidos de hoje já fechados (como antes).
+ */
+async function resumoHoje({ tenantId }) {
+  const t = tenantId || null;
+  const HOJE = col => `(${col} AT TIME ZONE 'Africa/Luanda')::date = (NOW() AT TIME ZONE 'Africa/Luanda')::date`;
+  const [resumo, mesas, quartos, stock, abertos, top] = await Promise.all([
+    pool.query(`
+      SELECT COUNT(*) FILTER (WHERE ${HOJE('criado_em')}) AS total_pedidos,
+             COALESCE(SUM(total) FILTER (WHERE ${vendaPaga()} AND ${HOJE('pago_em')}), 0) AS receita_hoje,
+             COUNT(*) FILTER (WHERE ${vendaPaga()} AND ${HOJE('pago_em')}) AS pagos,
+             COUNT(*) FILTER (WHERE status = 'FECHADO' AND ${HOJE('criado_em')}) AS fechados
+        FROM pedidos WHERE ($1::uuid IS NULL OR tenant_id = $1) AND (${HOJE('criado_em')} OR ${HOJE('pago_em')})`, [t]),
+    pool.query(`SELECT status, COUNT(*) AS total FROM mesas WHERE ($1::uuid IS NULL OR tenant_id = $1) GROUP BY status`, [t]),
+    pool.query(`SELECT status, COUNT(*) AS total FROM quartos WHERE ($1::uuid IS NULL OR tenant_id = $1) GROUP BY status`, [t]),
+    pool.query(`SELECT COUNT(*) AS total FROM stock_items WHERE ativo = true AND stock_atual <= stock_minimo AND ($1::uuid IS NULL OR tenant_id = $1)`, [t]),
+    pool.query(`
+      SELECT p.id, p.status, m.numero AS mesa, p.total, p.criado_em, COUNT(ip.id) AS num_itens
+        FROM pedidos p LEFT JOIN mesas m ON p.mesa_id = m.id LEFT JOIN itens_pedido ip ON p.id = ip.pedido_id
+       WHERE p.status IN ('ABERTO','EM_PREPARO','PRONTO') AND ($1::uuid IS NULL OR p.tenant_id = $1)
+       GROUP BY p.id, m.numero ORDER BY p.criado_em ASC`, [t]),
+    pool.query(`
+      SELECT pr.nome, pr.categoria, SUM(ip.quantidade) AS total_vendido
+        FROM itens_pedido ip JOIN produtos pr ON ip.produto_id = pr.id JOIN pedidos p ON ip.pedido_id = p.id
+       WHERE ${HOJE('p.criado_em')} AND p.status = 'FECHADO' AND ($1::uuid IS NULL OR p.tenant_id = $1)
+       GROUP BY pr.id ORDER BY total_vendido DESC LIMIT 5`, [t]),
+  ]);
+  return {
+    resumo_hoje: resumo.rows[0], mesas: mesas.rows, quartos: quartos.rows, alertas_stock: parseInt(stock.rows[0].total, 10),
+    pedidos_abertos: abertos.rows, top_produtos: top.rows,
+  };
+}
+
+module.exports = { resumoHoje, listarItens, criarItem, actualizarItem, removerItem, registar, comparativo, SERVICOS, FONTES, diaLuanda, somaDias };

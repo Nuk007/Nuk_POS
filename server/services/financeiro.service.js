@@ -11,7 +11,7 @@
  */
 const { pool } = require('../db');
 const { broadcast } = require('../middleware/broadcast');
-const { withTx, erro } = require('./shared');
+const { withTx, erro, vendaPaga } = require('./shared');
 const { periodo } = require('./relatorios.service');
 
 const CATEGORIAS_DESPESA = { SALARIOS: 'Salários', RENDA: 'Renda', ENERGIA: 'Energia', AGUA: 'Água', COMBUSTIVEL: 'Combustível', MANUTENCAO: 'Manutenção', MARKETING: 'Publicidade', IMPOSTOS: 'Impostos e taxas', OUTRA: 'Outra' };
@@ -29,18 +29,20 @@ async function resumoDia({ tenantId, data }) {
   }
   const [vendas, porCategoria, porStatus, quartos] = await Promise.all([
     pool.query(`
-      SELECT COUNT(*) FILTER (WHERE status <> 'CANCELADO') as total_pedidos,
-             COALESCE(SUM(total) FILTER (WHERE status = 'FECHADO'),0) as receita_total,
-             COUNT(*) FILTER (WHERE status = 'FECHADO') as pedidos_fechados,
-             COUNT(*) FILTER (WHERE status = 'CANCELADO') as pedidos_cancelados
-      FROM pedidos WHERE (criado_em AT TIME ZONE 'Africa/Luanda')::date = $1 AND ($2::uuid IS NULL OR tenant_id=$2)
+      SELECT COUNT(*) FILTER (WHERE status <> 'CANCELADO' AND (criado_em AT TIME ZONE 'Africa/Luanda')::date = $1) as total_pedidos,
+             COALESCE(SUM(total) FILTER (WHERE ${vendaPaga()} AND (pago_em AT TIME ZONE 'Africa/Luanda')::date = $1),0) as receita_total,
+             COUNT(*) FILTER (WHERE ${vendaPaga()} AND (pago_em AT TIME ZONE 'Africa/Luanda')::date = $1) as pedidos_pagos,
+             COUNT(*) FILTER (WHERE status = 'FECHADO' AND (criado_em AT TIME ZONE 'Africa/Luanda')::date = $1) as pedidos_fechados,
+             COUNT(*) FILTER (WHERE status = 'CANCELADO' AND (criado_em AT TIME ZONE 'Africa/Luanda')::date = $1) as pedidos_cancelados
+      FROM pedidos WHERE ($2::uuid IS NULL OR tenant_id=$2)
+        AND ((criado_em AT TIME ZONE 'Africa/Luanda')::date = $1 OR (pago_em AT TIME ZONE 'Africa/Luanda')::date = $1)
     `, [dataFiltro, tenantId || null]),
     pool.query(`
       SELECT pr.categoria, COALESCE(SUM(ip.quantidade),0) as itens_vendidos, COALESCE(SUM(ip.quantidade * ip.preco_unitario),0) as total
       FROM itens_pedido ip
       JOIN produtos pr ON ip.produto_id = pr.id
       JOIN pedidos p ON ip.pedido_id = p.id
-      WHERE (p.criado_em AT TIME ZONE 'Africa/Luanda')::date = $1 AND p.status = 'FECHADO'
+      WHERE (p.pago_em AT TIME ZONE 'Africa/Luanda')::date = $1 AND ${vendaPaga('p')}
         AND ($2::uuid IS NULL OR p.tenant_id=$2)
       GROUP BY pr.categoria ORDER BY total DESC
     `, [dataFiltro, tenantId || null]),
@@ -77,13 +79,13 @@ async function resultado({ tenantId, de, ate }) {
   const v = [tenantId, p.de, p.ate];
   const [vendas, porReceber, aloj, itens, desp, caixa, custos] = await Promise.all([
     pool.query(`SELECT COUNT(*)::int AS n, COALESCE(SUM(total),0) AS valor, COALESCE(SUM(desconto),0) AS descontos
-                  FROM pedidos WHERE tenant_id = $1 AND status <> 'CANCELADO' AND pago_em IS NOT NULL AND ${NO_PERIODO('pago_em')}`, v),
+                  FROM pedidos WHERE tenant_id = $1 AND ${vendaPaga()} AND ${NO_PERIODO('pago_em')}`, v),
     pool.query(`SELECT COUNT(*)::int AS n, COALESCE(SUM(total),0) AS valor FROM pedidos WHERE tenant_id = $1 AND status = 'FECHADO' AND pago_em IS NULL AND perda_em IS NULL`, [tenantId]),
     pool.query(`SELECT COUNT(*)::int AS n, COALESCE(SUM(rv.valor_total),0) AS valor FROM reservas rv JOIN quartos q ON q.id = rv.quarto_id
                  WHERE q.tenant_id = $1 AND rv.status <> 'CANCELADA' AND ${NO_PERIODO('rv.criado_em')}`, v),
     pool.query(`SELECT pr.id, pr.nome, pr.categoria, SUM(ip.quantidade) AS qtd, SUM(ip.quantidade * ip.preco_unitario) AS receita
                   FROM itens_pedido ip JOIN pedidos pd ON pd.id = ip.pedido_id JOIN produtos pr ON pr.id = ip.produto_id
-                 WHERE pd.tenant_id = $1 AND pd.status <> 'CANCELADO' AND pd.pago_em IS NOT NULL AND ${NO_PERIODO('pd.pago_em')}
+                 WHERE pd.tenant_id = $1 AND ${vendaPaga('pd')} AND ${NO_PERIODO('pd.pago_em')}
                  GROUP BY pr.id, pr.nome, pr.categoria`, v),
     pool.query(`SELECT categoria, COALESCE(SUM(valor),0) AS valor, COUNT(*)::int AS n FROM despesas
                  WHERE tenant_id = $1 AND anulada_em IS NULL AND data BETWEEN $2::date AND $3::date GROUP BY categoria ORDER BY valor DESC`, v),

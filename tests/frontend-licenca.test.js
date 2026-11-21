@@ -67,7 +67,7 @@ describe('licenca.js', () => {
   });
 
   test('o api() de nukpos.js chama o ecrã nos 403 de licença e o arranque verifica a licença primeiro', () => {
-    const src = fs.readFileSync(path.join(__dirname, '../public/js/nukpos.js'), 'utf8');
+    const src = require('./frontend-ficheiros').lerGrupo('nukpos');
     expect(src).toMatch(/LICENCA_EXPIRADA', 'TENANT_SUSPENSA'\]\.includes\(json\.codigo\)/);
     expect(src.indexOf('verificarLicenca()')).toBeLessThan(src.indexOf('verificarAdesao()'));
     const html = fs.readFileSync(path.join(__dirname, '../public/index.html'), 'utf8');

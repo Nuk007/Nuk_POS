@@ -8,7 +8,7 @@
  *  - Pagar com Nuk-Coin exige o PIN do cliente; o débito e o pedido gravam-se na MESMA transacção.
  *  - Cancelar um pedido pago com Nuk-Coin estorna o valor (ver pedidos.service).
  */
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID: uuidv4 } = require('crypto'); // UUID v4 do próprio Node (a biblioteca uuid saiu a 21/11/2026)
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { pool } = require('../db');

@@ -148,17 +148,22 @@ describe('Facturas e resumo financeiro', () => {
     fechado = await mk(3); cancelado = await mk(5);
     await op('patch', `/api/pedidos/${fechado}/status`, { status: 'FECHADO' });
     await op('patch', `/api/pedidos/${cancelado}/status`, { status: 'CANCELADO' });
+    // a receita conta as vendas pagas (regra das Finanças desde 21/11/2026): recebe-se no Caixa
+    await op('post', '/api/caixa/abrir', { fundo_inicial: 0 }); // pode já estar aberto (409)
+    const rec = await op('post', '/api/caixa/receber', { pedido_ids: [fechado], metodo: 'TPA' });
+    expect(rec.status).toBe(200);
   });
 
-  test('receita só conta pedidos FECHADOS e "itens vendidos" são unidades', async () => {
+  test('receita só conta vendas pagas (como as Finanças) e "itens vendidos" são unidades', async () => {
     const r = await op('get', '/api/financeiro/resumo');
-    const ped = (await pool.query(`SELECT COALESCE(SUM(total) FILTER (WHERE status='FECHADO'),0) t FROM pedidos WHERE tenant_id=$1`, [A.tenantId])).rows[0].t;
+    const ped = (await pool.query(`SELECT COALESCE(SUM(total) FILTER (WHERE status <> 'CANCELADO' AND pago_em IS NOT NULL AND (pago_em AT TIME ZONE 'Africa/Luanda')::date = (NOW() AT TIME ZONE 'Africa/Luanda')::date),0) t FROM pedidos WHERE tenant_id=$1`, [A.tenantId])).rows[0].t;
+    expect(Number(ped)).toBeGreaterThan(0);
     expect(Number(r.body.pedidos.receita_total)).toBe(Number(ped));
     expect(Number(r.body.pedidos.pedidos_cancelados)).toBeGreaterThanOrEqual(1);
     const bebida = r.body.por_categoria.find(x => x.categoria === 'BEBIDA');
     const esperado = (await pool.query(
       `SELECT COALESCE(SUM(ip.quantidade),0) q FROM itens_pedido ip JOIN pedidos p ON p.id=ip.pedido_id JOIN produtos pr ON pr.id=ip.produto_id
-       WHERE p.tenant_id=$1 AND p.status='FECHADO' AND pr.categoria='BEBIDA'`, [A.tenantId])).rows[0].q;
+       WHERE p.tenant_id=$1 AND p.status <> 'CANCELADO' AND p.pago_em IS NOT NULL AND pr.categoria='BEBIDA'`, [A.tenantId])).rows[0].q;
     expect(Number(bebida.itens_vendidos)).toBe(Number(esperado)); // unidades (3 numa só linha), nunca linhas; cancelados fora
     expect(Number(esperado)).toBeGreaterThanOrEqual(3);
   });

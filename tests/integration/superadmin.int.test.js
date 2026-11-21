@@ -17,7 +17,8 @@ const { app } = require('../../server/app');
 describe('Painel Superadmin — autenticação e prefixo da API', () => {
   test('public/js/superadmin.js já não chama o prefixo errado /api/superadmin/', () => {
     const js = fs.readFileSync(
-      path.join(__dirname, '..', '..', 'public', 'js', 'superadmin.js'), 'utf8'
+      path.join(__dirname, '..', '..', 'public', 'js', 'superadmin.js'), 'utf8') + fs.readFileSync(
+      path.join(__dirname, '..', '..', 'public', 'js', 'superadmin-tenants.js'), 'utf8'
     );
     expect(js).not.toMatch(/api\/superadmin\//);
     expect((js.match(/api\/saas\//g) || []).length).toBeGreaterThan(0);

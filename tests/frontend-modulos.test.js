@@ -337,8 +337,8 @@ describe('Módulos divididos por área (21/11/2026)', () => {
     expect([...pos].sort((a, b) => a - b)).toEqual(pos);
     expect(pos[pos.length - 1]).toBeLessThan(html.indexOf('/js/venda.js'));
   });
-  test('nenhum ficheiro dos módulos passa das 400 linhas', () => {
-    for (const f of MODULOS) {
+  test('nenhum ficheiro do ecrã passa das 400 linhas (public/js inteiro, desde 21/11/2026)', () => {
+    for (const f of fs.readdirSync(path.join(__dirname, '../public/js')).filter(x => x.endsWith('.js'))) {
       const n = fs.readFileSync(path.join(__dirname, '../public/js', f), 'utf8').split('\n').length;
       expect([f, n < 400]).toEqual([f, true]);
     }
@@ -377,5 +377,15 @@ describe('Regras configuráveis (21/11/2026): o que cada fluxo vende e tempos do
     expect(html).toContain("reporFluxoVenda('LOJA')");
     const quartos = await render(carregar(admin), 'modulo_quartos');
     expect(quartos).toContain('reserva em menos de 90 min');
+  });
+});
+
+describe('Ficheiros divididos (21/11/2026): cada página carrega as partes pela ordem certa', () => {
+  const { GRUPOS, PAGINA } = require('./frontend-ficheiros');
+  test.each(Object.keys(GRUPOS))('%s', g => {
+    const html = fs.readFileSync(path.join(__dirname, '../public', PAGINA[g]), 'utf8');
+    const pos = GRUPOS[g].map(f => html.indexOf(`/js/${f}"`));
+    expect(pos.every(p => p > 0)).toBe(true);
+    expect([...pos].sort((a, b) => a - b)).toEqual(pos);
   });
 });

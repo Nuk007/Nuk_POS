@@ -7,9 +7,7 @@ const { authMiddleware, requerNivel } = require('../middleware/auth');
 router.get('/', authMiddleware, requerNivel(['ADMIN', 'GERENTE']), async (req, res) => {
   try {
     const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
-    const { pool } = require('../db');
-    const t = await pool.query(`SELECT slug FROM tenants WHERE id = $1`, [req.tenantId || null]);
-    const slug = t.rows[0] && t.rows[0].slug;
+    const slug = await require('../services/tenants.service').slugDe(req.tenantId);
     // o portal precisa de saber a que estabelecimento pertence (?r=<slug>)
     const portalUrl = slug ? `${baseUrl}/cliente?r=${encodeURIComponent(slug)}` : `${baseUrl}/cliente`;
     let qrSvg = null;
