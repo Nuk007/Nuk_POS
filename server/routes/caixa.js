@@ -10,6 +10,8 @@ const cc = require('../services/conta-corrente.service');
 const auditoria = require('../services/caixa-auditoria.service');
 const folha = require('../services/folha-caixa.service');
 const { folhaPdf } = require('../services/folha-caixa-pdf.service');
+const folhaModelo = require('../services/folha-modelo.service');
+const { folhaEmBrancoPdf } = require('../services/folha-modelo-pdf.service');
 const { exigirModulo } = require('../middleware/modulos');
 const { loginLimiter, loginIpLimiter } = require('../middleware/rateLimiters');
 
@@ -439,6 +441,44 @@ router.get('/folha/config', authMiddleware, chefia, h(async (req, res) => res.js
 router.put('/folha/config', authMiddleware, requerNivel(['ADMIN']), exigirModulo('configuracoes'), h(async (req, res) => {
   const { grupos, areas_stock, areas_despesa, repor } = req.body || {};
   res.json(await folha.guardarConfig({ grupos, areas_stock, areas_despesa, repor, tenantId: req.tenantId }));
+}));
+
+/**
+ * @openapi
+ * /api/caixa/folha/modelo:
+ *   get:
+ *     summary: Modelo da Folha de Caixa em branco do estabelecimento (grupos, itens, linhas em branco, assinaturas); sem modelo gravado, o padrão vem da ementa
+ *     tags: [Caixa]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: ementa, in: query, schema: { type: string, enum: ["1"] }, description: "1 = proposta a partir da ementa (não grava)" }]
+ *     responses: { 200: { description: "{ titulo, grupos, areas_brancos, controlo, assinaturas, configurado }" } }
+ *   put:
+ *     summary: Grava o modelo da Folha de Caixa (só ADMIN; repor true volta ao padrão da ementa)
+ *     tags: [Caixa]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody: { content: { application/json: { schema: { type: object, properties: { modelo: { type: object }, repor: { type: boolean } } } } } }
+ *     responses: { 200: { description: Modelo gravado }, 400: { description: Modelo inválido } }
+ */
+router.get('/folha/modelo', authMiddleware, chefia, h(async (req, res) => {
+  res.json(req.query.ementa === '1' ? { ...(await folhaModelo.daEmenta(req.tenantId)), configurado: false } : await folhaModelo.ler(req.tenantId));
+}));
+router.put('/folha/modelo', authMiddleware, requerNivel(['ADMIN']), exigirModulo('configuracoes'), h(async (req, res) => {
+  const { modelo, repor } = req.body || {};
+  res.json(await folhaModelo.guardar({ modelo, repor, tenantId: req.tenantId }));
+}));
+
+/**
+ * @openapi
+ * /api/caixa/folha/modelo.pdf:
+ *   get:
+ *     summary: Folha de Caixa em branco (A4, frente e verso) com os dados e os itens do estabelecimento, para preencher à mão
+ *     tags: [Caixa]
+ *     security: [{ bearerAuth: [] }]
+ *     responses: { 200: { description: PDF } }
+ */
+router.get('/folha/modelo.pdf', authMiddleware, chefia, h(async (req, res) => {
+  const pdf = await folhaEmBrancoPdf({ tenantId: req.tenantId });
+  res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': 'attachment; filename="folha-caixa-em-branco.pdf"' }).send(pdf);
 }));
 
 // ── Rasto do caixa (auditoria) ──────────────────────────────

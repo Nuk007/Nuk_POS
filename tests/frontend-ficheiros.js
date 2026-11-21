@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 
 const MODULOS = ['modulos.js', 'mesas-quartos.js', 'produtos-stock.js', 'financeiro.js', 'clientes.js',
-  'funcionarios.js', 'config-cartoes.js', 'config-fluxos.js', 'configuracoes.js'];
+  'funcionarios.js', 'config-cartoes.js', 'config-fluxos.js', 'config-relatorios.js', 'configuracoes.js'];
 
 /** Ficheiros que foram divididos a 21/11/2026, pela ordem em que as páginas os carregam. */
 const GRUPOS = {

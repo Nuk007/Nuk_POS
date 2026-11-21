@@ -178,7 +178,7 @@ describe('formulários usam as listas do estabelecimento', () => {
 describe('acções destrutivas pedem confirmação', () => {
   test('nenhum botão apaga/cancela/desactiva directamente: passa por pedirXxx → modalConfirmar', () => {
     const botoes = [...codigo.matchAll(/data-on-click="([^"]*)"/g)].map(m => m[1]);
-    const directos = botoes.filter(b => /^(apagarQuarto|apagarOpcaoLista|emitirNotaCreditoConfirmada|retirarContaConfirmado|apagarTabelaPrecoConfirmado|anularDespesaConfirmado|cancelarPedidoConfirmado|cancelarSolicitacaoConfirmada|desactivarFuncConfirmado|removerItemDashboard|revogarAgenteConfirmado|reporFluxoVenda|reporTemposQuartos)\(/.test(b)
+    const directos = botoes.filter(b => /^(apagarQuarto|apagarOpcaoLista|emitirNotaCreditoConfirmada|retirarContaConfirmado|apagarTabelaPrecoConfirmado|anularDespesaConfirmado|cancelarPedidoConfirmado|cancelarSolicitacaoConfirmada|desactivarFuncConfirmado|removerItemDashboard|revogarAgenteConfirmado|reporFluxoVenda|reporTemposQuartos|reporFolhaModeloConfirmado|reporClassificacaoConfirmado|folhaDaEmentaConfirmado)\(/.test(b)
       || /mudarStatusPedido\([^)]*CANCELADO/.test(b) || /actualizarSolicitacao\([^)]*CANCELADA/.test(b));
     // só o botão «Sim, confirmar» do modalConfirmar (construído com ${funcao}) pode chamá-las
     expect(directos).toEqual([]);
@@ -387,5 +387,36 @@ describe('Ficheiros divididos (21/11/2026): cada página carrega as partes pela 
     const pos = GRUPOS[g].map(f => html.indexOf(`/js/${f}"`));
     expect(pos.every(p => p > 0)).toBe(true);
     expect([...pos].sort((a, b) => a - b)).toEqual(pos);
+  });
+});
+
+describe('Configuração de relatórios — modelo da Folha de Caixa (21/11/2026)', () => {
+  test('desenha os grupos e itens; «Tirar» risca e o guardar envia sem os tirados', async () => {
+    const box = { innerHTML: '' };
+    const enviados = [];
+    const modelo = { titulo: 'Folha de Caixa', configurado: false, areas_brancos: 2, controlo: true, assinaturas: ['Entregou', 'Verificou'], grupos: [
+      { grupo: 'BEBIDAS', letra: 'F', nome: 'Bebidas', brancos: 3, itens: [{ nome: 'Cuca', preco: 500 }, { nome: 'Eka', preco: 500 }] },
+      { grupo: 'COMIDAS', letra: 'G', nome: 'Comidas', brancos: 2, itens: [] }, { grupo: 'PISCINA', letra: 'H', nome: 'Piscina', brancos: 1, itens: [] },
+      { grupo: 'QUARTOS', letra: 'I', nome: 'Quartos', brancos: 1, itens: [] }, { grupo: 'OUTROS', letra: 'E', nome: 'Outros', brancos: 1, itens: [] }] };
+    const ctx = carregar({ nivel_acesso: 'ADMIN' });
+    ctx.document = { getElementById: id => (id === 'cfg-relatorios' ? box : null), querySelectorAll: () => [] };
+    ctx.api = async (m, url, corpo) => {
+      if (m === 'PUT') { enviados.push(corpo); return { ...corpo.modelo, configurado: true }; }
+      if (url === '/caixa/folha/modelo') return JSON.parse(JSON.stringify(modelo));
+      if (url === '/caixa/folha/config') return { grupos: { BEBIDA: 'BEBIDAS' }, areas_stock: {}, areas_despesa: {}, configurado: false };
+      if (url === '/listas') return { CATEGORIA_PRODUTO: { opcoes: [{ valor: 'BEBIDA', ativo: true }] }, CATEGORIA_STOCK: { opcoes: [{ valor: 'LIMPEZA', ativo: true }] }, AREA_SAIDA: { opcoes: [{ valor: 'HOTEL', ativo: true }, { valor: 'DIVERSOS', ativo: true }] } };
+      return [];
+    };
+    await ctx.carregarConfigRelatorios();
+    ['CONFIGURAÇÃO DE RELATÓRIOS', 'value="Cuca"', 'value="Eka"', "folhaModeloTirar('0','1')", "descarregarPdf('/caixa/folha/modelo.pdf'", 'pedirFolhaDaEmenta()', 'Guardar a classificação', 'Bebidas (F)']
+      .forEach(t => expect(box.innerHTML).toContain(t));
+    expect(box.innerHTML).not.toContain('pedirReporFolhaModelo()'); // ainda não há modelo gravado
+    ctx.folhaModeloTirar('0', '1');
+    expect(box.innerHTML).toContain('Repor');
+    ctx.folhaModeloAcrescentar('2');
+    await ctx.guardarFolhaModelo();
+    expect(enviados[0].modelo.grupos[0].itens.map(i => i.nome)).toEqual(['Cuca']); // Eka tirado; item vazio da piscina ignorado
+    expect(enviados[0].modelo.grupos[2].itens).toEqual([]);
+    expect(box.innerHTML).toContain('pedirReporFolhaModelo()');
   });
 });

@@ -113,6 +113,7 @@ async function modulo_configuracoes(el) {
       ${lic('hospedagem') ? cartaoTemposQuartos(temposQuartos) : ''}
       ${lic('caixa') ? cartaoTiposCartao(tiposCartao, lotesCartao) : ''}
       ${lic('caixa') ? cartaoContasCorrentes(contasCC, clientesCC) : ''}
+      ${lic('caixa') ? '<div class="card mt-2" style="max-width:760px" id="cfg-relatorios"><div class="muted">A carregar a configuração de relatórios…</div></div>' : ''}
       ${lic('financas') ? cartaoResumoDiario(cfg) : ''}
       ${(lic('restauracao') || lic('lazer') || lic('loja')) ? '<div class="card mt-2" style="max-width:700px" id="cfg-agentes"></div>' : ''}
 
@@ -207,6 +208,7 @@ async function modulo_configuracoes(el) {
       </div>
     `;
     carregarAgentesImpressao();
+    carregarConfigRelatorios();
   } catch (e) {
     el.innerHTML = `<div class="erro-msg">Erro: ${e.message}</div>`;
   }

@@ -8,7 +8,11 @@ const { tenantInfo } = require('./documentos.service');
 const folha = require('./folha-caixa.service');
 
 const NAVY = '#1F3864', LARANJA = '#E8650A', SALMAO = '#FCE4D6', CINZA = '#D9D9D9', VERDE = '#E2EFDA', AZUL = '#DDEBF7';
-const kz = n => (n === null || n === undefined ? '—' : Number(n).toLocaleString('pt-PT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+const kz = n => {
+  if (n === null || n === undefined) return '-';
+  const [i, d] = Math.abs(Number(n)).toFixed(2).split('.');
+  return (Number(n) < 0 ? '-' : '') + i.replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ',' + d;
+};
 const AREAS = { ESPLANADA_BAR: 'Esplanada / Bar', COZINHA: 'Cozinha', PISCINA: 'Piscina', HOTEL: 'Hotel', TECNICA: 'Técnica', DIVERSOS: 'Diversos' };
 const rotArea = a => AREAS[a] || String(a).replace(/_/g, ' ');
 
@@ -49,7 +53,7 @@ async function folhaPdf({ tenantId, dia }) {
   const q = W / 4;
   caixa(X, y, q, 22, 'VALOR EM CAIXA = ABERTURA (A)', { fill: CINZA, negrito: true, tam: 7 });
   caixa(X + q, y, q, 22, kz(f.abertura.A), { fill: SALMAO, alinhar: 'right', negrito: true });
-  caixa(X + 2 * q, y, q, 22, 'VALOR EM CAIXA = FECHO (A+J−D)', { fill: CINZA, negrito: true, tam: 7 });
+  caixa(X + 2 * q, y, q, 22, 'VALOR EM CAIXA = FECHO (A+J-D)', { fill: CINZA, negrito: true, tam: 7 });
   caixa(X + 3 * q, y, q, 22, kz(f.fecho.calculado), { fill: SALMAO, alinhar: 'right', negrito: true });
   y += 22;
   if (f.fecho.declarado !== null) {
